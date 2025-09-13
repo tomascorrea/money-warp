@@ -28,7 +28,7 @@
 
 #### Core Class Implementation  
 - [x] Implement Money class with high-precision internal representation
-- [ ] Implement InterestRate class with explicit conversion methods
+- [x] Implement InterestRate class with explicit conversion methods
 - [ ] Implement CashFlowItem class for individual transactions
 - [ ] Implement CashFlow class as container for CashFlowItems
 - [ ] Implement basic Loan class structure
@@ -38,7 +38,7 @@
 
 #### Testing & Validation
 - [x] Create comprehensive test suite for Money class
-- [ ] Create test suite for InterestRate conversions
+- [x] Create test suite for InterestRate conversions
 - [ ] Create test suite for CashFlow operations
 - [ ] Create test suite for Loan calculations
 - [ ] Create test suite for schedule generation
