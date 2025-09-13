@@ -1,4 +1,4 @@
-"""Price scheduler for fixed payment loans using PMT calculations."""
+"""Price scheduler implementing Progressive Price Schedule (French amortization system)."""
 
 from datetime import datetime
 from decimal import Decimal
@@ -12,18 +12,34 @@ from .schedule import PaymentSchedule, PaymentScheduleEntry
 
 class PriceScheduler(BaseScheduler):
     """
-    Price scheduler that calculates fixed payments using PMT formula.
+    Price scheduler implementing Progressive Price Schedule (French amortization system).
 
-    This scheduler creates a fixed payment amount for each period,
-    with daily compounding interest calculations.
+    This scheduler calculates a fixed payment amount (PMT) and then allocates each payment
+    between interest and principal. Interest is calculated on the outstanding balance,
+    and the remainder goes to principal reduction.
+
+    Based on the reference implementation from cartaorobbin/loan-calculator.
     """
+
+    def __init__(
+        self,
+        principal: Decimal = None,
+        daily_interest_rate: Decimal = None,
+        return_days: List[int] = None,
+        disbursement_date: datetime = None,
+    ):
+        """Initialize the scheduler with loan parameters."""
+        self.principal = principal
+        self.daily_interest_rate = daily_interest_rate
+        self.return_days = return_days
+        self.disbursement_date = disbursement_date
 
     @classmethod
     def generate_schedule(
         cls, principal: Money, interest_rate: InterestRate, due_dates: List[datetime], disbursement_date: datetime
     ) -> PaymentSchedule:
         """
-        Generate payment schedule with fixed payment amounts.
+        Generate Progressive Price Schedule with fixed payment amounts.
 
         Args:
             principal: The loan amount
@@ -32,37 +48,39 @@ class PriceScheduler(BaseScheduler):
             disbursement_date: When the loan was disbursed
 
         Returns:
-            PaymentSchedule with fixed payment amounts
+            PaymentSchedule with fixed payment amounts and interest/principal allocation
         """
         if not due_dates:
             raise ValueError("At least one due date is required")
 
-        # Calculate fixed payment amount
-        payment_amount = cls._calculate_fixed_payment(principal, interest_rate, due_dates, disbursement_date)
+        # Calculate return days (days from disbursement to each payment)
+        return_days = [(due_date - disbursement_date).days for due_date in due_dates]
+
+        # Calculate PMT using the reference formula
+        daily_rate = interest_rate.to_daily().as_decimal
+
+        # Create an instance with the loan parameters
+        scheduler = cls(principal.raw_amount, daily_rate, return_days, disbursement_date)
+        pmt = scheduler.calculate_constant_return_pmt()
 
         # Generate schedule entries
         entries = []
         remaining_balance = principal.raw_amount
-        daily_rate = interest_rate.to_daily().as_decimal
 
         for i, due_date in enumerate(due_dates):
             # Calculate days since last payment (or disbursement)
             prev_date = disbursement_date if i == 0 else due_dates[i - 1]
             days = (due_date - prev_date).days
 
-            # Calculate interest for this period
-            interest_amount = remaining_balance * ((1 + daily_rate) ** Decimal(str(days)) - 1)
-
-            # Store beginning balance before updating
+            # Store beginning balance
             beginning_balance = remaining_balance
 
-            # For the last payment, pay off remaining balance
-            if i == len(due_dates) - 1:
-                total_payment = remaining_balance + interest_amount
-                principal_payment = remaining_balance
-            else:
-                total_payment = payment_amount.raw_amount
-                principal_payment = total_payment - interest_amount
+            # Calculate interest for this period using compound daily interest
+            # Interest = balance * ((1 + daily_rate)^days - 1)
+            interest_amount = remaining_balance * ((Decimal("1") + daily_rate) ** Decimal(str(days)) - Decimal("1"))
+
+            # Principal payment is PMT minus interest
+            principal_payment = pmt - interest_amount
 
             # Update remaining balance
             remaining_balance -= principal_payment
@@ -73,43 +91,30 @@ class PriceScheduler(BaseScheduler):
                 due_date=due_date,
                 days_in_period=days,
                 beginning_balance=Money(beginning_balance),
-                payment_amount=Money(total_payment),
+                payment_amount=Money(pmt),
                 principal_payment=Money(principal_payment),
                 interest_payment=Money(interest_amount),
-                ending_balance=Money(max(0, remaining_balance)),
+                ending_balance=Money(max(Decimal("0"), remaining_balance)),
             )
             entries.append(entry)
 
         return PaymentSchedule(entries=entries)
 
-    @classmethod
-    def _calculate_fixed_payment(
-        cls, principal: Money, interest_rate: InterestRate, due_dates: List[datetime], disbursement_date: datetime
-    ) -> Money:
-        """Calculate the fixed payment amount using PMT formula."""
-        if len(due_dates) == 1:
-            # Single payment loan
-            days = (due_dates[0] - disbursement_date).days
-            daily_rate = interest_rate.to_daily().as_decimal
-            future_value = principal.raw_amount * (1 + daily_rate) ** Decimal(str(days))
-            return Money(future_value)
+    def calculate_constant_return_pmt(self) -> Decimal:
+        """
+        Calculate PMT using the reference formula from loan-calculator.
 
-        # Multiple payment loan - use PMT formula
-        total_days = (due_dates[-1] - disbursement_date).days
-        num_payments = len(due_dates)
-        avg_days_per_payment = total_days / num_payments
+        PMT = principal / sum(1 / (1 + daily_rate)^n for n in return_days)
 
-        # Convert to periodic rate
-        daily_rate = interest_rate.to_daily().as_decimal
-        periodic_rate = (1 + daily_rate) ** Decimal(str(avg_days_per_payment)) - 1
+        Returns:
+            The fixed payment amount (PMT)
+        """
+        # PMT formula from reference: p / sum(1.0 / (1 + d) ** n for n in return_days)
+        denominator = sum(
+            Decimal("1") / (Decimal("1") + self.daily_interest_rate) ** Decimal(str(n)) for n in self.return_days
+        )
 
-        # Handle zero interest rate
-        if periodic_rate == 0:
-            return Money(principal.raw_amount / num_payments)
+        if denominator.is_zero():
+            raise ValueError("Cannot calculate PMT: denominator is zero")
 
-        # PMT formula: P * [r(1+r)^n] / [(1+r)^n - 1]
-        numerator = principal.raw_amount * periodic_rate * (1 + periodic_rate) ** Decimal(str(num_payments))
-        denominator = (1 + periodic_rate) ** Decimal(str(num_payments)) - 1
-        payment = numerator / denominator
-
-        return Money(payment)
+        return self.principal / denominator
