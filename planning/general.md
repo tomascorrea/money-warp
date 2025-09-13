@@ -19,15 +19,15 @@
 **Goal**: Set up development environment and implement core classes
 
 #### Environment Setup
-- [ ] Setup pyenv with Python version specified in pyproject.toml
-- [ ] Create virtual environment using pyenv virtualenv
-- [ ] Setup direnv with .envrc to auto-activate environment
-- [ ] Install dependencies with poetry install
-- [ ] Setup pre-commit hooks
-- [ ] Verify development environment is working
+- [x] Setup pyenv with Python version specified in pyproject.toml
+- [x] Create virtual environment using pyenv virtualenv
+- [x] Setup direnv with .envrc to auto-activate environment
+- [x] Install dependencies with poetry install
+- [x] Setup pre-commit hooks
+- [x] Verify development environment is working
 
 #### Core Class Implementation  
-- [ ] Implement Money class with high-precision internal representation
+- [x] Implement Money class with high-precision internal representation
 - [ ] Implement InterestRate class with explicit conversion methods
 - [ ] Implement CashFlowItem class for individual transactions
 - [ ] Implement CashFlow class as container for CashFlowItems
@@ -37,7 +37,7 @@
 - [ ] Add helper functions for date generation (monthly, bi-weekly, etc.)
 
 #### Testing & Validation
-- [ ] Create comprehensive test suite for Money class
+- [x] Create comprehensive test suite for Money class
 - [ ] Create test suite for InterestRate conversions
 - [ ] Create test suite for CashFlow operations
 - [ ] Create test suite for Loan calculations
