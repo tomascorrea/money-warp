@@ -38,14 +38,16 @@
 - [ ] Add helper functions for date generation (monthly, bi-weekly, etc.)
 
 #### Testing & Validation
-- [x] Create comprehensive test suite for Money class
-- [x] Create test suite for InterestRate conversions
-- [x] Create test suite for CashFlow operations
+- [x] Create comprehensive test suite for Money class (45 tests)
+- [x] Create test suite for InterestRate conversions (81 tests)
+- [x] Create test suite for CashFlow operations (84 tests)
 - [x] Create test suite for CashFlowQuery filtering and operations
-- [x] Create test suite for Loan calculations
-- [x] Create test suite for PaymentScheduler and schedule generation
+- [x] Create test suite for Loan calculations (34 tests)
+- [x] Create test suite for PriceScheduler and PaymentSchedule dataclass
 - [x] Validate PMT calculations against known examples
 - [x] Test irregular payment schedules
+- [x] Test proper interest/principal allocation in payments
+- [x] Test scheduler architecture with configurable schedulers
 
 #### Documentation & Polish
 - [ ] Update README with MoneyWarp description and examples

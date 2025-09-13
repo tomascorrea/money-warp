@@ -1,19 +1,20 @@
-"""Simplified Loan class that delegates calculations to PaymentScheduler."""
+"""Simplified Loan class that delegates calculations to configurable scheduler."""
 
 from datetime import datetime, timedelta
-from typing import List, Optional
+from decimal import Decimal
+from typing import List, Optional, Type
 
 from ..cash_flow import CashFlow, CashFlowItem
 from ..interest_rate import InterestRate
 from ..money import Money
-from .scheduler import PaymentScheduler
+from ..scheduler import BaseScheduler, PaymentSchedule, PriceScheduler
 
 
 class Loan:
     """
     Represents a personal loan as a state machine.
 
-    Delegates complex calculations to PaymentScheduler and focuses on
+    Delegates complex calculations to a configurable scheduler and focuses on
     state management and tracking actual payments.
     """
 
@@ -23,6 +24,7 @@ class Loan:
         interest_rate: InterestRate,
         due_dates: List[datetime],
         disbursement_date: Optional[datetime] = None,
+        scheduler: Optional[Type[BaseScheduler]] = None,
     ) -> None:
         """
         Create a loan with flexible payment schedule.
@@ -32,6 +34,7 @@ class Loan:
             interest_rate: The annual interest rate
             due_dates: List of payment due dates (flexible scheduling)
             disbursement_date: When the loan was disbursed (defaults to first due date - 30 days)
+            scheduler: Scheduler class to use for calculations (defaults to PriceScheduler)
         """
         # Validate inputs first
         if not due_dates:
@@ -43,9 +46,7 @@ class Loan:
         self.interest_rate = interest_rate
         self.due_dates = sorted(due_dates)  # Ensure dates are sorted
         self.disbursement_date = disbursement_date or (self.due_dates[0] - timedelta(days=30))
-
-        # Create scheduler for calculations
-        self._scheduler = PaymentScheduler(principal, interest_rate)
+        self.scheduler = scheduler or PriceScheduler
 
         # State tracking
         self._actual_payments: List[CashFlowItem] = []
@@ -61,14 +62,16 @@ class Loan:
         """Check if the loan is fully paid off."""
         return self._current_balance.is_zero() or self._current_balance.is_negative()
 
-    def calculate_payment_amount(self) -> Money:
-        """
-        Calculate the fixed payment amount using the scheduler.
+    @property
+    def last_payment_date(self) -> datetime:
+        """Get the date of the last payment made, or disbursement date if no payments."""
+        return self._actual_payments[-1].datetime if self._actual_payments else self.disbursement_date
 
-        Returns:
-            Fixed payment amount for regular payments
-        """
-        return self._scheduler.calculate_fixed_payment(self.due_dates, self.disbursement_date)
+    def days_since_last_payment(self, as_of_date: Optional[datetime] = None) -> int:
+        """Get the number of days since the last payment as of a given date (defaults to now)."""
+        if as_of_date is None:
+            as_of_date = datetime.now()
+        return (as_of_date - self.last_payment_date).days
 
     def generate_expected_cash_flow(self) -> CashFlow:
         """
@@ -77,82 +80,121 @@ class Loan:
         Returns:
             CashFlow with loan disbursement and payment schedule
         """
-        return self._scheduler.generate_payment_schedule(
-            self.due_dates, self.disbursement_date, include_disbursement=True
-        )
+        items = []
+
+        # Add disbursement
+        items.append(CashFlowItem(self.principal, self.disbursement_date, "Loan disbursement", "disbursement"))
+
+        # Generate schedule using our method
+        schedule = self.get_amortization_schedule()
+
+        # Convert schedule entries to CashFlow items
+        for entry in schedule:
+            # Add payment breakdown items (negative amounts for outflows)
+            items.append(
+                CashFlowItem(
+                    Money(-entry.interest_payment.raw_amount),
+                    entry.due_date,
+                    f"Interest payment {entry.payment_number}",
+                    "interest",
+                )
+            )
+
+            items.append(
+                CashFlowItem(
+                    Money(-entry.principal_payment.raw_amount),
+                    entry.due_date,
+                    f"Principal payment {entry.payment_number}",
+                    "principal",
+                )
+            )
+
+        return CashFlow(items)
 
     def record_payment(self, amount: Money, payment_date: datetime, description: Optional[str] = None) -> None:
         """
-        Record an actual payment made on the loan.
+        Record an actual payment made on the loan with automatic interest/principal allocation.
 
         Args:
-            amount: Payment amount (positive value)
+            amount: Total payment amount (positive value)
             payment_date: When the payment was made
             description: Optional description of the payment
         """
-        if amount.is_negative():
+        if amount.is_negative() or amount.is_zero():
             raise ValueError("Payment amount must be positive")
 
-        # Record the payment
-        payment_item = CashFlowItem(
-            amount, payment_date, description or f"Payment on {payment_date.date()}", "actual_payment"
-        )
-        self._actual_payments.append(payment_item)
+        # Calculate accrued interest since last payment or disbursement
+        days = self.days_since_last_payment(payment_date)
+        daily_rate = self.interest_rate.to_daily().as_decimal
 
-        # Update current balance (simplified - in reality would need interest calculation)
-        self._current_balance = self._current_balance - amount
+        # Calculate interest on current balance
+        accrued_interest = self._current_balance.raw_amount * ((1 + daily_rate) ** Decimal(str(days)) - 1)
+
+        # Interest portion is the minimum of accrued interest and payment amount
+        interest_portion = Money(min(accrued_interest, amount.raw_amount))
+        principal_portion = amount - interest_portion
+
+        # Record the payment components
+        if interest_portion.is_positive():
+            self._actual_payments.append(
+                CashFlowItem(
+                    interest_portion,
+                    payment_date,
+                    f"Interest portion - {description or f'Payment on {payment_date.date()}'}",
+                    "actual_interest",
+                )
+            )
+
+        if principal_portion.is_positive():
+            self._actual_payments.append(
+                CashFlowItem(
+                    principal_portion,
+                    payment_date,
+                    f"Principal portion - {description or f'Payment on {payment_date.date()}'}",
+                    "actual_principal",
+                )
+            )
+
+        # Update current balance with only the principal portion
+        self._current_balance = self._current_balance - principal_portion
 
         # Ensure balance doesn't go negative
         if self._current_balance.is_negative():
             self._current_balance = Money.zero()
 
     def get_actual_cash_flow(self) -> CashFlow:
-        """Get the cash flow of actual payments made."""
-        items = []
+        """
+        Get the actual cash flow combining expected schedule with actual payments made.
 
-        # Add disbursement
-        items.append(CashFlowItem(self.principal, self.disbursement_date, "Loan disbursement", "disbursement"))
+        This shows both what was expected and what actually happened for comparison.
+        """
+        # Start with expected cash flow
+        expected_cf = self.generate_expected_cash_flow()
+        items = list(expected_cf.items())
 
-        # Add actual payments (as negative amounts for outflows)
+        # Add actual payments made
         for payment in self._actual_payments:
             items.append(
                 CashFlowItem(
-                    -payment.amount, payment.datetime, payment.description, payment.category  # Convert to outflow
+                    -payment.amount,  # Convert to outflow
+                    payment.datetime,
+                    payment.description or f"Actual payment on {payment.datetime.date()}",
+                    payment.category,  # Keep original category (actual_interest, actual_principal)
                 )
             )
 
         return CashFlow(items)
 
-    def get_remaining_cash_flow(self) -> CashFlow:
-        """
-        Generate the remaining payment schedule based on current balance.
-
-        Returns:
-            CashFlow with remaining payments to be made
-        """
-        if self.is_paid_off:
-            return CashFlow.empty()
-
-        # Find remaining due dates
-        now = datetime.now()
-        remaining_dates = [date for date in self.due_dates if date > now]
-
-        if not remaining_dates:
-            # All due dates have passed, but balance remains
-            # Create a single payment due immediately
-            remaining_dates = [now]
-
-        # Use scheduler to calculate remaining payments
-        return self._scheduler.calculate_remaining_schedule(self._current_balance, remaining_dates, now)
-
-    def get_amortization_schedule(self) -> List[dict]:
+    def get_amortization_schedule(self) -> PaymentSchedule:
         """
         Get detailed amortization schedule using the scheduler.
 
         Returns:
-            List of dictionaries with payment breakdown details
+            PaymentSchedule with all payment details
         """
-        return self._scheduler.generate_amortization_table(self.due_dates, self.disbursement_date)
+        return self.scheduler.generate_schedule(
+            self.principal, self.interest_rate, self.due_dates, self.disbursement_date
+        )
 
     def __str__(self) -> str:
         """String representation of the loan."""

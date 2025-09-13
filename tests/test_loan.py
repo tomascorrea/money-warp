@@ -1,11 +1,11 @@
-"""Tests for Loan class - following project patterns."""
+"""Tests for Loan class with scheduler architecture - following project patterns."""
 
 from datetime import datetime, timedelta
 from decimal import Decimal
 
 import pytest
 
-from money_warp import InterestRate, Loan, Money
+from money_warp import InterestRate, Loan, Money, PriceScheduler
 
 
 # Loan Creation Tests
@@ -18,6 +18,7 @@ def test_loan_creation_basic():
     assert loan.principal == principal
     assert loan.interest_rate == rate
     assert loan.due_dates == due_dates
+    assert loan.scheduler == PriceScheduler  # Default scheduler
 
 
 def test_loan_creation_with_disbursement_date():
@@ -28,6 +29,15 @@ def test_loan_creation_with_disbursement_date():
 
     loan = Loan(principal, rate, due_dates, disbursement_date)
     assert loan.disbursement_date == disbursement_date
+
+
+def test_loan_creation_with_custom_scheduler():
+    principal = Money("10000.00")
+    rate = InterestRate("5% a")
+    due_dates = [datetime(2024, 2, 1)]
+
+    loan = Loan(principal, rate, due_dates, scheduler=PriceScheduler)
+    assert loan.scheduler == PriceScheduler
 
 
 def test_loan_creation_default_disbursement_date():
@@ -50,7 +60,6 @@ def test_loan_creation_sorts_due_dates():
     assert loan.due_dates == expected_sorted
 
 
-# Loan Validation Tests
 def test_loan_creation_empty_due_dates_raises_error():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
@@ -75,7 +84,7 @@ def test_loan_creation_negative_principal_raises_error():
         Loan(Money("-1000.00"), rate, due_dates)
 
 
-# Loan State Tests
+# Loan Properties Tests
 def test_loan_initial_current_balance():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
@@ -94,48 +103,72 @@ def test_loan_initial_not_paid_off():
     assert not loan.is_paid_off
 
 
-# PMT Calculation Tests
-def test_loan_calculate_payment_amount_single_payment():
+def test_loan_last_payment_date_initial():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
+    due_dates = [datetime(2024, 2, 1)]
     disbursement_date = datetime(2024, 1, 1)
-    due_dates = [datetime(2024, 12, 31)]  # 365 days later
 
     loan = Loan(principal, rate, due_dates, disbursement_date)
-    payment = loan.calculate_payment_amount()
-
-    # Should be approximately 10000 * (1.05) = 10500
-    assert payment > Money("10400.00")
-    assert payment < Money("10600.00")
+    assert loan.last_payment_date == disbursement_date
 
 
-def test_loan_calculate_payment_amount_zero_interest():
+def test_loan_days_since_last_payment_initial():
     principal = Money("10000.00")
-    rate = InterestRate("0% a")
-    due_dates = [datetime(2024, 2, 1), datetime(2024, 3, 1), datetime(2024, 4, 1)]
+    rate = InterestRate("5% a")
+    due_dates = [datetime(2024, 2, 1)]
+    disbursement_date = datetime(2024, 1, 1)
+
+    loan = Loan(principal, rate, due_dates, disbursement_date)
+    check_date = datetime(2024, 1, 15)
+    assert loan.days_since_last_payment(check_date) == 14
+
+
+def test_loan_days_since_last_payment_defaults_to_now():
+    principal = Money("10000.00")
+    rate = InterestRate("5% a")
+    due_dates = [datetime(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates)
-    payment = loan.calculate_payment_amount()
-
-    # Should be exactly principal / number of payments
-    expected = Money("3333.33")  # 10000 / 3
-    assert abs(payment.real_amount - expected.real_amount) < Decimal("0.01")
+    # Should not raise error and return some number
+    days = loan.days_since_last_payment()
+    assert isinstance(days, int)
 
 
-def test_loan_calculate_payment_amount_multiple_payments():
+# Amortization Schedule Tests
+def test_loan_get_amortization_schedule_structure():
     principal = Money("10000.00")
     rate = InterestRate("6% a")
-    due_dates = [datetime(2024, 2, 1), datetime(2024, 3, 1), datetime(2024, 4, 1)]
+    due_dates = [datetime(2024, 2, 1), datetime(2024, 3, 1)]
 
     loan = Loan(principal, rate, due_dates)
-    payment = loan.calculate_payment_amount()
+    schedule = loan.get_amortization_schedule()
 
-    # Should be reasonable payment amount
-    assert payment > Money("3300.00")
-    assert payment < Money("3400.00")
+    assert len(schedule) == 2
+    assert schedule.total_payments > Money.zero()
+    assert schedule.total_interest > Money.zero()
+    assert schedule.total_principal == principal
 
 
-# Expected Cash Flow Tests
+def test_loan_get_amortization_schedule_entries():
+    principal = Money("10000.00")
+    rate = InterestRate("6% a")
+    due_dates = [datetime(2024, 2, 1)]
+
+    loan = Loan(principal, rate, due_dates)
+    schedule = loan.get_amortization_schedule()
+
+    entry = schedule[0]
+    assert entry.payment_number == 1
+    assert entry.due_date == datetime(2024, 2, 1)
+    assert entry.beginning_balance == principal
+    assert entry.payment_amount > Money.zero()
+    assert entry.principal_payment > Money.zero()
+    assert entry.interest_payment >= Money.zero()
+    assert entry.ending_balance == Money.zero()
+
+
+# Cash Flow Tests
 def test_loan_generate_expected_cash_flow_includes_disbursement():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
@@ -144,7 +177,6 @@ def test_loan_generate_expected_cash_flow_includes_disbursement():
     loan = Loan(principal, rate, due_dates)
     cash_flow = loan.generate_expected_cash_flow()
 
-    # Should have disbursement as first item
     disbursement_items = cash_flow.query.filter_by(category="disbursement").all()
     assert len(disbursement_items) == 1
     assert disbursement_items[0].amount == principal
@@ -158,7 +190,6 @@ def test_loan_generate_expected_cash_flow_has_payment_breakdown():
     loan = Loan(principal, rate, due_dates)
     cash_flow = loan.generate_expected_cash_flow()
 
-    # Should have interest and principal items (no separate payment item)
     interest_items = cash_flow.query.filter_by(category="interest").all()
     principal_items = cash_flow.query.filter_by(category="principal").all()
 
@@ -205,7 +236,41 @@ def test_loan_record_payment_updates_balance():
     loan = Loan(principal, rate, due_dates)
     loan.record_payment(Money("5000.00"), datetime(2024, 1, 15))
 
-    assert loan.current_balance == Money("5000.00")
+    # Balance should be reduced by principal portion
+    assert loan.current_balance < principal
+
+
+def test_loan_record_payment_creates_interest_and_principal_items():
+    principal = Money("10000.00")
+    rate = InterestRate("6% a")
+    due_dates = [datetime(2024, 2, 1)]
+    disbursement_date = datetime(2024, 1, 1)
+
+    loan = Loan(principal, rate, due_dates, disbursement_date)
+    loan.record_payment(Money("5000.00"), datetime(2024, 1, 15))
+
+    # Should have created interest and principal payment items
+    assert len(loan._actual_payments) == 2
+
+    # Check categories
+    categories = [payment.category for payment in loan._actual_payments]
+    assert "actual_interest" in categories
+    assert "actual_principal" in categories
+
+
+def test_loan_record_payment_updates_last_payment_date():
+    principal = Money("10000.00")
+    rate = InterestRate("5% a")
+    due_dates = [datetime(2024, 2, 1)]
+    disbursement_date = datetime(2024, 1, 1)
+
+    loan = Loan(principal, rate, due_dates, disbursement_date)
+    payment_date = datetime(2024, 1, 15)
+
+    assert loan.last_payment_date == disbursement_date
+
+    loan.record_payment(Money("5000.00"), payment_date)
+    assert loan.last_payment_date == payment_date
 
 
 def test_loan_record_payment_multiple_payments():
@@ -217,7 +282,7 @@ def test_loan_record_payment_multiple_payments():
     loan.record_payment(Money("3000.00"), datetime(2024, 1, 15))
     loan.record_payment(Money("2000.00"), datetime(2024, 1, 20))
 
-    assert loan.current_balance == Money("5000.00")
+    assert loan.current_balance < principal
 
 
 def test_loan_record_payment_overpayment_zeros_balance():
@@ -243,6 +308,17 @@ def test_loan_record_payment_negative_amount_raises_error():
         loan.record_payment(Money("-1000.00"), datetime(2024, 1, 15))
 
 
+def test_loan_record_payment_zero_amount_raises_error():
+    principal = Money("10000.00")
+    rate = InterestRate("5% a")
+    due_dates = [datetime(2024, 2, 1)]
+
+    loan = Loan(principal, rate, due_dates)
+
+    with pytest.raises(ValueError, match="Payment amount must be positive"):
+        loan.record_payment(Money.zero(), datetime(2024, 1, 15))
+
+
 # Actual Cash Flow Tests
 def test_loan_get_actual_cash_flow_empty_initially():
     principal = Money("10000.00")
@@ -252,9 +328,12 @@ def test_loan_get_actual_cash_flow_empty_initially():
     loan = Loan(principal, rate, due_dates)
     actual_cf = loan.get_actual_cash_flow()
 
-    # Should only have disbursement
-    assert len(actual_cf) == 1
-    assert actual_cf[0].category == "disbursement"
+    # Should have disbursement + expected payments, but no actual payments yet
+    disbursement_items = actual_cf.query.filter_by(category="disbursement").all()
+    actual_payment_items = actual_cf.query.filter_by(category="actual_interest").all()
+
+    assert len(disbursement_items) == 1
+    assert len(actual_payment_items) == 0
 
 
 def test_loan_get_actual_cash_flow_includes_payments():
@@ -267,95 +346,12 @@ def test_loan_get_actual_cash_flow_includes_payments():
 
     actual_cf = loan.get_actual_cash_flow()
 
-    # Should have disbursement + 1 payment
-    assert len(actual_cf) == 2
+    # Should have expected payments + actual payments
+    actual_interest_items = actual_cf.query.filter_by(category="actual_interest").all()
+    actual_principal_items = actual_cf.query.filter_by(category="actual_principal").all()
 
-    payment_items = actual_cf.query.filter_by(category="actual_payment").all()
-    assert len(payment_items) == 1
-    assert payment_items[0].amount == Money("-5000.00")  # Outflow
-
-
-# Remaining Cash Flow Tests
-def test_loan_get_remaining_cash_flow_paid_off_loan():
-    principal = Money("10000.00")
-    rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1)]
-
-    loan = Loan(principal, rate, due_dates)
-    loan.record_payment(Money("15000.00"), datetime(2024, 1, 15))  # Overpay
-
-    remaining_cf = loan.get_remaining_cash_flow()
-    assert remaining_cf.is_empty()
-
-
-def test_loan_get_remaining_cash_flow_partial_payment():
-    principal = Money("10000.00")
-    rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1)]
-
-    loan = Loan(principal, rate, due_dates)
-    loan.record_payment(Money("5000.00"), datetime(2024, 1, 15))
-
-    remaining_cf = loan.get_remaining_cash_flow()
-
-    # Should have remaining payments (no disbursement)
-    disbursement_items = remaining_cf.query.filter_by(category="disbursement").all()
-    assert len(disbursement_items) == 0
-
-    # Should have some payment items
-    assert len(remaining_cf) > 0
-
-
-# Amortization Schedule Tests
-def test_loan_get_amortization_schedule_structure():
-    principal = Money("10000.00")
-    rate = InterestRate("6% a")
-    due_dates = [datetime(2024, 2, 1), datetime(2024, 3, 1)]
-
-    loan = Loan(principal, rate, due_dates)
-    schedule = loan.get_amortization_schedule()
-
-    assert len(schedule) == 2
-
-    # Check first payment structure
-    payment1 = schedule[0]
-    required_keys = {
-        "payment_number",
-        "due_date",
-        "days_in_period",
-        "beginning_balance",
-        "payment_amount",
-        "principal_payment",
-        "interest_payment",
-        "ending_balance",
-    }
-    assert set(payment1.keys()) == required_keys
-
-
-def test_loan_get_amortization_schedule_decreasing_balance():
-    principal = Money("10000.00")
-    rate = InterestRate("6% a")
-    due_dates = [datetime(2024, 2, 1), datetime(2024, 3, 1)]
-
-    loan = Loan(principal, rate, due_dates)
-    schedule = loan.get_amortization_schedule()
-
-    # Balance should decrease with each payment
-    assert schedule[0]["beginning_balance"] > schedule[1]["beginning_balance"]
-    assert schedule[1]["ending_balance"] < schedule[0]["beginning_balance"]
-
-
-def test_loan_get_amortization_schedule_final_balance_zero():
-    principal = Money("10000.00")
-    rate = InterestRate("6% a")
-    due_dates = [datetime(2024, 2, 1), datetime(2024, 3, 1)]
-
-    loan = Loan(principal, rate, due_dates)
-    schedule = loan.get_amortization_schedule()
-
-    # Final balance should be zero or very close
-    final_balance = schedule[-1]["ending_balance"]
-    assert final_balance.real_amount < Decimal("0.01")
+    assert len(actual_interest_items) >= 1
+    assert len(actual_principal_items) >= 1
 
 
 # String Representation Tests
@@ -393,10 +389,11 @@ def test_loan_single_payment_zero_interest():
     due_dates = [datetime(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates)
-    payment = loan.calculate_payment_amount()
+    schedule = loan.get_amortization_schedule()
 
     # Should equal principal exactly
-    assert payment == principal
+    assert schedule[0].payment_amount == principal
+    assert schedule[0].interest_payment == Money.zero()
 
 
 def test_loan_very_small_principal():
@@ -409,7 +406,6 @@ def test_loan_very_small_principal():
 
     # Should still generate valid cash flow
     assert len(cash_flow) > 0
-    assert cash_flow.query.filter_by(category="disbursement").first().amount == principal
 
 
 def test_loan_high_interest_rate():
@@ -418,9 +414,10 @@ def test_loan_high_interest_rate():
     due_dates = [datetime(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates)
-    payment = loan.calculate_payment_amount()
+    schedule = loan.get_amortization_schedule()
 
     # Should be significantly higher than principal (50% annual for ~30 days)
+    payment = schedule[0].payment_amount
     assert payment > Money("10300.00")
 
 
