@@ -29,8 +29,9 @@
 #### Core Class Implementation  
 - [x] Implement Money class with high-precision internal representation
 - [x] Implement InterestRate class with explicit conversion methods
-- [ ] Implement CashFlowItem class for individual transactions
-- [ ] Implement CashFlow class as container for CashFlowItems
+- [x] Implement CashFlowItem class for individual transactions
+- [x] Implement CashFlow class as container for CashFlowItems
+- [x] Implement SQLAlchemy-style query interface for CashFlow filtering
 - [ ] Implement basic Loan class structure
 - [ ] Implement PMT calculation function
 - [ ] Implement amortization schedule generation with daily compounding
@@ -39,7 +40,8 @@
 #### Testing & Validation
 - [x] Create comprehensive test suite for Money class
 - [x] Create test suite for InterestRate conversions
-- [ ] Create test suite for CashFlow operations
+- [x] Create test suite for CashFlow operations
+- [x] Create test suite for CashFlowQuery filtering and operations
 - [ ] Create test suite for Loan calculations
 - [ ] Create test suite for schedule generation
 - [ ] Validate PMT calculations against known examples
