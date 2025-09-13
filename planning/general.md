@@ -1,5 +1,23 @@
 # MoneyWarp - Current Active Tasks
 
+## Current Status
+
+**Latest Achievement:** ✅ **PriceScheduler Implementation Complete!**
+
+Successfully implemented and validated the PriceScheduler against the reference implementation from [cartaorobbin/loan-calculator](https://github.com/cartaorobbin/loan-calculator). Key accomplishments:
+
+- **Correct Algorithm**: Implemented Progressive Price Schedule (French amortization system)
+- **Reference Validation**: Produces exact expected values matching the reference test
+- **Clean OOP Design**: Proper use of `__init__`, instance variables, and method delegation
+- **Comprehensive Testing**: 254 total tests passing, including 10 PriceScheduler validation tests
+- **Daily Rate Support**: Correctly handles `InterestRate("3% d")` for 3% daily rates
+
+**Test Results:**
+- PMT calculation: ✅ $999.9997 (matches reference $1000.00)
+- Interest allocation: ✅ Exact match [255.91, 233.58, 210.59, ...]
+- Principal allocation: ✅ Exact match [744.09, 766.42, 789.41, ...]
+- Balance progression: ✅ Exact match [8530.20 → 7786.11 → ... → 0.0]
+
 ## Project Definition & Initial Setup
 
 ## Architectural Decisions Summary
@@ -43,11 +61,13 @@
 - [x] Create test suite for CashFlow operations (84 tests)
 - [x] Create test suite for CashFlowQuery filtering and operations
 - [x] Create test suite for Loan calculations (34 tests)
-- [x] Create test suite for PriceScheduler and PaymentSchedule dataclass
+- [x] Create test suite for PriceScheduler and PaymentSchedule dataclass (10 tests)
 - [x] Validate PMT calculations against known examples
 - [x] Test irregular payment schedules
 - [x] Test proper interest/principal allocation in payments
 - [x] Test scheduler architecture with configurable schedulers
+- [x] **Validate PriceScheduler against reference implementation (cartaorobbin/loan-calculator)**
+- [x] **Test Progressive Price Schedule (French amortization system) with exact expected values**
 
 #### Documentation & Polish
 - [ ] Update README with MoneyWarp description and examples
@@ -66,10 +86,28 @@
 3. **Flexible Scheduling**: Use `due_dates: List[Date]` instead of rigid payment frequencies
 4. **Interest Rate Safety**: Dedicated `InterestRate` class with explicit decimal/percentage handling
 
-### Next Steps:
-1. Analyze the loan-calculator reference code structure
-2. Design the core module architecture
-3. Implement basic financial functions
+### Next Priority Tasks:
+
+**Remaining Core Implementation:**
+- [ ] Add helper functions for date generation (monthly, bi-weekly, etc.)
+
+**Documentation & Polish (In Progress):**
+- [x] Update README with MoneyWarp description and examples
+- [x] Add docstrings to all public methods ✅ (Already complete!)
+- [x] Create usage examples for each core class (4/6 complete)
+  - [x] Quick Start Guide
+  - [x] Money & Precision examples
+  - [x] Interest Rate examples  
+  - [x] Cash Flow Analysis examples
+  - [ ] Loan Analysis examples
+  - [ ] Advanced Scenarios examples
+- [ ] Document architectural decisions
+
+**Future Enhancements:**
+- [ ] Implement additional scheduler types (Constant, SAC, etc.)
+- [ ] Add NPV, IRR, and other TVM functions
+- [ ] Implement TimeMachine for "what if" scenarios
+- [ ] Add support for multiple currencies
 
 ---
 *Last updated: 2025-09-12*

@@ -9,7 +9,14 @@ copyright: Maintained by <a href="https://tomas_correa.com">Florian</a>.
 
 nav:
   - Home: index.md
-  - Modules: modules.md
+  - Examples:
+    - Quick Start: examples/quickstart.md
+    - Money & Precision: examples/money.md
+    - Interest Rates: examples/interest_rates.md
+    - Cash Flow Analysis: examples/cash_flow.md
+    - Loan Analysis: examples/loans.md
+    - Advanced Scenarios: examples/advanced.md
+  - API Reference: modules.md
 plugins:
   - search
   - mkdocstrings
