@@ -32,9 +32,9 @@
 - [x] Implement CashFlowItem class for individual transactions
 - [x] Implement CashFlow class as container for CashFlowItems
 - [x] Implement SQLAlchemy-style query interface for CashFlow filtering
-- [ ] Implement basic Loan class structure
-- [ ] Implement PMT calculation function
-- [ ] Implement amortization schedule generation with daily compounding
+- [x] Implement Loan class with PaymentScheduler separation of concerns
+- [x] Implement PMT calculation function in PaymentScheduler
+- [x] Implement amortization schedule generation with daily compounding
 - [ ] Add helper functions for date generation (monthly, bi-weekly, etc.)
 
 #### Testing & Validation
@@ -42,10 +42,10 @@
 - [x] Create test suite for InterestRate conversions
 - [x] Create test suite for CashFlow operations
 - [x] Create test suite for CashFlowQuery filtering and operations
-- [ ] Create test suite for Loan calculations
-- [ ] Create test suite for schedule generation
-- [ ] Validate PMT calculations against known examples
-- [ ] Test irregular payment schedules
+- [x] Create test suite for Loan calculations
+- [x] Create test suite for PaymentScheduler and schedule generation
+- [x] Validate PMT calculations against known examples
+- [x] Test irregular payment schedules
 
 #### Documentation & Polish
 - [ ] Update README with MoneyWarp description and examples
