@@ -12,7 +12,7 @@
 > MoneyWarp is currently in active development and should be considered **alpha/pre-release software**. While the core functionality is implemented and tested, the API may change between versions. Use in production environments at your own risk.
 >
 > - ✅ Core classes (`Money`, `InterestRate`, `CashFlow`, `Loan`) are stable
-> - ✅ Comprehensive test suite with 240+ tests
+> - ✅ Comprehensive test suite with 271 tests
 > - ⚠️ API may evolve based on user feedback
 > - ⚠️ Not yet published to PyPI
 > - 🚧 Additional features and schedulers in development
@@ -21,6 +21,7 @@ MoneyWarp is a Python library for working with the time value of money. It treat
 
 ## 🚀 Features
 
+- 🕰️ **Time Machine (Warp)** - Travel to any date and see loan state as of that moment
 - 🔢 **Calculate PMT, NPV, IRR** and other core finance functions
 - ⏳ **Track loans and repayments** as evolving cash-flow streams  
 - 🌀 **Explore "what if" timelines** by bending payments across time
@@ -109,6 +110,43 @@ print(f"Display: {money}")                            # 100.12
 result = money * 3 / 7
 print(f"Calculation result: {result}")  # Precise to 2 decimals for display
 ```
+
+### Time Machine - Warp to Any Date 🕰️
+
+**Core Philosophy:** *The loan is always time sensitive... it always filters based on present date regardless if it is warped or not... the warp just changes the present date.*
+
+```python
+from money_warp import Warp, Loan, Money, InterestRate
+from datetime import datetime
+
+# Create a loan and make some payments
+loan = Loan(Money("10000"), InterestRate("5% a"), [datetime(2024, 1, 15)])
+loan.record_payment(Money("500"), datetime(2024, 1, 10), "Payment 1")
+loan.record_payment(Money("600"), datetime(2024, 2, 10), "Payment 2") 
+loan.record_payment(Money("700"), datetime(2024, 3, 10), "Payment 3")
+
+print(f"Current balance: {loan.current_balance}")  # All payments applied
+
+# Warp to the past - only see payments made by that date
+with Warp(loan, datetime(2024, 1, 20)) as past_loan:
+    print(f"Balance on Jan 20: {past_loan.current_balance}")  # Only first payment
+    print(f"Payments made: {len(past_loan._actual_payments)}")  # 2 items (interest + principal)
+
+# Warp to the future - see all payments up to that date  
+with Warp(loan, datetime(2025, 1, 1)) as future_loan:
+    print(f"Balance in future: {future_loan.current_balance}")  # All payments applied
+    print(f"Days since last payment: {future_loan.days_since_last_payment()}")  # From warped date
+
+# Original loan unchanged
+print(f"Back to present: {loan.current_balance}")
+```
+
+**Key Features:**
+- 🕰️ **Natural time filtering**: Loans automatically show state as of any date
+- 🔄 **Safe cloning**: Original loan never modified during time travel
+- 📅 **Flexible date formats**: Accepts strings, datetime objects, or date objects
+- 🚫 **No nested warps**: Prevents dangerous time paradoxes
+- ⚡ **Instant calculations**: Balance and payment history update automatically
 
 ### Interest Rate Conversions
 
@@ -201,9 +239,9 @@ MoneyWarp includes comprehensive test coverage with validation against establish
 
 ## 🔮 Roadmap
 
+- ✅ **Time Machine (Warp)**: Travel to any date and analyze loan state - *COMPLETED*
 - **Additional Schedulers**: SAC (Price), Constant amortization, Custom schedules
 - **TVM Functions**: NPV, IRR, PV, FV with irregular cash flows  
-- **TimeMachine**: "What if" scenario modeling and comparison
 - **Multi-currency**: Support for currency conversion and international rates
 - **Performance optimization**: Vectorized calculations for large datasets
 

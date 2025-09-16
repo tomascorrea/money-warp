@@ -18,6 +18,8 @@ class Loan:
     state management and tracking actual payments.
     """
 
+    datetime_func = datetime
+
     def __init__(
         self,
         principal: Money,
@@ -49,28 +51,52 @@ class Loan:
         self.scheduler = scheduler or PriceScheduler
 
         # State tracking
-        self._actual_payments: List[CashFlowItem] = []
-        self._current_balance = principal
+        self._all_payments: List[CashFlowItem] = []  # All payments ever made
+
+    @property
+    def _actual_payments(self) -> List[CashFlowItem]:
+        """Get actual payments that have occurred up to the current time."""
+        current_time = self.now()
+        return [payment for payment in self._all_payments if payment.datetime <= current_time]
 
     @property
     def current_balance(self) -> Money:
-        """Get the current outstanding balance."""
-        return self._current_balance
+        """Get the current outstanding balance based on payments up to now."""
+        balance = self.principal
+
+        # Apply all principal payments made up to current time
+        for payment in self._actual_payments:
+            if payment.category in ("actual_principal", "principal"):
+                balance = balance - payment.amount
+
+        # Ensure balance doesn't go negative
+        if balance.is_negative():
+            balance = Money.zero()
+
+        return balance
 
     @property
     def is_paid_off(self) -> bool:
         """Check if the loan is fully paid off."""
-        return self._current_balance.is_zero() or self._current_balance.is_negative()
+        return self.current_balance.is_zero() or self.current_balance.is_negative()
 
     @property
     def last_payment_date(self) -> datetime:
         """Get the date of the last payment made, or disbursement date if no payments."""
         return self._actual_payments[-1].datetime if self._actual_payments else self.disbursement_date
 
+    def now(self) -> datetime:
+        """Get the current datetime. Can be overridden for time travel scenarios."""
+        return self.datetime_func.now()
+
+    def date(self) -> datetime:
+        """Get the current datetime. Can be overridden for time travel scenarios."""
+        return self.datetime_func.date()
+
     def days_since_last_payment(self, as_of_date: Optional[datetime] = None) -> int:
-        """Get the number of days since the last payment as of a given date (defaults to now)."""
+        """Get the number of days since the last payment as of a given date (defaults to current time)."""
         if as_of_date is None:
-            as_of_date = datetime.now()
+            as_of_date = self.now()
         return (as_of_date - self.last_payment_date).days
 
     def generate_expected_cash_flow(self) -> CashFlow:
@@ -128,7 +154,7 @@ class Loan:
         daily_rate = self.interest_rate.to_daily().as_decimal
 
         # Calculate interest on current balance
-        accrued_interest = self._current_balance.raw_amount * ((1 + daily_rate) ** Decimal(str(days)) - 1)
+        accrued_interest = self.current_balance.raw_amount * ((1 + daily_rate) ** Decimal(str(days)) - 1)
 
         # Interest portion is the minimum of accrued interest and payment amount
         interest_portion = Money(min(accrued_interest, amount.raw_amount))
@@ -136,7 +162,7 @@ class Loan:
 
         # Record the payment components
         if interest_portion.is_positive():
-            self._actual_payments.append(
+            self._all_payments.append(
                 CashFlowItem(
                     interest_portion,
                     payment_date,
@@ -146,7 +172,7 @@ class Loan:
             )
 
         if principal_portion.is_positive():
-            self._actual_payments.append(
+            self._all_payments.append(
                 CashFlowItem(
                     principal_portion,
                     payment_date,
@@ -155,12 +181,7 @@ class Loan:
                 )
             )
 
-        # Update current balance with only the principal portion
-        self._current_balance = self._current_balance - principal_portion
-
-        # Ensure balance doesn't go negative
-        if self._current_balance.is_negative():
-            self._current_balance = Money.zero()
+        # Balance is now calculated dynamically from payments
 
     def get_actual_cash_flow(self) -> CashFlow:
         """

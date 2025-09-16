@@ -5,6 +5,7 @@ from money_warp.interest_rate import CompoundingFrequency, InterestRate
 from money_warp.loan import Loan
 from money_warp.money import Money
 from money_warp.scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
+from money_warp.warp import InvalidDateError, NestedWarpError, Warp, WarpError
 
 __all__ = [
     "Money",
@@ -18,4 +19,8 @@ __all__ = [
     "PriceScheduler",
     "PaymentSchedule",
     "PaymentScheduleEntry",
+    "Warp",
+    "WarpError",
+    "NestedWarpError",
+    "InvalidDateError",
 ]
