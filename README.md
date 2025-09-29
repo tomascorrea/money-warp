@@ -12,7 +12,7 @@
 > MoneyWarp is currently in active development and should be considered **alpha/pre-release software**. While the core functionality is implemented and tested, the API may change between versions. Use in production environments at your own risk.
 >
 > - ✅ Core classes (`Money`, `InterestRate`, `CashFlow`, `Loan`) are stable
-> - ✅ Comprehensive test suite with 271 tests
+> - ✅ Comprehensive test suite with 348 tests
 > - ⚠️ API may evolve based on user feedback
 > - ⚠️ Not yet published to PyPI
 > - 🚧 Additional features and schedulers in development
@@ -22,13 +22,15 @@ MoneyWarp is a Python library for working with the time value of money. It treat
 ## 🚀 Features
 
 - 🕰️ **Time Machine (Warp)** - Travel to any date and see loan state as of that moment
-- 🔢 **Calculate PMT, NPV, IRR** and other core finance functions
+- 🔢 **Calculate PMT, NPV, IRR, MIRR** and other core finance functions with scipy
 - ⏳ **Track loans and repayments** as evolving cash-flow streams  
 - 🌀 **Explore "what if" timelines** by bending payments across time
 - 💰 **High-precision calculations** using Decimal arithmetic
 - 📊 **Progressive Price Schedules** (French amortization system)
+- 📈 **Inverted Price Schedules** (Constant Amortization System - SAC)
 - 🎯 **Flexible payment scheduling** with irregular due dates
 - 🔒 **Type-safe interest rates** with explicit percentage handling
+- 🧮 **Robust numerics** powered by scipy for IRR and financial calculations
 
 ## 📦 Installation
 
@@ -168,6 +170,57 @@ print(f"As decimal: {annual_rate.as_decimal}")      # 0.0525
 print(f"As percentage: {annual_rate.as_percentage}") # 5.25
 ```
 
+### Present Value and IRR Analysis 🧮
+
+**Powered by scipy for robust numerical calculations:**
+
+```python
+from money_warp import CashFlow, CashFlowItem, Money, InterestRate
+from money_warp import present_value, irr, modified_internal_rate_of_return
+from datetime import datetime
+
+# Create an investment cash flow
+items = [
+    CashFlowItem(Money("-10000"), datetime(2024, 1, 1), "Initial investment", "investment"),
+    CashFlowItem(Money("3000"), datetime(2024, 12, 31), "Year 1 return", "return"),
+    CashFlowItem(Money("4000"), datetime(2025, 12, 31), "Year 2 return", "return"),
+    CashFlowItem(Money("5000"), datetime(2026, 12, 31), "Year 3 return", "return"),
+]
+cash_flow = CashFlow(items)
+
+# Calculate Present Value at 8% discount rate
+discount_rate = InterestRate("8% annual")
+pv = present_value(cash_flow, discount_rate)
+print(f"Present Value at 8%: {pv}")
+
+# Calculate Internal Rate of Return
+investment_irr = irr(cash_flow)
+print(f"IRR: {investment_irr}")  # Should be ~9.7%
+
+# Calculate Modified IRR with different reinvestment assumptions
+finance_rate = InterestRate("10% annual")      # Cost of capital
+reinvestment_rate = InterestRate("6% annual")  # Reinvestment rate
+mirr = modified_internal_rate_of_return(cash_flow, finance_rate, reinvestment_rate)
+print(f"MIRR: {mirr}")
+
+# Loan IRR (borrower's perspective)
+loan = Loan(Money("10000"), InterestRate("5% annual"), [datetime(2024, 12, 31)])
+loan_irr = loan.irr()  # Sugar syntax using loan's expected cash flow
+print(f"Loan IRR: {loan_irr}")  # Should be ~5% (loan's own rate)
+
+# Present Value of loan using different discount rate
+loan_pv = loan.present_value(InterestRate("8% annual"))
+print(f"Loan PV at 8%: {loan_pv}")  # Negative from borrower's perspective
+```
+
+**Key Features:**
+- 🔬 **Scipy-powered**: Uses `scipy.optimize.brentq` for robust root finding
+- 📊 **Automatic bracketing**: Finds IRR solutions reliably across complex cash flows
+- 🕰️ **Time Machine integration**: Use `Warp` to calculate IRR from any date
+- 🍭 **Sugar syntax**: `loan.irr()` and `loan.present_value()` convenience methods
+- 💰 **High precision**: Maintains decimal precision throughout calculations
+```
+
 ## 🏗️ Architecture
 
 MoneyWarp is built around four core concepts:
@@ -201,21 +254,32 @@ State machine for loan analysis with configurable schedulers:
 
 ### Loan Schedules
 - **Progressive Price Schedule** (French amortization system)
+- **Inverted Price Schedule** (Constant Amortization System - SAC)
 - **Fixed payment amounts** with interest/principal allocation
 - **Irregular payment dates** with daily compounding
 - **Bullet loans** (single payment at maturity)
+
+### Time Value of Money Functions
+- **Present Value (PV)**: Discount future cash flows to present value
+- **Net Present Value (NPV)**: Sum of discounted cash flows
+- **Internal Rate of Return (IRR)**: Rate where NPV equals zero
+- **Modified IRR (MIRR)**: IRR with different financing/reinvestment rates
+- **Present Value of Annuities**: Regular payment streams
+- **Present Value of Perpetuities**: Infinite payment streams
+- **Discount Factors**: Time value calculations
 
 ### Financial Functions
 - **PMT**: Payment calculation for loans and annuities
 - **Daily compounding**: Precise interest calculations
 - **Amortization schedules**: Complete payment breakdowns
 - **Balance tracking**: Outstanding principal over time
+- **Robust numerics**: Scipy-powered calculations for complex scenarios
 
 ## 🧪 Testing & Validation
 
 MoneyWarp includes comprehensive test coverage with validation against established financial libraries:
 
-- **254 total tests** with 100% core functionality coverage
+- **348 total tests** with 100% core functionality coverage
 - **Reference validation** against [cartaorobbin/loan-calculator](https://github.com/cartaorobbin/loan-calculator)
 - **Edge case handling**: Zero interest, irregular schedules, high precision
 - **Property-based testing**: Parametrized tests across various scenarios
@@ -240,10 +304,13 @@ MoneyWarp includes comprehensive test coverage with validation against establish
 ## 🔮 Roadmap
 
 - ✅ **Time Machine (Warp)**: Travel to any date and analyze loan state - *COMPLETED*
-- **Additional Schedulers**: SAC (Price), Constant amortization, Custom schedules
-- **TVM Functions**: NPV, IRR, PV, FV with irregular cash flows  
+- ✅ **Inverted Price Scheduler**: Constant Amortization System (SAC) - *COMPLETED*
+- ✅ **Present Value Functions**: PV, NPV, annuities, perpetuities - *COMPLETED*
+- ✅ **IRR Functions**: IRR, MIRR with scipy-powered numerics - *COMPLETED*
+- **Additional Schedulers**: Custom schedules, balloon payments
 - **Multi-currency**: Support for currency conversion and international rates
 - **Performance optimization**: Vectorized calculations for large datasets
+- **Advanced TVM**: Future Value functions, bond pricing, option valuation
 
 ## 🤝 Contributing
 

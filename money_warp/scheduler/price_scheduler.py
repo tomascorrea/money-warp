@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from decimal import Decimal
-from typing import List
+from typing import List, Optional
 
 from ..interest_rate import InterestRate
 from ..money import Money
@@ -23,10 +23,10 @@ class PriceScheduler(BaseScheduler):
 
     def __init__(
         self,
-        principal: Decimal = None,
-        daily_interest_rate: Decimal = None,
-        return_days: List[int] = None,
-        disbursement_date: datetime = None,
+        principal: Optional[Decimal] = None,
+        daily_interest_rate: Optional[Decimal] = None,
+        return_days: Optional[List[int]] = None,
+        disbursement_date: Optional[datetime] = None,
     ):
         """Initialize the scheduler with loan parameters."""
         self.principal = principal
@@ -109,9 +109,17 @@ class PriceScheduler(BaseScheduler):
         Returns:
             The fixed payment amount (PMT)
         """
+        if self.principal is None:
+            raise ValueError("Principal is required for PMT calculation")
+        if self.daily_interest_rate is None:
+            raise ValueError("Daily interest rate is required for PMT calculation")
+        if self.return_days is None:
+            raise ValueError("Return days are required for PMT calculation")
+
         # PMT formula from reference: p / sum(1.0 / (1 + d) ** n for n in return_days)
         denominator = sum(
-            Decimal("1") / (Decimal("1") + self.daily_interest_rate) ** Decimal(str(n)) for n in self.return_days
+            (Decimal("1") / (Decimal("1") + self.daily_interest_rate) ** Decimal(str(n)) for n in self.return_days),
+            Decimal("0"),
         )
 
         if denominator.is_zero():

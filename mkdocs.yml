@@ -15,6 +15,7 @@ nav:
     - Interest Rates: examples/interest_rates.md
     - Cash Flow Analysis: examples/cash_flow.md
     - Time Machine (Warp): examples/time_machine.md
+    - Present Value & IRR: examples/present_value_irr.md
     - Loan Analysis: examples/loans.md
     - Advanced Scenarios: examples/advanced.md
   - API Reference: modules.md

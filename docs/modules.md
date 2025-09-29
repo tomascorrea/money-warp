@@ -87,6 +87,13 @@ MoneyWarp provides a comprehensive set of classes for financial calculations and
       show_source: false
       heading_level: 4
 
+### InvertedPriceScheduler
+::: money_warp.InvertedPriceScheduler
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
 ### BaseScheduler
 ::: money_warp.BaseScheduler
     options:
@@ -123,6 +130,43 @@ MoneyWarp provides a comprehensive set of classes for financial calculations and
 
 ### CompoundingFrequency
 ::: money_warp.CompoundingFrequency
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+## Present Value Functions
+
+### present_value
+::: money_warp.present_value
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### net_present_value
+::: money_warp.net_present_value
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### present_value_of_annuity
+::: money_warp.present_value_of_annuity
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### present_value_of_perpetuity
+::: money_warp.present_value_of_perpetuity
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### discount_factor
+::: money_warp.discount_factor
     options:
       show_root_heading: true
       show_source: false

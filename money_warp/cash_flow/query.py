@@ -1,6 +1,6 @@
 """CashFlowQuery class for SQLAlchemy-style filtering and querying."""
 
-from typing import TYPE_CHECKING, Any, Callable, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Iterator, List, Optional
 
 from ..money import Money
 from .item import CashFlowItem
@@ -21,7 +21,7 @@ class CashFlowQuery:
         """Initialize query with a list of cash flow items."""
         self._items = list(items)  # Work with a copy
 
-    def filter_by(self, predicate: Optional[Callable[[CashFlowItem], bool]] = None, **kwargs) -> "CashFlowQuery":
+    def filter_by(self, predicate: Optional[Callable[[CashFlowItem], bool]] = None, **kwargs: Any) -> "CashFlowQuery":
         """
         Filter items using keyword arguments or a predicate function.
 
@@ -178,7 +178,7 @@ class CashFlowQuery:
         """Number of items in query result."""
         return len(self._items)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[CashFlowItem]:
         """Iterate over query results."""
         return iter(self._items)
 

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List
+from typing import Iterator, List
 
 from ..money import Money
 
@@ -65,7 +65,7 @@ class PaymentSchedule:
         """Get payment entry by index."""
         return self.entries[index]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[PaymentScheduleEntry]:
         """Iterate over payment entries."""
         return iter(self.entries)
 

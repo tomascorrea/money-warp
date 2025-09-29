@@ -91,13 +91,105 @@ class Loan:
 
     def date(self) -> datetime:
         """Get the current datetime. Can be overridden for time travel scenarios."""
-        return self.datetime_func.date()
+        return self.datetime_func.now()
 
     def days_since_last_payment(self, as_of_date: Optional[datetime] = None) -> int:
         """Get the number of days since the last payment as of a given date (defaults to current time)."""
         if as_of_date is None:
             as_of_date = self.now()
         return (as_of_date - self.last_payment_date).days
+
+    def present_value(
+        self, discount_rate: Optional[InterestRate] = None, valuation_date: Optional[datetime] = None
+    ) -> Money:
+        """
+        Calculate the Present Value of the loan's expected cash flows.
+
+        This is a convenience method that generates the expected cash flow
+        and calculates its present value. By default, uses the loan's own
+        interest rate as the discount rate.
+
+        Args:
+            discount_rate: The discount rate to use (defaults to loan's interest rate)
+            valuation_date: Date to discount back to (defaults to current time)
+
+        Returns:
+            The present value of the loan's expected cash flows
+
+        Examples:
+            >>> from money_warp import Loan, Money, InterestRate
+            >>> from datetime import datetime
+            >>>
+            >>> loan = Loan(Money("10000"), InterestRate("5% annual"),
+            ...            [datetime(2024, 1, 15), datetime(2024, 2, 15)])
+            >>>
+            >>> # Get present value using loan's own rate (should be close to zero)
+            >>> pv = loan.present_value()
+            >>> print(f"Loan PV at its own rate: {pv}")
+            >>>
+            >>> # Get present value using different discount rate
+            >>> pv = loan.present_value(InterestRate("8% annual"))
+            >>> print(f"Loan PV at 8%: {pv}")
+        """
+        # Import here to avoid circular import
+        from ..present_value import present_value
+
+        # Use loan's interest rate as default discount rate
+        if discount_rate is None:
+            discount_rate = self.interest_rate
+
+        # Generate expected cash flows
+        expected_cf = self.generate_expected_cash_flow()
+
+        # Use current time as default valuation date
+        if valuation_date is None:
+            valuation_date = self.now()
+
+        # Calculate and return present value
+        return present_value(expected_cf, discount_rate, valuation_date)
+
+    def irr(self, guess: Optional[InterestRate] = None) -> InterestRate:
+        """
+        Calculate the Internal Rate of Return (IRR) of the loan's expected cash flows.
+
+        This is a convenience method that generates the expected cash flow
+        and calculates its IRR. The IRR represents the effective rate of return
+        of the loan from the borrower's perspective.
+
+        Note: To calculate IRR from a specific date, use the Time Machine:
+        with Warp(loan, target_date) as warped_loan:
+            irr = warped_loan.irr()
+
+        Args:
+            guess: Initial guess for IRR (defaults to 10% annual)
+
+        Returns:
+            The internal rate of return of the loan's expected cash flows
+
+        Examples:
+            >>> from money_warp import Loan, Money, InterestRate, Warp
+            >>> from datetime import datetime
+            >>>
+            >>> loan = Loan(Money("10000"), InterestRate("5% annual"),
+            ...            [datetime(2024, 1, 15), datetime(2024, 2, 15)])
+            >>>
+            >>> # Get IRR - should be close to loan's interest rate
+            >>> loan_irr = loan.irr()
+            >>> print(f"Loan IRR: {loan_irr}")
+            >>>
+            >>> # Get IRR from a specific date using Time Machine
+            >>> with Warp(loan, datetime(2024, 1, 10)) as warped_loan:
+            ...     past_irr = warped_loan.irr()
+            >>> print(f"IRR from past perspective: {past_irr}")
+        """
+        # Import here to avoid circular import
+        from ..present_value import internal_rate_of_return
+
+        # Generate expected cash flows (will be time-aware if warped)
+        expected_cf = self.generate_expected_cash_flow()
+
+        # Calculate and return IRR
+        return internal_rate_of_return(expected_cf, guess)
 
     def generate_expected_cash_flow(self) -> CashFlow:
         """

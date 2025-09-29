@@ -4,7 +4,7 @@ import math
 import re
 from decimal import Decimal
 from enum import Enum
-from typing import Union
+from typing import Dict, Optional, Union
 
 
 class CompoundingFrequency(Enum):
@@ -27,10 +27,14 @@ class InterestRate:
     frequencies.
     """
 
+    _decimal_rate: Decimal
+    _percentage_rate: Decimal
+    period: CompoundingFrequency
+
     def __init__(
         self,
         rate: Union[str, Decimal, float],
-        period: CompoundingFrequency = None,
+        period: Optional[CompoundingFrequency] = None,
         as_percentage: bool = False,
     ) -> None:
         """
@@ -44,9 +48,9 @@ class InterestRate:
         if isinstance(rate, str):
             # Parse string format
             parsed_rate = self._parse_rate_string(rate)
-            self._decimal_rate = parsed_rate["decimal_rate"]
-            self._percentage_rate = parsed_rate["percentage_rate"]
-            self.period = parsed_rate["period"]
+            self._decimal_rate = parsed_rate["decimal_rate"]  # type: ignore[assignment]
+            self._percentage_rate = parsed_rate["percentage_rate"]  # type: ignore[assignment]
+            self.period = parsed_rate["period"]  # type: ignore[assignment]
         else:
             # Numeric rate - period is required
             if period is None:
@@ -62,7 +66,7 @@ class InterestRate:
 
             self.period = period
 
-    def _parse_rate_string(self, rate_string: str) -> dict:
+    def _parse_rate_string(self, rate_string: str) -> Dict[str, Union[Decimal, CompoundingFrequency]]:
         """
         Parse rate string format.
 

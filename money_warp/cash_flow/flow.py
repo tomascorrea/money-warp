@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from decimal import Decimal
-from typing import List, Optional, Union
+from typing import Iterator, List, Optional, Union
 
 from ..money import Money
 from .item import CashFlowItem
@@ -71,7 +71,7 @@ class CashFlow:
         """Number of cash flow items."""
         return len(self._items)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[CashFlowItem]:
         """Iterate over cash flow items."""
         return iter(self._items)
 
