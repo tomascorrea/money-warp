@@ -2,6 +2,8 @@
 
 MoneyWarp provides comprehensive Time Value of Money (TVM) functions powered by scipy for robust numerical calculations.
 
+> **💡 Design Philosophy**: MoneyWarp focuses on Present Value calculations because with our Time Machine, you can simply "voyage dans le temps" to any future date and observe values directly. Future Value functions are unnecessary when you can warp to the future! 🕰️
+
 ## Present Value Functions
 
 ### Basic Present Value
@@ -27,18 +29,6 @@ pv = present_value(cash_flow, discount_rate)
 print(f"Present Value: {pv}")
 ```
 
-### Net Present Value (NPV)
-
-NPV is simply an alias for present value - they calculate the same thing:
-
-```python
-from money_warp import net_present_value
-
-# NPV is identical to present_value
-npv = net_present_value(cash_flow, discount_rate)
-print(f"Net Present Value: {npv}")
-assert npv == pv  # They're the same!
-```
 
 ### Present Value of Annuities
 

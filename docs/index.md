@@ -12,7 +12,7 @@
 > MoneyWarp is currently in active development and should be considered **alpha/pre-release software**. While the core functionality is implemented and tested, the API may change between versions. Use in production environments at your own risk.
 >
 > - ✅ Core classes (`Money`, `InterestRate`, `CashFlow`, `Loan`) are stable
-> - ✅ Comprehensive test suite with 348 tests
+> - ✅ Comprehensive test suite with 375 tests
 > - ✅ Time Machine, Present Value, and IRR functions complete
 > - ⚠️ API may evolve based on user feedback
 > - ⚠️ Not yet published to PyPI
@@ -30,6 +30,7 @@ MoneyWarp is a Python library for working with the time value of money. It treat
 - 📊 **Progressive Price Schedules** (French amortization system)
 - 📈 **Inverted Price Schedules** (Constant Amortization System - SAC)
 - 🎯 **Flexible payment scheduling** with irregular due dates
+- 📅 **Easy date generation** with smart month-end handling via python-dateutil
 - 🔒 **Type-safe interest rates** with explicit percentage handling
 - 🧮 **Robust numerics** powered by scipy for IRR and financial calculations
 
@@ -61,6 +62,7 @@ MoneyWarp provides comprehensive TVM functions powered by scipy:
 Explore the comprehensive examples and API reference:
 
 - **[Quick Start](examples/quickstart.md)** - Get up and running quickly
+- **[Date Generation](examples/date_generation.md)** - Smart payment date utilities
 - **[Present Value & IRR](examples/present_value_irr.md)** - TVM functions and analysis
 - **[Time Machine](examples/time_machine.md)** - Travel through time with loans
 - **[Cash Flow Analysis](examples/cash_flow.md)** - Work with cash flow streams
@@ -78,7 +80,7 @@ MoneyWarp is built around core financial concepts:
 
 ## 🧪 Quality & Testing
 
-- **348 comprehensive tests** with 100% core functionality coverage
+- **375 comprehensive tests** with 100% core functionality coverage
 - **Type safety**: Full mypy compatibility with zero type errors
 - **Code quality**: Passes ruff linting and black formatting
 - **Robust numerics**: Scipy-powered calculations for reliability

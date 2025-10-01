@@ -11,7 +11,6 @@ from money_warp import (
     InterestRate,
     Money,
     discount_factor,
-    net_present_value,
     present_value,
     present_value_of_annuity,
     present_value_of_perpetuity,
@@ -70,17 +69,6 @@ def test_present_value_high_discount_rate(simple_cash_flow):
 
     # Higher discount rate should result in lower present value
     assert high_rate_pv < low_rate_pv
-
-
-# Net Present Value tests (alias function)
-def test_net_present_value_equals_present_value(simple_cash_flow):
-    rate = InterestRate("8% annual")
-    valuation_date = datetime(2024, 1, 1)
-
-    pv = present_value(simple_cash_flow, rate, valuation_date)
-    npv = net_present_value(simple_cash_flow, rate, valuation_date)
-
-    assert pv == npv
 
 
 # Present Value of Annuity tests

@@ -13,6 +13,7 @@ packages = [
 [tool.poetry.dependencies]
 python = ">=3.9,<4.0"
 scipy = "^1.10.0"
+python-dateutil = "^2.8.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.2.0"
@@ -21,6 +22,7 @@ deptry = "^0.6.4"
 mypy = "^0.981"
 pre-commit = "^2.20.0"
 tox = "^3.25.1"
+types-python-dateutil = "^2.8.0"
 
 [tool.poetry.group.docs.dependencies]
 mkdocs = "^1.6.1"

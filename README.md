@@ -12,7 +12,7 @@
 > MoneyWarp is currently in active development and should be considered **alpha/pre-release software**. While the core functionality is implemented and tested, the API may change between versions. Use in production environments at your own risk.
 >
 > - ✅ Core classes (`Money`, `InterestRate`, `CashFlow`, `Loan`) are stable
-> - ✅ Comprehensive test suite with 348 tests
+> - ✅ Comprehensive test suite with 375 tests
 > - ⚠️ API may evolve based on user feedback
 > - ⚠️ Not yet published to PyPI
 > - 🚧 Additional features and schedulers in development
@@ -29,6 +29,7 @@ MoneyWarp is a Python library for working with the time value of money. It treat
 - 📊 **Progressive Price Schedules** (French amortization system)
 - 📈 **Inverted Price Schedules** (Constant Amortization System - SAC)
 - 🎯 **Flexible payment scheduling** with irregular due dates
+- 📅 **Easy date generation** with smart month-end handling via python-dateutil
 - 🔒 **Type-safe interest rates** with explicit percentage handling
 - 🧮 **Robust numerics** powered by scipy for IRR and financial calculations
 
@@ -49,16 +50,16 @@ poetry add money-warp
 ### Basic Loan Analysis
 
 ```python
-from datetime import datetime, timedelta
-from money_warp import Money, InterestRate, Loan
+from datetime import datetime
+from money_warp import Money, InterestRate, Loan, generate_monthly_dates
 
 # Create a $10,000 loan at 5% annual interest
 principal = Money("10000.00")
 rate = InterestRate("5% a")  # 5% annually
 
-# Monthly payments for 12 months
-start_date = datetime(2024, 1, 1)
-due_dates = [start_date + timedelta(days=30*i) for i in range(1, 13)]
+# Generate monthly payment dates easily
+start_date = datetime(2024, 1, 15)
+due_dates = generate_monthly_dates(start_date, 12)
 
 # Generate the loan
 loan = Loan(principal, rate, due_dates)
@@ -168,6 +169,57 @@ print(f"As daily: {annual_rate.to_daily()}")
 # Safe decimal/percentage handling
 print(f"As decimal: {annual_rate.as_decimal}")      # 0.0525
 print(f"As percentage: {annual_rate.as_percentage}") # 5.25
+```
+
+### Easy Date Generation 📅
+
+**Simplified with python-dateutil for robust date handling:**
+
+```python
+from datetime import datetime
+from money_warp import (
+    generate_monthly_dates,
+    generate_biweekly_dates,
+    generate_weekly_dates,
+    generate_quarterly_dates,
+    generate_annual_dates,
+    generate_custom_interval_dates,
+)
+
+# Monthly payments (handles end-of-month intelligently)
+monthly_dates = generate_monthly_dates(datetime(2024, 1, 31), 12)
+print(f"Jan 31 → Feb 29 → Mar 29...")  # Smart month-end handling
+
+# Bi-weekly payments (every 14 days)
+biweekly_dates = generate_biweekly_dates(datetime(2024, 1, 1), 26)
+print(f"26 payments over ~1 year")
+
+# Weekly payments
+weekly_dates = generate_weekly_dates(datetime(2024, 1, 1), 52)
+
+# Quarterly payments
+quarterly_dates = generate_quarterly_dates(datetime(2024, 1, 15), 4)
+
+# Annual payments
+annual_dates = generate_annual_dates(datetime(2024, 1, 1), 30)  # 30-year loan
+
+# Custom intervals (every N days)
+custom_dates = generate_custom_interval_dates(datetime(2024, 1, 1), 10, 45)  # Every 45 days
+
+# Use with loans immediately
+loan = Loan(
+    principal=Money("50000"),
+    interest_rate=InterestRate("3.5% annual"),
+    due_dates=monthly_dates  # Just plug in the generated dates!
+)
+```
+
+**Key Features:**
+- 🗓️ **Smart date handling**: Uses `python-dateutil` for robust month arithmetic
+- 📅 **End-of-month intelligence**: Jan 31 → Feb 29 → Mar 29 (maintains consistency)
+- 🎯 **Simple API**: Just `datetime` and `int` parameters, no complex options
+- ⚡ **Instant integration**: Generated dates work directly with `Loan` objects
+- 🔒 **Type-safe**: Full type annotations and validation
 ```
 
 ### Present Value and IRR Analysis 🧮
@@ -307,10 +359,10 @@ MoneyWarp includes comprehensive test coverage with validation against establish
 - ✅ **Inverted Price Scheduler**: Constant Amortization System (SAC) - *COMPLETED*
 - ✅ **Present Value Functions**: PV, NPV, annuities, perpetuities - *COMPLETED*
 - ✅ **IRR Functions**: IRR, MIRR with scipy-powered numerics - *COMPLETED*
+- ✅ **Date Generation Utilities**: Smart payment scheduling - *COMPLETED*
 - **Additional Schedulers**: Custom schedules, balloon payments
-- **Multi-currency**: Support for currency conversion and international rates
 - **Performance optimization**: Vectorized calculations for large datasets
-- **Advanced TVM**: Future Value functions, bond pricing, option valuation
+- **Advanced TVM**: Bond pricing, option valuation
 
 ## 🤝 Contributing
 

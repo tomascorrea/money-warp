@@ -87,26 +87,6 @@ def present_value(cash_flow: CashFlow, discount_rate: InterestRate, valuation_da
     return total_pv
 
 
-def net_present_value(
-    cash_flow: CashFlow, discount_rate: InterestRate, valuation_date: Optional[datetime] = None
-) -> Money:
-    """
-    Calculate the Net Present Value (NPV) of a cash flow stream.
-
-    NPV is simply the Present Value of all cash flows. This function is provided
-    as an alias to present_value() for familiarity with financial terminology.
-
-    Args:
-        cash_flow: The cash flow stream to evaluate
-        discount_rate: The discount rate to use for discounting
-        valuation_date: Date to discount back to (defaults to earliest cash flow date)
-
-    Returns:
-        The net present value of the cash flow stream
-    """
-    return present_value(cash_flow, discount_rate, valuation_date)
-
-
 def present_value_of_annuity(
     payment_amount: Money, interest_rate: InterestRate, periods: int, payment_timing: str = "end"
 ) -> Money:

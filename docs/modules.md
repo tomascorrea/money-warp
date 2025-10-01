@@ -144,13 +144,6 @@ MoneyWarp provides a comprehensive set of classes for financial calculations and
       show_source: false
       heading_level: 4
 
-### net_present_value
-::: money_warp.net_present_value
-    options:
-      show_root_heading: true
-      show_source: false
-      heading_level: 4
-
 ### present_value_of_annuity
 ::: money_warp.present_value_of_annuity
     options:
