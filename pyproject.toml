@@ -29,6 +29,14 @@ mkdocs = "^1.6.1"
 mkdocstrings = "^0.29.1"
 mkdocstrings-python = "^1.16.10"
 
+
+[tool.poetry.group.notebook.dependencies]
+jupyter = "^1.1.1"
+ipywidgets = "^8.1.7"
+plotly = "^6.3.1"
+pandas = "^2.3.3"
+python-dateutil = "^2.9.0.post0"
+
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
@@ -100,5 +108,16 @@ skip_empty = true
 [tool.coverage.run]
 branch = true
 source = ["money_warp"]
+
+[tool.deptry]
+ignore_transitive = [
+    "ipython",
+    "ipywidgets", 
+    "plotly"
+]
+extend_exclude = [
+    "notebooks/",
+    "test_notebook_functionality.py"
+]
 
 

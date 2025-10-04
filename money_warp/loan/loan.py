@@ -119,24 +119,40 @@ class Loan:
         return [payment for payment in self._all_payments if payment.datetime <= current_time]
 
     @property
-    def current_balance(self) -> Money:
-        """Get the current outstanding balance based on payments up to now, including fines."""
-        # Start with principal balance
+    def principal_balance(self) -> Money:
+        """Get the current principal balance (original principal minus principal payments)."""
         balance = self.principal
 
-        # Apply all principal payments made up to current time
-        for payment in self._actual_payments:
-            if payment.category in ("actual_principal", "principal"):
+        # Apply all principal payments made up to current time (respecting warped time)
+        current_time = self.now()
+        for payment in self._all_payments:
+            if payment.datetime <= current_time and payment.category in ("actual_principal", "principal"):
                 balance = balance - payment.amount
-
-        # Add outstanding fines to the balance (only fines that have been explicitly applied)
-        balance = balance + self.outstanding_fines
 
         # Ensure balance doesn't go negative
         if balance.is_negative():
             balance = Money.zero()
 
         return balance
+
+    @property
+    def accrued_interest(self) -> Money:
+        """Get the current accrued interest since last payment."""
+        days = self.days_since_last_payment()
+        daily_rate = self.interest_rate.to_daily().as_decimal
+
+        principal_bal = self.principal_balance
+
+        if principal_bal.is_positive() and days > 0:
+            interest_amount = principal_bal.raw_amount * ((1 + daily_rate) ** Decimal(str(days)) - 1)
+            return Money(interest_amount)
+        else:
+            return Money.zero()
+
+    @property
+    def current_balance(self) -> Money:
+        """Get the current outstanding balance including principal, accrued interest, and fines."""
+        return self.principal_balance + self.accrued_interest + self.outstanding_fines
 
     @property
     def is_paid_off(self) -> bool:
@@ -146,7 +162,9 @@ class Loan:
     @property
     def last_payment_date(self) -> datetime:
         """Get the date of the last payment made, or disbursement date if no payments."""
-        return self._actual_payments[-1].datetime if self._actual_payments else self.disbursement_date
+        current_time = self.now()
+        actual_payments = [payment for payment in self._all_payments if payment.datetime <= current_time]
+        return actual_payments[-1].datetime if actual_payments else self.disbursement_date
 
     @property
     def total_fines(self) -> Money:
@@ -272,24 +290,49 @@ class Loan:
         """
         Check if sufficient payment has been made for a specific due date.
 
-        This is a simplified check - in a more complex system, you might want
-        to track payments against specific due dates more precisely.
+        This checks if the total payment amount (all categories) made on or around
+        the due date meets or exceeds the expected installment payment.
         """
         expected_payment = self.get_expected_payment_amount(due_date)
 
-        # Get all payments made up to the as_of_date that are on or after the due date
-        relevant_payments = [
+        # Get all payments made on the due date (exact date match for installment payments)
+        # This handles the common case where installment payments are made on the due date
+        # Use _all_payments and filter by as_of_date instead of _actual_payments
+        exact_date_payments = [
             payment
-            for payment in self._actual_payments
-            if payment.datetime >= due_date
+            for payment in self._all_payments
+            if payment.datetime.date() == due_date.date()
             and payment.datetime <= as_of_date
-            and payment.category in ("actual_principal", "actual_interest")
+            and payment.category in ("actual_principal", "actual_interest", "actual_fine")
         ]
 
-        total_paid = sum((payment.amount for payment in relevant_payments), Money.zero())
+        total_paid_on_due_date = sum((payment.amount for payment in exact_date_payments), Money.zero())
 
-        # Consider payment made if we've received at least the expected amount
-        return total_paid >= expected_payment
+        # If exact date payment covers the expected amount, consider it paid
+        # Use a small tolerance for floating point precision issues (1 cent)
+        tolerance = Money("0.01")
+        if total_paid_on_due_date >= (expected_payment - tolerance):
+            return True
+
+        # Fallback: check payments made in a reasonable window around the due date
+        # (for cases where payments might be made slightly before or after)
+        window_start = due_date - timedelta(days=3)  # 3 days before
+        window_end = min(as_of_date, due_date + timedelta(days=1))  # up to 1 day after, but not future
+
+        window_payments = [
+            payment
+            for payment in self._all_payments
+            if window_start <= payment.datetime <= window_end
+            and payment.datetime <= as_of_date
+            and payment.category in ("actual_principal", "actual_interest", "actual_fine")
+        ]
+
+        total_paid_in_window = sum((payment.amount for payment in window_payments), Money.zero())
+
+        # Consider payment made if we've received at least the expected amount in the window
+        # Use a small tolerance for floating point precision issues (1 cent)
+        tolerance = Money("0.01")
+        return total_paid_in_window >= (expected_payment - tolerance)
 
     def present_value(
         self, discount_rate: Optional[InterestRate] = None, valuation_date: Optional[datetime] = None
@@ -466,10 +509,10 @@ class Loan:
             days = self.days_since_last_payment(payment_date)
             daily_rate = self.interest_rate.to_daily().as_decimal
 
-            # Calculate interest on principal balance (excluding fines for interest calculation)
+            # Calculate interest on principal balance (time-aware calculation)
             principal_balance = self.principal
-            for payment in self._actual_payments:
-                if payment.category in ("actual_principal", "principal"):
+            for payment in self._all_payments:
+                if payment.datetime <= payment_date and payment.category in ("actual_principal", "principal"):
                     principal_balance = principal_balance - payment.amount
 
             if principal_balance.is_positive():

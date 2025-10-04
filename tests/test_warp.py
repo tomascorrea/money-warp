@@ -114,15 +114,16 @@ def test_warp_filters_future_payments(sample_loan):
 
 
 def test_warp_recalculates_balance_from_filtered_payments(sample_loan):
-    original_balance = sample_loan.current_balance
+    # Capture balance at a specific date for consistent comparison
+    target_date = datetime(2024, 1, 5)
+    with Warp(sample_loan, target_date) as warped_loan:
+        original_balance = warped_loan.current_balance
 
-    # Add a payment
+    # Add a payment after the target date
     sample_loan.record_payment(Money("1000"), datetime(2024, 1, 10), "Payment")
     balance_after_payment = sample_loan.current_balance
 
-    # Warp to before the payment was made
-    target_date = datetime(2024, 1, 5)
-
+    # Warp back to before the payment was made
     with Warp(sample_loan, target_date) as warped_loan:
         # Balance should be back to original (no payments applied)
         assert warped_loan.current_balance == original_balance

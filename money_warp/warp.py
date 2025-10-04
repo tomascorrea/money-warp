@@ -130,14 +130,17 @@ class Warp:
         """
         Apply time warp logic to the cloned loan.
 
-        Simply override the datetime_func to return the warped time.
-        The loan's existing methods will handle everything else correctly.
+        Override the datetime_func to return the warped time and automatically
+        calculate any late payment fines up to the target date.
         """
         if self.warped_loan is None:
             return
 
         # Override the datetime_func to return warped time
         self.warped_loan.datetime_func = WarpedTime(self.target_date)  # type: ignore[assignment]
+
+        # Automatically calculate late payment fines up to the target date
+        self.warped_loan.calculate_late_fines(self.target_date)
 
     def __exit__(
         self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[object]
