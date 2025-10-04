@@ -188,8 +188,8 @@ Now that you've seen the basics, explore the detailed examples:
 - **[Money & Precision](money.md)** - Deep dive into high-precision calculations
 - **[Interest Rates](interest_rates.md)** - Master interest rate conversions
 - **[Cash Flow Analysis](cash_flow.md)** - Advanced cash flow modeling
-- **[Loan Analysis](loans.md)** - Comprehensive loan scenarios
-- **[Advanced Scenarios](advanced.md)** - Complex real-world examples
+- **[Time Machine (Warp)](time_machine.md)** - Time travel for financial modeling
+- **[Present Value & IRR](present_value_irr.md)** - Investment analysis tools
 
 ## Key Concepts Recap
 

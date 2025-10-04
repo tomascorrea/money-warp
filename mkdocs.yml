@@ -17,8 +17,6 @@ nav:
     - Date Generation: examples/date_generation.md
     - Time Machine (Warp): examples/time_machine.md
     - Present Value & IRR: examples/present_value_irr.md
-    - Loan Analysis: examples/loans.md
-    - Advanced Scenarios: examples/advanced.md
   - API Reference: modules.md
 plugins:
   - search
