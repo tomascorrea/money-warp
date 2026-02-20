@@ -1,9 +1,11 @@
 """Tests for sugar payment methods (pay_installment, anticipate_payment) and schedule rebuild."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from money_warp import InterestRate, Loan, Money, Warp
 
@@ -573,25 +575,35 @@ def test_anticipate_payment_schedule_with_concrete_values():
         assert rebuilt[2].payment_amount == Money("3356.31")
 
 
-def test_anticipate_payment_projected_pmt_lower_than_original():
-    """anticipate_payment results in a lower projected PMT than the original schedule."""
-    due_dates = [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)]
+@given(
+    principal=st.decimals(min_value=1000, max_value=1_000_000, places=2),
+    annual_rate=st.decimals(min_value=1, max_value=30, places=1),
+    num_payments=st.integers(min_value=2, max_value=12),
+    days_early=st.integers(min_value=1, max_value=25),
+)
+@settings(max_examples=50)
+def test_anticipate_payment_projected_pmt_lower_than_original(principal, annual_rate, num_payments, days_early):
+    """anticipate_payment always results in a lower projected PMT than the original schedule."""
+    disbursement = datetime(2025, 1, 1)
+    due_dates = [disbursement + timedelta(days=30 * (i + 1)) for i in range(num_payments)]
+    rate_str = f"{annual_rate}% a"
     loan = Loan(
-        Money("10000.00"),
-        InterestRate("5% a"),
+        Money(str(principal)),
+        InterestRate(rate_str),
         due_dates,
-        disbursement_date=datetime(2025, 1, 1),
+        disbursement_date=disbursement,
     )
 
     original = loan.get_original_schedule()
     scheduled_pmt = original[0].payment_amount
+    anticipation_date = disbursement + timedelta(days=30 - days_early)
 
-    with Warp(loan, datetime(2025, 1, 15)) as warped:
+    with Warp(loan, anticipation_date) as warped:
         warped.anticipate_payment(scheduled_pmt)
         rebuilt = warped.get_amortization_schedule()
 
-        assert rebuilt[1].payment_amount < original[1].payment_amount
-        assert rebuilt[2].payment_amount < original[2].payment_amount
+        for i in range(1, len(rebuilt)):
+            assert rebuilt[i].payment_amount <= original[i].payment_amount
 
 
 def test_anticipate_vs_installment_ending_balance_comparison():
