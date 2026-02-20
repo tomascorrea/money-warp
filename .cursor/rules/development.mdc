@@ -94,7 +94,6 @@ pip install package_name
 - **Black**: Code formatting (`poetry run black .`)
 - **isort**: Import sorting (`poetry run isort .`)
 - **Ruff**: Linting and more (`poetry run ruff check .`)
-- **mypy**: Type checking (`poetry run mypy money_warp`)
 
 ### Pre-commit Hooks
 - Install: `poetry run pre-commit install`
@@ -208,7 +207,6 @@ git checkout -b feature/my-feature
 poetry run pytest                    # Run tests
 poetry run black .                   # Format code
 poetry run ruff check .             # Lint code
-poetry run mypy money_warp             # Type check
 
 # Before committing
 poetry run pre-commit run --all-files  # Run all checks
@@ -224,7 +222,6 @@ poetry run pytest --cov=money_warp
 poetry run black --check .
 poetry run isort --check .
 poetry run ruff check .
-poetry run mypy money_warp
 ```
 
 ## Troubleshooting
