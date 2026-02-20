@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Type
 from ..cash_flow import CashFlow, CashFlowItem
 from ..interest_rate import InterestRate
 from ..money import Money
-from ..scheduler import BaseScheduler, PaymentSchedule, PriceScheduler
+from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
 
 
 class Loan:
@@ -52,7 +52,7 @@ class Loan:
         >>> print(f"Fines applied: {fines}")
         >>>
         >>> # Make payment (automatically allocated to fines first)
-        >>> loan.record_payment(Money("500"), datetime(2024, 2, 11))
+        >>> loan._record_payment(Money("500"), datetime(2024, 2, 11))
         >>> print(f"Outstanding fines: {loan.outstanding_fines}")
     """
 
@@ -110,6 +110,7 @@ class Loan:
 
         # State tracking
         self._all_payments: List[CashFlowItem] = []  # All payments ever made
+        self._actual_schedule_entries: List[PaymentScheduleEntry] = []  # Actual payment history as schedule entries
         self.fines_applied: Dict[datetime, Money] = {}  # Track fines applied per due date
 
     @property
@@ -203,7 +204,10 @@ class Loan:
 
     def get_expected_payment_amount(self, due_date: datetime) -> Money:
         """
-        Get the expected payment amount for a specific due date.
+        Get the expected payment amount for a specific due date from the original schedule.
+
+        This always references the original loan terms (not the rebuilt schedule),
+        which is important for late fee calculations.
 
         Args:
             due_date: The due date to get the expected payment for
@@ -217,15 +221,12 @@ class Loan:
         if due_date not in self.due_dates:
             raise ValueError(f"Due date {due_date} is not in loan's due dates")
 
-        # Get the amortization schedule
-        schedule = self.get_amortization_schedule()
+        schedule = self.get_original_schedule()
 
-        # Find the entry for this due date
         for entry in schedule:
             if entry.due_date == due_date:
                 return entry.payment_amount
 
-        # This shouldn't happen if due_date is valid, but just in case
         raise ValueError(f"Could not find payment amount for due date {due_date}")
 
     def is_payment_late(self, due_date: datetime, as_of_date: Optional[datetime] = None) -> bool:
@@ -442,8 +443,8 @@ class Loan:
         # Add disbursement
         items.append(CashFlowItem(self.principal, self.disbursement_date, "Loan disbursement", "disbursement"))
 
-        # Generate schedule using our method
-        schedule = self.get_amortization_schedule()
+        # Use the original schedule for expected cash flow
+        schedule = self.get_original_schedule()
 
         # Convert schedule entries to CashFlow items
         for entry in schedule:
@@ -468,31 +469,17 @@ class Loan:
 
         return CashFlow(items)
 
-    def record_payment(self, amount: Money, payment_date: datetime, description: Optional[str] = None) -> None:
+    def _compute_interest_snapshot(self, payment_date: datetime, interest_date: datetime) -> tuple:
         """
-        Record an actual payment made on the loan with automatic allocation.
+        Snapshot interest parameters before mutating _all_payments.
 
-        Payment allocation priority: Fines → Interest → Principal
-
-        Args:
-            amount: Total payment amount (positive value)
-            payment_date: When the payment was made
-            description: Optional description of the payment
+        Returns (days, principal_balance) where days is the accrual period
+        from the last payment to interest_date, and principal_balance is
+        the outstanding principal as of payment_date.
         """
-        if amount.is_negative() or amount.is_zero():
-            raise ValueError("Payment amount must be positive")
-
-        # Calculate any new late fines first
-        self.calculate_late_fines(payment_date)
-
-        remaining_amount = amount
-
-        # Pre-compute interest parameters using payment_date as context (not self.now()).
-        # This must happen before step 1 mutates _all_payments, and uses payment_date
-        # filtering so that previously-recorded future payments are correctly visible.
         prior_items = [p for p in self._all_payments if p.datetime <= payment_date]
         last_pay_date = prior_items[-1].datetime if prior_items else self.disbursement_date
-        days = (payment_date - last_pay_date).days
+        days = (interest_date - last_pay_date).days
 
         principal_balance = self.principal
         for p in self._all_payments:
@@ -501,52 +488,202 @@ class Loan:
         if principal_balance.is_negative():
             principal_balance = Money.zero()
 
-        # Step 1: Allocate to outstanding fines first
+        return days, principal_balance
+
+    def _allocate_payment(
+        self,
+        amount: Money,
+        payment_date: datetime,
+        days: int,
+        principal_balance: Money,
+        description: Optional[str],
+    ) -> tuple:
+        """
+        Allocate a payment across fines, interest, and principal.
+
+        Returns (fine_paid, interest_paid, principal_paid, remaining_amount).
+        Appends CashFlowItems to _all_payments as a side effect.
+        """
+        remaining = amount
+        label = description or f"Payment on {payment_date.date()}"
+
+        fine_paid = Money.zero()
         outstanding_fines = self.outstanding_fines
-        if outstanding_fines.is_positive() and remaining_amount.is_positive():
-            fine_payment = Money(min(outstanding_fines.raw_amount, remaining_amount.raw_amount))
+        if outstanding_fines.is_positive() and remaining.is_positive():
+            fine_paid = Money(min(outstanding_fines.raw_amount, remaining.raw_amount))
+            self._all_payments.append(CashFlowItem(fine_paid, payment_date, f"Fine payment - {label}", "actual_fine"))
+            remaining = remaining - fine_paid
 
-            self._all_payments.append(
-                CashFlowItem(
-                    fine_payment,
-                    payment_date,
-                    f"Fine payment - {description or f'Payment on {payment_date.date()}'}",
-                    "actual_fine",
-                )
-            )
-
-            remaining_amount = remaining_amount - fine_payment
-
-        # Step 2: Allocate to accrued interest (uses pre-computed days and principal_balance)
-        if remaining_amount.is_positive():
+        interest_paid = Money.zero()
+        if remaining.is_positive() and principal_balance.is_positive() and days > 0:
             daily_rate = self.interest_rate.to_daily().as_decimal
-
-            if principal_balance.is_positive():
-                accrued_interest = principal_balance.raw_amount * ((1 + daily_rate) ** Decimal(str(days)) - 1)
-                interest_portion = Money(min(accrued_interest, remaining_amount.raw_amount))
-
-                if interest_portion.is_positive():
-                    self._all_payments.append(
-                        CashFlowItem(
-                            interest_portion,
-                            payment_date,
-                            f"Interest portion - {description or f'Payment on {payment_date.date()}'}",
-                            "actual_interest",
-                        )
-                    )
-
-                    remaining_amount = remaining_amount - interest_portion
-
-        # Step 3: Allocate remaining amount to principal
-        if remaining_amount.is_positive():
-            self._all_payments.append(
-                CashFlowItem(
-                    remaining_amount,
-                    payment_date,
-                    f"Principal portion - {description or f'Payment on {payment_date.date()}'}",
-                    "actual_principal",
+            accrued = principal_balance.raw_amount * ((1 + daily_rate) ** Decimal(str(days)) - 1)
+            interest_paid = Money(min(accrued, remaining.raw_amount))
+            if interest_paid.is_positive():
+                self._all_payments.append(
+                    CashFlowItem(interest_paid, payment_date, f"Interest portion - {label}", "actual_interest")
                 )
+                remaining = remaining - interest_paid
+
+        principal_paid = Money.zero()
+        if remaining.is_positive():
+            principal_paid = remaining
+            self._all_payments.append(
+                CashFlowItem(principal_paid, payment_date, f"Principal portion - {label}", "actual_principal")
             )
+
+        return fine_paid, interest_paid, principal_paid
+
+    def _record_payment(
+        self,
+        amount: Money,
+        payment_date: datetime,
+        interest_date: Optional[datetime] = None,
+        processing_date: Optional[datetime] = None,
+        description: Optional[str] = None,
+    ) -> None:
+        """
+        Record an actual payment made on the loan with automatic allocation.
+
+        This is the low-level payment method. Prefer the sugar methods
+        pay_installment() and anticipate_payment() for typical use cases.
+
+        Payment allocation priority: Fines -> Interest -> Principal
+
+        Args:
+            amount: Total payment amount (positive value)
+            payment_date: When the money moved
+            interest_date: Cutoff date for interest accrual calculation.
+                Defaults to payment_date (borrower gets discount for early payment).
+            processing_date: When the system recorded the event (audit trail).
+                Defaults to self.now().
+            description: Optional description of the payment
+        """
+        if amount.is_negative() or amount.is_zero():
+            raise ValueError("Payment amount must be positive")
+
+        if interest_date is None:
+            interest_date = payment_date
+        if processing_date is None:
+            processing_date = self.now()
+
+        self.calculate_late_fines(payment_date)
+
+        days, principal_balance = self._compute_interest_snapshot(payment_date, interest_date)
+        fine_paid, interest_paid, principal_paid = self._allocate_payment(
+            amount, payment_date, days, principal_balance, description
+        )
+
+        ending_balance = principal_balance - principal_paid
+        if ending_balance.is_negative():
+            ending_balance = Money.zero()
+
+        payment_number = len(self._actual_schedule_entries) + 1
+        self._actual_schedule_entries.append(
+            PaymentScheduleEntry(
+                payment_number=payment_number,
+                due_date=payment_date,
+                days_in_period=days,
+                beginning_balance=principal_balance,
+                payment_amount=amount - fine_paid,
+                principal_payment=principal_paid,
+                interest_payment=interest_paid,
+                ending_balance=ending_balance,
+            )
+        )
+
+    def record_payment(self, amount: Money, payment_date: datetime, description: Optional[str] = None) -> None:
+        """
+        Record an actual payment made on the loan with automatic allocation.
+
+        This is a convenience wrapper around _record_payment that uses payment_date
+        as the interest accrual date (borrower gets discount for early payment).
+
+        Payment allocation priority: Fines -> Interest -> Principal
+
+        Args:
+            amount: Total payment amount (positive value)
+            payment_date: When the payment was made (also used for interest accrual)
+            description: Optional description of the payment
+        """
+        self._record_payment(amount, payment_date, description=description)
+
+    def pay_installment(self, amount: Money, description: Optional[str] = None) -> None:
+        """
+        Pay the next installment. Interest is calculated up to the next due date,
+        so early payments do NOT receive an interest discount.
+
+        This is the most common payment method. The payment is recorded at self.now()
+        but interest accrues for the full period up to the next unpaid due date.
+
+        Args:
+            amount: Total payment amount (positive value)
+            description: Optional description of the payment
+        """
+        payment_date = self.now()
+        interest_date = self._next_unpaid_due_date()
+        self._record_payment(
+            amount,
+            payment_date=payment_date,
+            interest_date=interest_date,
+            description=description,
+        )
+
+    def anticipate_payment(self, amount: Money, description: Optional[str] = None) -> None:
+        """
+        Make an early payment with interest discount. Interest is calculated only
+        up to self.now(), so the borrower pays less interest for fewer elapsed days.
+
+        Args:
+            amount: Total payment amount (positive value)
+            description: Optional description of the payment
+        """
+        payment_date = self.now()
+        self._record_payment(
+            amount,
+            payment_date=payment_date,
+            interest_date=payment_date,
+            description=description,
+        )
+
+    def _covered_due_date_count(self) -> int:
+        """
+        Determine how many due dates have been covered by comparing the remaining
+        principal against the original schedule's ending_balance milestones.
+
+        A due date is considered covered when the remaining principal is at or below
+        the ending balance that the original schedule expected after that installment.
+        """
+        if not self._actual_schedule_entries:
+            return 0
+        remaining = self._actual_schedule_entries[-1].ending_balance
+        original = self.get_original_schedule()
+        covered = 0
+        for entry in original:
+            if remaining <= entry.ending_balance:
+                covered += 1
+            else:
+                break
+        return covered
+
+    def _next_unpaid_due_date(self) -> datetime:
+        """
+        Find the next due date that hasn't been fully paid yet.
+
+        Uses cumulative principal comparison against the original schedule
+        to determine coverage, so partial payments, overpayments, and
+        multiple anticipations are handled correctly.
+
+        Returns:
+            The next unpaid due date
+
+        Raises:
+            ValueError: If all due dates have been paid
+        """
+        covered = self._covered_due_date_count()
+        if covered >= len(self.due_dates):
+            raise ValueError("All due dates have been paid")
+        return self.due_dates[covered]
 
     def get_actual_cash_flow(self) -> CashFlow:
         """
@@ -583,16 +720,71 @@ class Loan:
 
         return CashFlow(items)
 
-    def get_amortization_schedule(self) -> PaymentSchedule:
+    def get_original_schedule(self) -> PaymentSchedule:
         """
-        Get detailed amortization schedule using the scheduler.
+        Get the original amortization schedule as calculated at loan origination.
+
+        This always returns the static schedule based on the original loan terms,
+        ignoring any payments that have been made.
 
         Returns:
-            PaymentSchedule with all payment details
+            PaymentSchedule based on original loan parameters
         """
         return self.scheduler.generate_schedule(
             self.principal, self.interest_rate, self.due_dates, self.disbursement_date
         )
+
+    def get_amortization_schedule(self) -> PaymentSchedule:
+        """
+        Get the current amortization schedule merging actual past with projected future.
+
+        Returns a clean, ordered list: recorded payment entries first, then
+        projected entries recalculated from the remaining principal and
+        remaining due dates with a new PMT.
+
+        If no payments have been made, returns the original schedule.
+
+        Returns:
+            PaymentSchedule with past entries followed by projected future entries
+        """
+        if not self._actual_schedule_entries:
+            return self.get_original_schedule()
+
+        actual_entries = list(self._actual_schedule_entries)
+        covered = self._covered_due_date_count()
+
+        remaining_due_dates = self.due_dates[covered:]
+        if not remaining_due_dates:
+            return PaymentSchedule(entries=actual_entries)
+
+        remaining_principal = actual_entries[-1].ending_balance
+        if remaining_principal.is_zero() or remaining_principal.is_negative():
+            return PaymentSchedule(entries=actual_entries)
+
+        last_payment_date = actual_entries[-1].due_date
+        projected_schedule = self.scheduler.generate_schedule(
+            remaining_principal,
+            self.interest_rate,
+            remaining_due_dates,
+            last_payment_date,
+        )
+
+        projected_entries = []
+        for entry in projected_schedule:
+            projected_entries.append(
+                PaymentScheduleEntry(
+                    payment_number=len(actual_entries) + entry.payment_number,
+                    due_date=entry.due_date,
+                    days_in_period=entry.days_in_period,
+                    beginning_balance=entry.beginning_balance,
+                    payment_amount=entry.payment_amount,
+                    principal_payment=entry.principal_payment,
+                    interest_payment=entry.interest_payment,
+                    ending_balance=entry.ending_balance,
+                )
+            )
+
+        return PaymentSchedule(entries=actual_entries + projected_entries)
 
     def __str__(self) -> str:
         """String representation of the loan."""
