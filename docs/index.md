@@ -12,7 +12,7 @@
 > MoneyWarp is currently in active development and should be considered **alpha/pre-release software**. While the core functionality is implemented and tested, the API may change between versions. Use in production environments at your own risk.
 >
 > - ✅ Core classes (`Money`, `InterestRate`, `CashFlow`, `Loan`) are stable
-> - ✅ Comprehensive test suite with 375 tests
+> - ✅ Comprehensive test suite with 465 tests
 > - ✅ Time Machine, Present Value, and IRR functions complete
 > - ⚠️ API may evolve based on user feedback
 > - ⚠️ Not yet published to PyPI
@@ -33,6 +33,8 @@ MoneyWarp is a Python library for working with the time value of money. It treat
 - 📅 **Easy date generation** with smart month-end handling via python-dateutil
 - 🔒 **Type-safe interest rates** with explicit percentage handling
 - 🧮 **Robust numerics** powered by scipy for IRR and financial calculations
+- ⚖️ **Late fee engine** with fines, mora interest, and configurable grace periods
+- 🍭 **Sugar payment methods** — `pay_installment()` and `anticipate_payment()`
 
 ## 🧮 Time Value of Money Functions
 
@@ -62,10 +64,13 @@ MoneyWarp provides comprehensive TVM functions powered by scipy:
 Explore the comprehensive examples and API reference:
 
 - **[Quick Start](examples/quickstart.md)** - Get up and running quickly
+- **[Money](examples/money.md)** - High-precision monetary amounts
+- **[Interest Rates](examples/interest_rates.md)** - Type-safe rate handling and conversions
 - **[Date Generation](examples/date_generation.md)** - Smart payment date utilities
 - **[Present Value & IRR](examples/present_value_irr.md)** - TVM functions and analysis
 - **[Time Machine](examples/time_machine.md)** - Travel through time with loans
 - **[Cash Flow Analysis](examples/cash_flow.md)** - Work with cash flow streams
+- **[Late Fees & Payments](examples/late_fees.md)** - Fines, mora interest, and payment methods
 - **[API Reference](modules.md)** - Complete function documentation
 
 ## 🏗️ Architecture
@@ -80,7 +85,7 @@ MoneyWarp is built around core financial concepts:
 
 ## 🧪 Quality & Testing
 
-- **375 comprehensive tests** with 100% core functionality coverage
+- **465 comprehensive tests** with 100% core functionality coverage
 - **Type safety**: Full mypy compatibility with zero type errors
 - **Code quality**: Passes ruff linting and black formatting
 - **Robust numerics**: Scipy-powered calculations for reliability

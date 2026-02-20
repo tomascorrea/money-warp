@@ -164,3 +164,70 @@ MoneyWarp provides a comprehensive set of classes for financial calculations and
       show_root_heading: true
       show_source: false
       heading_level: 4
+
+## IRR Functions
+
+### internal_rate_of_return
+::: money_warp.internal_rate_of_return
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### irr
+::: money_warp.irr
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### modified_internal_rate_of_return
+::: money_warp.modified_internal_rate_of_return
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+## Date Generation Utilities
+
+### generate_monthly_dates
+::: money_warp.generate_monthly_dates
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### generate_biweekly_dates
+::: money_warp.generate_biweekly_dates
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### generate_weekly_dates
+::: money_warp.generate_weekly_dates
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### generate_quarterly_dates
+::: money_warp.generate_quarterly_dates
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### generate_annual_dates
+::: money_warp.generate_annual_dates
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### generate_custom_interval_dates
+::: money_warp.generate_custom_interval_dates
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4

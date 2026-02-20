@@ -17,8 +17,8 @@ money_warp/
 │   └── loan.py            # Loan state machine
 ├── scheduler/
 │   ├── base.py            # BaseScheduler (abstract)
-│   ├── price.py           # PriceScheduler (French amortization)
-│   └── inverted_price.py  # InvertedPriceScheduler (SAC)
+│   ├── price_scheduler.py           # PriceScheduler (French amortization)
+│   └── inverted_price_scheduler.py  # InvertedPriceScheduler (SAC)
 ├── present_value.py       # PV, NPV, IRR, MIRR, discount_factor
 ├── warp.py                # Warp context manager + WarpedTime
 └── date_utils.py          # Date generation utilities
@@ -53,6 +53,14 @@ This keeps the source of truth minimal and avoids stale derived data.
 ### Flexible Scheduling via Due Dates
 
 Rather than encoding "monthly" or "bi-weekly" into the loan, the constructor accepts `due_dates: List[datetime]`. This supports irregular schedules, seasonal payments, and custom arrangements. Convenience functions in `date_utils.py` generate common date patterns.
+
+### Three-Date Payment Model
+
+Every recorded payment carries three dates: `payment_date` (when money moved), `interest_date` (cutoff for interest accrual), and `processing_date` (audit trail). Decoupling `interest_date` from `payment_date` enables early-payment discounts (fewer interest days) and mora interest on late payments (extra interest days beyond the due date). Sugar methods (`pay_installment`, `anticipate_payment`) set these dates automatically from `self.now()`.
+
+### Payment Allocation and Late Fees
+
+All payments allocate funds in strict priority: outstanding fines first, then accrued interest, then principal. Late payments trigger two costs: a flat fine (percentage of the missed installment, calculated from the original schedule) and mora interest (daily-compounded interest for the extra days beyond the due date). A configurable `grace_period_days` delays fine application. The `fines_applied` dict prevents duplicate fines for the same due date.
 
 ### Time Awareness via Function Replacement
 

@@ -12,7 +12,7 @@
 > MoneyWarp is currently in active development and should be considered **alpha/pre-release software**. While the core functionality is implemented and tested, the API may change between versions. Use in production environments at your own risk.
 >
 > - ✅ Core classes (`Money`, `InterestRate`, `CashFlow`, `Loan`) are stable
-> - ✅ Comprehensive test suite with 375 tests
+> - ✅ Comprehensive test suite with 465 tests
 > - ⚠️ API may evolve based on user feedback
 > - ⚠️ Not yet published to PyPI
 > - 🚧 Additional features and schedulers in development
@@ -32,6 +32,8 @@ MoneyWarp is a Python library for working with the time value of money. It treat
 - 📅 **Easy date generation** with smart month-end handling via python-dateutil
 - 🔒 **Type-safe interest rates** with explicit percentage handling
 - 🧮 **Robust numerics** powered by scipy for IRR and financial calculations
+- ⚖️ **Late fee engine** with fines, mora interest, and configurable grace periods
+- 🍭 **Sugar payment methods** — `pay_installment()` and `anticipate_payment()` for natural workflows
 
 ## 📦 Installation
 
@@ -89,12 +91,12 @@ items = [
 
 # Analyze the cash flow
 cash_flow = CashFlow(items)
-print(f"Net cash flow: {cash_flow.sum()}")
-print(f"Total deposits: {cash_flow.query.filter_by(category='deposit').sum()}")
+print(f"Net cash flow: {cash_flow.net_present_value()}")
+print(f"Total deposits: {cash_flow.query.filter_by(category='deposit').sum_amounts()}")
 
 # Filter by date range
 recent = cash_flow.query.filter_by(datetime__gte=datetime(2024, 2, 1))
-print(f"Recent activity: {recent.sum()}")
+print(f"Recent activity: {recent.sum_amounts()}")
 ```
 
 ### High-Precision Money Handling
@@ -293,12 +295,14 @@ Type-safe interest rate handling with explicit conversions:
 Container for cash flow analysis with SQLAlchemy-style querying:
 - **CashFlowItem**: Individual transactions with amount, date, description, category
 - **CashFlow**: Collection with filtering, summing, and analysis methods
-- **Query interface**: `cashflow.query.filter_by(category='interest').sum()`
+- **Query interface**: `cashflow.query.filter_by(category='interest').sum_amounts()`
 
 ### 🏦 Loan
 State machine for loan analysis with configurable schedulers:
 - **Expected vs Actual**: Compare planned payments with reality
-- **Payment allocation**: Automatic interest/principal calculation  
+- **Payment allocation**: Fines → Interest → Principal priority
+- **Late fee engine**: Automatic fines and mora interest for overdue payments
+- **Sugar methods**: `pay_installment()` and `anticipate_payment()` for natural workflows
 - **Flexible scheduling**: Any list of due dates, not just monthly
 - **Multiple schedulers**: PMT-based, fixed payment, custom algorithms
 
@@ -331,7 +335,7 @@ State machine for loan analysis with configurable schedulers:
 
 MoneyWarp includes comprehensive test coverage with validation against established financial libraries:
 
-- **348 total tests** with 100% core functionality coverage
+- **465 total tests** with 100% core functionality coverage
 - **Reference validation** against [cartaorobbin/loan-calculator](https://github.com/cartaorobbin/loan-calculator)
 - **Edge case handling**: Zero interest, irregular schedules, high precision
 - **Property-based testing**: Parametrized tests across various scenarios
@@ -360,6 +364,8 @@ MoneyWarp includes comprehensive test coverage with validation against establish
 - ✅ **Present Value Functions**: PV, NPV, annuities, perpetuities - *COMPLETED*
 - ✅ **IRR Functions**: IRR, MIRR with scipy-powered numerics - *COMPLETED*
 - ✅ **Date Generation Utilities**: Smart payment scheduling - *COMPLETED*
+- ✅ **Late Fee Engine**: Fines, mora interest, grace periods - *COMPLETED*
+- ✅ **Payment Sugar Methods**: `pay_installment()`, `anticipate_payment()` - *COMPLETED*
 - **Additional Schedulers**: Custom schedules, balloon payments
 - **Performance optimization**: Vectorized calculations for large datasets
 - **Advanced TVM**: Bond pricing, option valuation
