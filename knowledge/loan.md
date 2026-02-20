@@ -1,6 +1,6 @@
 # Loan
 
-The `Loan` class is a state machine that models a personal loan with daily-compounding interest, configurable schedulers, and late-payment fines. It tracks recorded payments and computes balances, cash flows, and amortization schedules on demand.
+The `Loan` class is a state machine that models a personal loan with daily-compounding interest, configurable schedulers, late-payment fines, and mora interest. It tracks recorded payments and computes balances, cash flows, and amortization schedules on demand.
 
 ## Constructor Parameters
 
@@ -80,12 +80,29 @@ Fixed total payment per period. Interest portion decreases and principal portion
 
 Fixed principal payment per period (`principal / number_of_payments`). Interest is computed on the outstanding balance, so total payment decreases over time. The last payment adjusts to ensure zero final balance.
 
-## Late Payment Fines
+## Late Payments
+
+A late payment incurs two costs, both handled automatically by `pay_installment` and `_record_payment`:
+
+1. **Fines** — a flat percentage of the missed installment amount.
+2. **Mora interest** — extra daily-compounded interest for the days beyond the due date.
+
+### Fines
 
 - `calculate_late_fines(as_of_date)` scans all due dates up to `as_of_date`, applies one fine per missed due date (never duplicated), and stores them in `fines_applied: Dict[datetime, Money]`.
 - `is_payment_late(due_date, as_of_date)` respects `grace_period_days`.
 - `is_paid_off` requires zero principal **and** zero outstanding fines.
 - Fine amounts are calculated from the **original** schedule (`get_original_schedule`), not the rebuilt schedule.
+
+### Mora Interest
+
+When `pay_installment` is called after the due date, `interest_date = max(self.now(), next_due_date)` causes interest to accrue beyond the due date up to the actual payment date. The borrower pays more interest for the additional late days.
+
+### Late Overpayment
+
+A large late payment flows through the standard allocation pipeline (fines -> interest -> principal) with no special-casing. The excess principal naturally covers multiple installments because `_covered_due_date_count()` compares the remaining balance against original schedule milestones.
+
+Example: $10k loan, 3 monthly installments at 6%, borrower misses installment 1 and pays $7,000 two weeks late. Allocation: ~$67 fine, ~$72 mora interest (45 days), ~$6,861 principal. The principal reduction covers installments 1 and 2, leaving only installment 3 projected.
 
 ## Cash Flow Generation
 
