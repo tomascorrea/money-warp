@@ -16,7 +16,7 @@ def loan_with_all_installments_paid():
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2025, 10, 2))
 
-    schedule = loan.get_amortization_schedule()
+    schedule = loan.get_original_schedule()
     for entry in schedule:
         loan.record_payment(entry.payment_amount, entry.due_date)
 
