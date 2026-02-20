@@ -487,6 +487,20 @@ class Loan:
 
         remaining_amount = amount
 
+        # Pre-compute interest parameters using payment_date as context (not self.now()).
+        # This must happen before step 1 mutates _all_payments, and uses payment_date
+        # filtering so that previously-recorded future payments are correctly visible.
+        prior_items = [p for p in self._all_payments if p.datetime <= payment_date]
+        last_pay_date = prior_items[-1].datetime if prior_items else self.disbursement_date
+        days = (payment_date - last_pay_date).days
+
+        principal_balance = self.principal
+        for p in self._all_payments:
+            if p.datetime <= payment_date and p.category in ("actual_principal", "principal"):
+                principal_balance = principal_balance - p.amount
+        if principal_balance.is_negative():
+            principal_balance = Money.zero()
+
         # Step 1: Allocate to outstanding fines first
         outstanding_fines = self.outstanding_fines
         if outstanding_fines.is_positive() and remaining_amount.is_positive():
@@ -503,17 +517,9 @@ class Loan:
 
             remaining_amount = remaining_amount - fine_payment
 
-        # Step 2: Allocate to accrued interest
+        # Step 2: Allocate to accrued interest (uses pre-computed days and principal_balance)
         if remaining_amount.is_positive():
-            # Calculate accrued interest since last payment or disbursement
-            days = self.days_since_last_payment(payment_date)
             daily_rate = self.interest_rate.to_daily().as_decimal
-
-            # Calculate interest on principal balance (time-aware calculation)
-            principal_balance = self.principal
-            for payment in self._all_payments:
-                if payment.datetime <= payment_date and payment.category in ("actual_principal", "principal"):
-                    principal_balance = principal_balance - payment.amount
 
             if principal_balance.is_positive():
                 accrued_interest = principal_balance.raw_amount * ((1 + daily_rate) ** Decimal(str(days)) - 1)

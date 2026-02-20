@@ -1,7 +1,5 @@
 ---
-description: 
-globs: 
-alwaysApply: false
+alwaysApply: true
 ---
 # Development Rules for money-warp
 
@@ -18,29 +16,37 @@ This document contains development guidelines and rules for working on the **mon
 - **Review existing code**: Understand how your changes fit into the existing codebase
 - **Break down complex tasks**: Split large features into smaller, manageable pieces
 
-### 2. Task Management with Planning Files ⭐
-**ALWAYS maintain planning files to track what we did.**
+### 2. Knowledge Directory ⭐
+**Maintain `knowledge/` as living documentation of features, architecture, and hard-won learnings.**
 
-- **Organized structure**: Use `planning/` directory for all planning files
-- **Active vs Backlog**: Use `planning/general.md` for CURRENT tasks being worked on, `planning/backlog.md` for planned future tasks
-- **Task Flow**: Move tasks from `planning/backlog.md` → `planning/general.md` → `planning/done.md` as they progress
-- **Focus Management**: Keep `planning/general.md` focused (max 1-3 active task groups)
-- **Create/update files**: Before starting any work, document what you plan to do in the appropriate planning file
-- **Track progress**: Update the files as you complete tasks
-- **Document decisions**: Record important decisions and why they were made
-- **Include completion status**: Mark tasks as TODO, IN PROGRESS, DONE, or BLOCKED
-- **Reference issues/PRs**: Link to relevant GitHub issues or pull requests
+The `knowledge/` directory contains one file per feature area. Each file describes the **current state** of that area — its design, API surface, key decisions, and gotchas.
+
+- **Organization**: One markdown file per feature area (e.g., `loan.md`, `warp.md`, `tvm.md`)
+- **Format**: Each file follows a consistent structure: Overview, Design Decisions, API Surface, Key Learnings/Gotchas
+- **Living documents**: Rewrite sections to reflect the current state — these are not append-only changelogs
+
+**When to update:**
+- After completing a new feature — create or extend the relevant file
+- After fixing a significant bug that revealed something non-obvious — add to Key Learnings
+- After making an architectural change — update the affected files
+
+**What does NOT belong here:**
+- Task lists, progress tracking, or backlog items (use Cursor's built-in planning)
+- Changelogs or timestamps (knowledge files describe the present, not the history)
+- Documentation for end users (that lives in `docs/`)
 
 ## Project Structure Guidelines
 
-### Planning Directory Structure
+### Directory Structure
 ```
 money-warp/
-├── planning/
-│   ├── general.md      # Current active tasks (max 1-3 task groups)
-│   ├── backlog.md     # Future planned tasks
-│   └── done.md        # Completed tasks archive
-├── money_warp/    # Main package code
+├── knowledge/         # Living feature documentation (see Core Principles §2)
+│   ├── architecture.md   # Overall design, component relationships
+│   ├── loan.md           # Loan model, schedulers, late fees
+│   ├── warp.md           # Time Machine context manager
+│   ├── tvm.md            # Present value, IRR, MIRR
+│   └── environment.md    # Dev environment setup
+├── money_warp/        # Main package code
 ├── tests/             # Test files
 ├── docs/              # Documentation
 └── pyproject.toml     # Poetry configuration
@@ -54,7 +60,18 @@ money-warp/
 
 ## Poetry Workflow Guidelines
 
-### Dependency Management
+### Dependency Management ⭐
+**ALWAYS use Poetry for dependency management. NEVER use `pip` directly.**
+
+```bash
+# ✅ CORRECT
+poetry add package_name
+poetry add --group dev package_name
+
+# ❌ WRONG — never do this
+pip install package_name
+```
+
 - **Add dependencies**: `poetry add package_name`
 - **Add dev dependencies**: `poetry add --group dev package_name`
 - **Lock dependencies**: Always commit `poetry.lock`

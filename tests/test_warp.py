@@ -1,6 +1,7 @@
 """Tests for Warp time machine context manager."""
 
 from datetime import date, datetime
+from decimal import Decimal
 
 import pytest
 
@@ -168,16 +169,19 @@ def test_warp_to_past_ignores_future_payments():
 
 
 def test_warp_to_future_keeps_all_past_payments():
-    # Create loan with payments
-    loan = Loan(Money("10000"), InterestRate("5% annual"), [datetime(2024, 1, 15), datetime(2024, 2, 15)])
+    # Disable fines so each payment produces exactly interest + principal (2 items)
+    loan = Loan(
+        Money("10000"),
+        InterestRate("5% annual"),
+        [datetime(2024, 1, 15), datetime(2024, 2, 15)],
+        late_fee_rate=Decimal("0"),
+    )
 
-    # Add payments
     loan.record_payment(Money("500"), datetime(2024, 1, 10), "Payment 1")
     loan.record_payment(Money("600"), datetime(2024, 2, 10), "Payment 2")
 
-    # Warp to future date
+    # Warp to future date — both past payments must be visible (4 items: 2 x 2 components)
     with Warp(loan, datetime(2025, 1, 1)) as warped_loan:
-        # Should have all payments (4 items: 2 payments x 2 components each)
         assert len(warped_loan._actual_payments) == 4
 
 
