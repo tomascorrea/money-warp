@@ -32,7 +32,7 @@ The **interest_date** controls how many days of interest are charged. Fewer days
 
 Neither method takes a date parameter — they use `self.now()` (which respects `Warp` context for time travel).
 
-- **`pay_installment(amount, description=None)`** — the common case. Records payment at `self.now()`, calculates interest up to the next unpaid due date (no discount). The borrower pays full-period interest even when paying early.
+- **`pay_installment(amount, description=None)`** — the common case. Records payment at `self.now()` and calculates interest up to `max(self.now(), next_due_date)`. Early or on-time payments accrue interest up to the due date (no discount). Late payments accrue interest up to `self.now()`, so the borrower pays extra interest for the additional days beyond the due date. Late fines are also applied automatically. A large late payment naturally covers the missed installment **and** eats into future installments — the allocation (fines → interest → principal) and `_covered_due_date_count()` handle this without special-casing.
 
 - **`anticipate_payment(amount, description=None)`** — early payment with discount. Records payment at `self.now()` and calculates interest only up to `self.now()` (fewer days = less interest charged).
 
@@ -134,3 +134,13 @@ Sugar methods (`pay_installment`, `anticipate_payment`) use `self.now()` for the
 **Fix:** Removed `is_actual` from `PaymentScheduleEntry` entirely. The merged schedule is a clean, ordered list: past entries (from `_actual_schedule_entries`) come first by construction, followed by projected entries. Tests use positional indexing (`schedule[0]` for the recorded payment, `schedule[1:]` for projected) instead of filtering.
 
 **Lesson:** Don't tag data with internal metadata that consumers must filter. If ordering already encodes the distinction, a flag is redundant. Keep data structures minimal — the fewer fields, the simpler the API.
+
+### Late payments undercharged interest (fixed 2026-02-20)
+
+**Symptom:** `pay_installment()` called after the due date charged interest only up to the due date, not up to the actual payment date. The borrower was undercharged for the extra late days.
+
+**Root cause:** `pay_installment` set `interest_date = self._next_unpaid_due_date()`. When the borrower paid late (now > due_date), interest was capped at the due date instead of extending to the actual payment date.
+
+**Fix:** Changed to `interest_date = max(self.now(), self._next_unpaid_due_date())`. Early/on-time payments still accrue interest up to the due date (unchanged). Late payments now accrue interest up to `self.now()` (extra days charged).
+
+**Lesson:** A late payment incurs two costs: fines (flat percentage of missed payment) and mora interest (extra daily-compounded interest beyond the due date). Both must be accounted for. The `max()` pattern ensures one method handles all three timing scenarios correctly.

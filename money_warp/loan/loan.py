@@ -610,18 +610,23 @@ class Loan:
 
     def pay_installment(self, amount: Money, description: Optional[str] = None) -> None:
         """
-        Pay the next installment. Interest is calculated up to the next due date,
-        so early payments do NOT receive an interest discount.
+        Pay the next installment.
 
-        This is the most common payment method. The payment is recorded at self.now()
-        but interest accrues for the full period up to the next unpaid due date.
+        Interest accrual depends on timing relative to the due date:
+        - Early/on-time: interest accrues up to the due date (no discount).
+        - Late: interest accrues up to self.now(), so the borrower pays extra
+          interest for the additional days beyond the due date.
+
+        This is the most common payment method and works correctly whether the
+        borrower pays early, on time, or late.
 
         Args:
             amount: Total payment amount (positive value)
             description: Optional description of the payment
         """
         payment_date = self.now()
-        interest_date = self._next_unpaid_due_date()
+        next_due = self._next_unpaid_due_date()
+        interest_date = max(payment_date, next_due)
         self._record_payment(
             amount,
             payment_date=payment_date,
