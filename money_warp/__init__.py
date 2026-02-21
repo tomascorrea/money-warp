@@ -10,7 +10,7 @@ from money_warp.date_utils import (
     generate_weekly_dates,
 )
 from money_warp.interest_rate import CompoundingFrequency, InterestRate
-from money_warp.loan import Loan
+from money_warp.loan import Loan, MoraStrategy
 from money_warp.money import Money
 from money_warp.present_value import (
     discount_factor,
@@ -38,6 +38,7 @@ __all__ = [
     "CashFlowItem",
     "CashFlowQuery",
     "Loan",
+    "MoraStrategy",
     "BaseScheduler",
     "PriceScheduler",
     "InvertedPriceScheduler",

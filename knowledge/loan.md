@@ -13,6 +13,8 @@ The `Loan` class is a state machine that models a personal loan with daily-compo
 | `scheduler` | `Optional[Type[BaseScheduler]]` | `PriceScheduler` | Amortization strategy |
 | `fine_rate` | `Optional[Decimal]` | `0.02` (2%) | Fine as fraction of expected payment |
 | `grace_period_days` | `int` | `0` | Days after due date before fines apply |
+| `mora_interest_rate` | `Optional[InterestRate]` | `interest_rate` | Rate used for mora (late) interest; defaults to the base rate |
+| `mora_strategy` | `MoraStrategy` | `COMPOUND` | How mora interest is computed (see Mora Strategy below) |
 
 ## Three-Date Payment Model
 
@@ -96,10 +98,28 @@ A late payment incurs two costs, both handled automatically by `pay_installment`
 
 When `pay_installment` is called after the due date, `interest_date = max(self.now(), next_due_date)` causes interest to accrue beyond the due date up to the actual payment date. The interest is split into two separate `CashFlowItem` entries:
 
-- **Regular interest** (`"actual_interest"`) — accrued from last payment to the due date.
-- **Mora interest** (`"actual_mora_interest"`) — accrued from the due date to the payment date.
+- **Regular interest** (`"actual_interest"`) — accrued from last payment to the due date using `interest_rate`.
+- **Mora interest** (`"actual_mora_interest"`) — accrued from the due date to the payment date using `mora_interest_rate`.
 
-The split is computed so that `regular + mora = total compound interest`. Regular interest equals what the original schedule expected; mora is the additional cost of being late. On-time and early payments produce only a regular interest item (no mora). All compound interest accrual uses `InterestRate.accrue(principal, days)` — a single method that encapsulates the formula `principal * ((1 + daily_rate) ** days - 1)`.
+On-time and early payments produce only a regular interest item (no mora). Regular interest is always computed with the base `interest_rate`; mora interest uses `mora_interest_rate` (which defaults to `interest_rate` when not provided).
+
+### Mora Strategy (`MoraStrategy` enum)
+
+The `mora_strategy` parameter controls how mora interest is computed when a payment is late. Both strategies share the same regular interest calculation; they differ only in the base amount used for the mora portion.
+
+**`MoraStrategy.COMPOUND`** (default):
+- `regular = interest_rate.accrue(principal, regular_days)`
+- `mora = mora_interest_rate.accrue(principal + regular, mora_days)`
+
+The mora rate is applied to the accumulated balance (principal plus accrued regular interest). This means mora compounds on top of regular interest.
+
+**`MoraStrategy.SIMPLE`**:
+- `regular = interest_rate.accrue(principal, regular_days)`
+- `mora = mora_interest_rate.accrue(principal, mora_days)`
+
+The mora rate is applied independently to the outstanding principal. Regular interest does not affect the mora base.
+
+With the same rates, COMPOUND always produces more mora than SIMPLE because it applies the mora rate to a larger base. When `mora_interest_rate` equals `interest_rate` and strategy is `COMPOUND`, the result is identical to a single continuous compounding period — preserving the original behaviour before the mora strategy feature was introduced.
 
 ### Late Overpayment
 

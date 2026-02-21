@@ -2,12 +2,24 @@
 
 from datetime import datetime, timedelta
 from decimal import Decimal
+from enum import Enum
 from typing import Dict, List, Optional, Type
 
 from ..cash_flow import CashFlow, CashFlowItem
 from ..interest_rate import InterestRate
 from ..money import Money
 from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
+
+
+class MoraStrategy(Enum):
+    """Strategy for computing mora (late) interest.
+
+    SIMPLE: mora rate is applied to the outstanding principal only.
+    COMPOUND: mora rate is applied to principal + accrued regular interest.
+    """
+
+    SIMPLE = "simple"
+    COMPOUND = "compound"
 
 
 class Loan:
@@ -67,6 +79,8 @@ class Loan:
         scheduler: Optional[Type[BaseScheduler]] = None,
         fine_rate: Optional[Decimal] = None,
         grace_period_days: int = 0,
+        mora_interest_rate: Optional[InterestRate] = None,
+        mora_strategy: MoraStrategy = MoraStrategy.COMPOUND,
     ) -> None:
         """
         Create a loan with flexible payment schedule.
@@ -79,6 +93,8 @@ class Loan:
             scheduler: Scheduler class to use for calculations (defaults to PriceScheduler)
             fine_rate: Fine as decimal fraction of missed payment (defaults to 0.02 for 2%)
             grace_period_days: Days after due date before fines apply (defaults to 0)
+            mora_interest_rate: Interest rate for mora (late) interest (defaults to interest_rate)
+            mora_strategy: How mora interest is computed (defaults to COMPOUND)
 
         Examples:
             >>> # Basic loan with default 2% fine, no grace period
@@ -89,6 +105,11 @@ class Loan:
             >>> loan = Loan(Money("10000"), InterestRate("5% annual"),
             ...            [datetime(2024, 2, 1)],
             ...            fine_rate=Decimal("0.05"), grace_period_days=3)
+            >>>
+            >>> # Loan with separate mora interest rate
+            >>> loan = Loan(Money("10000"), InterestRate("5% annual"),
+            ...            [datetime(2024, 2, 1)],
+            ...            mora_interest_rate=InterestRate("12% annual"))
         """
         # Validate inputs first
         if not due_dates:
@@ -102,6 +123,8 @@ class Loan:
 
         self.principal = principal
         self.interest_rate = interest_rate
+        self.mora_interest_rate = mora_interest_rate or interest_rate
+        self.mora_strategy = mora_strategy
         self.due_dates = sorted(due_dates)  # Ensure dates are sorted
         self.disbursement_date = disbursement_date if disbursement_date is not None else self.datetime_func.now()
         if self.disbursement_date >= self.due_dates[0]:
@@ -490,39 +513,40 @@ class Loan:
 
         return days, principal_balance, last_pay_date
 
-    def _split_interest(
+    def _compute_accrued_interest(
         self,
-        total_accrued: Money,
-        total_to_pay: Money,
         days: int,
         principal_balance: Money,
         due_date: Optional[datetime],
         last_payment_date: Optional[datetime],
     ) -> tuple:
         """
-        Split accrued interest into regular and mora components.
+        Compute accrued interest split into regular and mora components.
 
-        Returns (regular_amount, mora_amount). All interest is regular when
-        due_date is not provided or the payment is not late.
+        Returns (regular_accrued, mora_accrued). All interest is regular when
+        due_date is not provided or the payment is not late. Uses
+        ``mora_interest_rate`` and ``mora_strategy`` for the mora portion.
         """
         if due_date is None or last_payment_date is None:
-            return total_to_pay, Money.zero()
+            return self.interest_rate.accrue(principal_balance, days), Money.zero()
 
         regular_days = (due_date - last_payment_date).days
 
         if regular_days <= 0:
-            return Money.zero(), total_to_pay
+            return Money.zero(), self.mora_interest_rate.accrue(principal_balance, days)
 
         if regular_days >= days:
-            return total_to_pay, Money.zero()
+            return self.interest_rate.accrue(principal_balance, days), Money.zero()
 
+        mora_days = days - regular_days
         regular_accrued = self.interest_rate.accrue(principal_balance, regular_days)
 
-        if total_to_pay >= total_accrued:
-            return regular_accrued, total_accrued - regular_accrued
+        if self.mora_strategy == MoraStrategy.COMPOUND:
+            mora_accrued = self.mora_interest_rate.accrue(principal_balance + regular_accrued, mora_days)
+        else:
+            mora_accrued = self.mora_interest_rate.accrue(principal_balance, mora_days)
 
-        regular_amount = Money(min(regular_accrued.raw_amount, total_to_pay.raw_amount))
-        return regular_amount, total_to_pay - regular_amount
+        return regular_accrued, mora_accrued
 
     def _allocate_payment(
         self,
@@ -553,18 +577,21 @@ class Loan:
         interest_paid = Money.zero()
         mora_paid = Money.zero()
         if remaining.is_positive() and principal_balance.is_positive() and days > 0:
-            total_accrued = self.interest_rate.accrue(principal_balance, days)
+            regular_accrued, mora_accrued = self._compute_accrued_interest(
+                days,
+                principal_balance,
+                due_date,
+                last_payment_date,
+            )
+            total_accrued = regular_accrued + mora_accrued
             total_interest_to_pay = Money(min(total_accrued.raw_amount, remaining.raw_amount))
 
             if total_interest_to_pay.is_positive():
-                regular_amount, mora_amount = self._split_interest(
-                    total_accrued,
-                    total_interest_to_pay,
-                    days,
-                    principal_balance,
-                    due_date,
-                    last_payment_date,
-                )
+                if total_interest_to_pay >= total_accrued:
+                    regular_amount, mora_amount = regular_accrued, mora_accrued
+                else:
+                    regular_amount = Money(min(regular_accrued.raw_amount, total_interest_to_pay.raw_amount))
+                    mora_amount = total_interest_to_pay - regular_amount
 
                 if regular_amount.is_positive():
                     self._all_payments.append(
@@ -852,5 +879,6 @@ class Loan:
         return (
             f"Loan(principal={self.principal!r}, interest_rate={self.interest_rate!r}, "
             f"due_dates={self.due_dates!r}, disbursement_date={self.disbursement_date!r}, "
-            f"fine_rate={self.fine_rate!r}, grace_period_days={self.grace_period_days!r})"
+            f"fine_rate={self.fine_rate!r}, grace_period_days={self.grace_period_days!r}, "
+            f"mora_interest_rate={self.mora_interest_rate!r}, mora_strategy={self.mora_strategy!r})"
         )
