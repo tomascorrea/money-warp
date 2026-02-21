@@ -86,7 +86,7 @@ def test_loan_get_actual_cash_flow_includes_payments():
     due_dates = [datetime(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
-    loan.record_payment(Money("5000.00"), datetime(2024, 1, 15), "First payment")
+    loan.record_payment(Money("5000.00"), datetime(2024, 1, 15), description="First payment")
 
     actual_cf = loan.get_actual_cash_flow()
 

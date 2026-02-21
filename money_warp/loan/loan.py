@@ -52,7 +52,7 @@ class Loan:
         >>> print(f"Fines applied: {fines}")
         >>>
         >>> # Make payment (automatically allocated to fines first)
-        >>> loan._record_payment(Money("500"), datetime(2024, 2, 11))
+        >>> loan.record_payment(Money("500"), datetime(2024, 2, 11))
         >>> print(f"Outstanding fines: {loan.outstanding_fines}")
     """
 
@@ -589,7 +589,7 @@ class Loan:
 
         return fine_paid, interest_paid, mora_paid, principal_paid
 
-    def _record_payment(
+    def record_payment(
         self,
         amount: Money,
         payment_date: datetime,
@@ -599,9 +599,6 @@ class Loan:
     ) -> None:
         """
         Record an actual payment made on the loan with automatic allocation.
-
-        This is the low-level payment method. Prefer the sugar methods
-        pay_installment() and anticipate_payment() for typical use cases.
 
         Payment allocation priority: Fines -> Interest -> Principal
 
@@ -659,22 +656,6 @@ class Loan:
             )
         )
 
-    def record_payment(self, amount: Money, payment_date: datetime, description: Optional[str] = None) -> None:
-        """
-        Record an actual payment made on the loan with automatic allocation.
-
-        This is a convenience wrapper around _record_payment that uses payment_date
-        as the interest accrual date (borrower gets discount for early payment).
-
-        Payment allocation priority: Fines -> Interest -> Principal
-
-        Args:
-            amount: Total payment amount (positive value)
-            payment_date: When the payment was made (also used for interest accrual)
-            description: Optional description of the payment
-        """
-        self._record_payment(amount, payment_date, description=description)
-
     def pay_installment(self, amount: Money, description: Optional[str] = None) -> None:
         """
         Pay the next installment.
@@ -694,7 +675,7 @@ class Loan:
         payment_date = self.now()
         next_due = self._next_unpaid_due_date()
         interest_date = max(payment_date, next_due)
-        self._record_payment(
+        self.record_payment(
             amount,
             payment_date=payment_date,
             interest_date=interest_date,
@@ -711,7 +692,7 @@ class Loan:
             description: Optional description of the payment
         """
         payment_date = self.now()
-        self._record_payment(
+        self.record_payment(
             amount,
             payment_date=payment_date,
             interest_date=payment_date,

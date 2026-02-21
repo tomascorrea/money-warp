@@ -175,7 +175,7 @@ def test_next_unpaid_due_date_raises_when_all_paid():
         loan._next_unpaid_due_date()
 
 
-# --- _record_payment three dates tests ---
+# --- record_payment three dates tests ---
 
 
 def test_record_payment_with_explicit_interest_date():
@@ -187,7 +187,7 @@ def test_record_payment_with_explicit_interest_date():
     )
 
     # Pay on Jan 15 but calculate interest up to Feb 1 (31 days)
-    loan._record_payment(
+    loan.record_payment(
         Money("5000.00"),
         payment_date=datetime(2025, 1, 15),
         interest_date=datetime(2025, 2, 1),
@@ -207,7 +207,7 @@ def test_record_payment_interest_date_defaults_to_payment_date():
         disbursement_date=datetime(2025, 1, 1),
     )
 
-    loan._record_payment(Money("5000.00"), payment_date=datetime(2025, 1, 15))
+    loan.record_payment(Money("5000.00"), payment_date=datetime(2025, 1, 15))
 
     interest_items = [p for p in loan._all_payments if p.category == "actual_interest"]
     daily_rate = InterestRate("6% a").to_daily().as_decimal
@@ -465,7 +465,7 @@ def test_three_consecutive_anticipations():
 
     for i in range(3):
         payment_date = datetime(2025, 1, 10 + i)
-        loan._record_payment(
+        loan.record_payment(
             original[i].payment_amount,
             payment_date=payment_date,
             interest_date=payment_date,

@@ -98,9 +98,9 @@ def test_warp_overrides_current_datetime(sample_loan):
 
 def test_warp_filters_future_payments(sample_loan):
     # Add some payments to the loan
-    sample_loan.record_payment(Money("500"), datetime(2024, 1, 10), "Early payment")
-    sample_loan.record_payment(Money("600"), datetime(2024, 2, 10), "Regular payment")
-    sample_loan.record_payment(Money("700"), datetime(2024, 3, 10), "Final payment")
+    sample_loan.record_payment(Money("500"), datetime(2024, 1, 10), description="Early payment")
+    sample_loan.record_payment(Money("600"), datetime(2024, 2, 10), description="Regular payment")
+    sample_loan.record_payment(Money("700"), datetime(2024, 3, 10), description="Final payment")
 
     # Warp to a date between the first and second payment
     target_date = datetime(2024, 1, 20)
@@ -121,7 +121,7 @@ def test_warp_recalculates_balance_from_filtered_payments(sample_loan):
         original_balance = warped_loan.current_balance
 
     # Add a payment after the target date
-    sample_loan.record_payment(Money("1000"), datetime(2024, 1, 10), "Payment")
+    sample_loan.record_payment(Money("1000"), datetime(2024, 1, 10), description="Payment")
     balance_after_payment = sample_loan.current_balance
 
     # Warp back to before the payment was made
@@ -136,7 +136,7 @@ def test_warp_recalculates_balance_from_filtered_payments(sample_loan):
 def test_warp_days_since_last_payment_uses_warped_time(sample_loan):
     # Add a payment
     payment_date = datetime(2024, 1, 15)
-    sample_loan.record_payment(Money("500"), payment_date, "Test payment")
+    sample_loan.record_payment(Money("500"), payment_date, description="Test payment")
 
     # Warp to 10 days after the payment
     target_date = datetime(2024, 1, 25)
@@ -157,9 +157,9 @@ def test_warp_to_past_ignores_future_payments():
     )
 
     # Add payments
-    loan.record_payment(Money("500"), datetime(2024, 1, 10), "Payment 1")
-    loan.record_payment(Money("600"), datetime(2024, 2, 10), "Payment 2")
-    loan.record_payment(Money("700"), datetime(2024, 3, 10), "Payment 3")
+    loan.record_payment(Money("500"), datetime(2024, 1, 10), description="Payment 1")
+    loan.record_payment(Money("600"), datetime(2024, 2, 10), description="Payment 2")
+    loan.record_payment(Money("700"), datetime(2024, 3, 10), description="Payment 3")
 
     # Warp to middle date
     with Warp(loan, datetime(2024, 2, 5)) as warped_loan:
@@ -183,8 +183,8 @@ def test_warp_to_future_keeps_all_past_payments():
         fine_rate=Decimal("0"),
     )
 
-    loan.record_payment(Money("500"), datetime(2024, 1, 10), "Payment 1")
-    loan.record_payment(Money("600"), datetime(2024, 2, 10), "Payment 2")
+    loan.record_payment(Money("500"), datetime(2024, 1, 10), description="Payment 1")
+    loan.record_payment(Money("600"), datetime(2024, 2, 10), description="Payment 2")
 
     # Warp to future date — both past payments must be visible (5 items: 2 + 3)
     with Warp(loan, datetime(2025, 1, 1)) as warped_loan:

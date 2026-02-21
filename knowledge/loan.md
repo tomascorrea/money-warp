@@ -36,11 +36,9 @@ Neither method takes a date parameter — they use `self.now()` (which respects 
 
 - **`anticipate_payment(amount, description=None)`** — early payment with discount. Records payment at `self.now()` and calculates interest only up to `self.now()` (fewer days = less interest charged).
 
-### Explicit-Date Methods
+### Explicit-Date Method
 
-- **`record_payment(amount, payment_date, description=None)`** — convenience wrapper that sets `interest_date = payment_date` (discount). Useful in tests and batch processing where you need explicit dates.
-
-- **`_record_payment(amount, payment_date, interest_date=None, processing_date=None, description=None)`** — the low-level workhorse. Full control over all three dates.
+- **`record_payment(amount, payment_date, interest_date=None, processing_date=None, description=None)`** — full control over all dates. When `interest_date` is omitted it defaults to `payment_date` (borrower gets discount for early payment). Useful in tests and batch processing where you need explicit dates.
 
 ### Payment Allocation
 
@@ -50,7 +48,7 @@ All payment methods allocate funds in strict priority order:
 2. **Accrued interest** (daily-compounded since last payment, up to `interest_date`; split into regular + mora when late)
 3. **Principal** remainder
 
-Interest days and principal balance are pre-computed at the top of `_record_payment` using `payment_date` as the filter for existing payments, before any internal state is mutated.
+Interest days and principal balance are pre-computed at the top of `record_payment` using `payment_date` as the filter for existing payments, before any internal state is mutated.
 
 ## Dynamic Amortization Schedule
 
@@ -82,7 +80,7 @@ Fixed principal payment per period (`principal / number_of_payments`). Interest 
 
 ## Late Payments
 
-A late payment incurs two costs, both handled automatically by `pay_installment` and `_record_payment`:
+A late payment incurs two costs, both handled automatically by `pay_installment` and `record_payment`:
 
 1. **Fines** — a flat percentage of the missed installment amount.
 2. **Mora interest** — extra daily-compounded interest for the days beyond the due date.
@@ -144,19 +142,19 @@ Both methods are time-aware: inside a `Warp` context they reflect the warped dat
 
 **Root cause:** `record_payment` computed interest days via `self.days_since_last_payment(payment_date)`, which filtered `_all_payments` by `self.now()` (real wall-clock time). When installments were recorded sequentially for future dates, previously-recorded future payments were invisible, leading to inflated day counts, too much interest, too little principal, and a non-zero residual.
 
-**Fix:** Pre-compute `days` and `principal_balance` at the top of `_record_payment` using `payment_date` as the filter, before step 1 modifies `_all_payments`.
+**Fix:** Pre-compute `days` and `principal_balance` at the top of `record_payment` using `payment_date` as the filter, before step 1 modifies `_all_payments`.
 
 **Lesson:** Any method that reads loan state and then mutates it must snapshot the relevant values first. Time-dependent queries inside mutation methods must use the payment's own date, not wall-clock time.
 
 ### Warp creates deep clones (important for sugar methods)
 
-Sugar methods (`pay_installment`, `anticipate_payment`) use `self.now()` for the payment date. Inside a `Warp` context, `self.now()` returns the warped date — but payments on the warped loan do **not** persist back to the original. This is by design: Warp is for observation, not mutation. Use `record_payment(amount, date)` or `_record_payment(...)` with explicit dates to set up loan state outside of Warp.
+Sugar methods (`pay_installment`, `anticipate_payment`) use `self.now()` for the payment date. Inside a `Warp` context, `self.now()` returns the warped date — but payments on the warped loan do **not** persist back to the original. This is by design: Warp is for observation, not mutation. Use `record_payment(amount, date)` or `record_payment(...)` with explicit dates to set up loan state outside of Warp.
 
 ### Due date coverage uses cumulative principal, not payment count (fixed 2026-02-20)
 
 **Symptom:** `_next_unpaid_due_date()` and `get_amortization_schedule()` would miscount covered due dates when partial payments, overpayments, or multiple anticipations were made.
 
-**Root cause:** The original implementation used `len(self._actual_schedule_entries)` to determine how many due dates were covered — assuming one `_record_payment` call = one installment. This broke with partial payments (inflated count) and large overpayments (undercounted).
+**Root cause:** The original implementation used `len(self._actual_schedule_entries)` to determine how many due dates were covered — assuming one `record_payment` call = one installment. This broke with partial payments (inflated count) and large overpayments (undercounted).
 
 **Fix:** `_covered_due_date_count()` compares the remaining principal (from the last actual entry) against the original schedule's `ending_balance` milestones. A due date is covered when remaining principal is at or below that entry's ending balance.
 
