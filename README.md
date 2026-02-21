@@ -3,7 +3,7 @@
 **Bend time. Model cash.**
 
 [![Release](https://img.shields.io/github/v/release/tomascorrea/money-warp)](https://img.shields.io/github/v/release/tomascorrea/money-warp)
-[![Build status](https://img.shields.io/github/actions/workflow/status/tomascorrea/money-warp/main.yml?branch=main)](https://github.com/tomascorrea/money-warp/actions/workflows/main.yml?query=branch%3Amain)
+[![Build status](https://img.shields.io/github/actions/workflow/status/tomascorrea/money-warp/on-release-main.yml?branch=main)](https://github.com/tomascorrea/money-warp/actions/workflows/on-release-main.yml?query=branch%3Amain)
 [![codecov](https://codecov.io/gh/tomascorrea/money-warp/branch/main/graph/badge.svg)](https://codecov.io/gh/tomascorrea/money-warp)
 [![License](https://img.shields.io/github/license/tomascorrea/money-warp)](https://img.shields.io/github/license/tomascorrea/money-warp)
 
