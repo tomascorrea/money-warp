@@ -121,6 +121,8 @@ The mora rate is applied independently to the outstanding principal. Regular int
 
 With the same rates, COMPOUND always produces more mora than SIMPLE because it applies the mora rate to a larger base. When `mora_interest_rate` equals `interest_rate` and strategy is `COMPOUND`, the result is identical to a single continuous compounding period — preserving the original behaviour before the mora strategy feature was introduced.
 
+The `accrued_interest` property also respects `mora_interest_rate` and `mora_strategy`. When the borrower is past the next unpaid due date, accrued interest is split internally into regular and mora components using `_compute_accrued_interest`, so `current_balance` reflects the true outstanding amount under the configured mora terms.
+
 ### Late Overpayment
 
 A large late payment flows through the standard allocation pipeline (fines -> interest -> principal) with no special-casing. The excess principal naturally covers multiple installments because `_covered_due_date_count()` compares the remaining balance against original schedule milestones.

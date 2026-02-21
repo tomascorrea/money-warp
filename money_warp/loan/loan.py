@@ -163,12 +163,21 @@ class Loan:
 
     @property
     def accrued_interest(self) -> Money:
-        """Get the current accrued interest since last payment."""
+        """Get the current accrued interest since last payment.
+
+        Respects ``mora_interest_rate`` and ``mora_strategy`` when the
+        borrower is past the next unpaid due date.
+        """
         days = self.days_since_last_payment()
         principal_bal = self.principal_balance
 
         if principal_bal.is_positive() and days > 0:
-            return self.interest_rate.accrue(principal_bal, days)
+            try:
+                due_date = self._next_unpaid_due_date()
+            except ValueError:
+                due_date = None
+            regular, mora = self._compute_accrued_interest(days, principal_bal, due_date, self.last_payment_date)
+            return regular + mora
         else:
             return Money.zero()
 
