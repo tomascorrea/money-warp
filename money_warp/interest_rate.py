@@ -202,6 +202,22 @@ class InterestRate:
         # For periodic rates: compound the periodic rate for the full year
         return (1 + self._decimal_rate) ** Decimal(str(n)) - 1
 
+    def accrue(self, principal: Decimal, days: int) -> Decimal:
+        """
+        Compute compound interest accrued on a principal over a number of days.
+
+        Formula: principal * ((1 + daily_rate) ** days - 1)
+
+        Args:
+            principal: The principal amount as a Decimal.
+            days: Number of days to accrue interest over.
+
+        Returns:
+            The accrued interest amount (not including the principal).
+        """
+        daily_rate = self.to_daily().as_decimal
+        return principal * ((1 + daily_rate) ** Decimal(str(days)) - 1)
+
     def __str__(self) -> str:
         """Clear string representation."""
         return f"{self._percentage_rate:.3f}% {self.period.name.lower()}"

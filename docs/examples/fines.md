@@ -1,4 +1,4 @@
-# Late Fees & Payment Methods
+# Fines, Mora Interest & Payment Methods
 
 MoneyWarp models late payments realistically: overdue installments incur **fines** (a flat percentage of the missed amount) and **mora interest** (extra daily-compounded interest for the days beyond the due date). Payments are always allocated in strict priority: fines first, then interest, then principal.
 
@@ -51,7 +51,7 @@ loan.record_payment(Money("856.07"), datetime(2024, 2, 1), "February payment")
 loan.record_payment(Money("856.07"), datetime(2024, 3, 1), "March payment")
 ```
 
-## Late Fee Configuration
+## Fine Configuration
 
 Configure fines and grace periods when creating a loan:
 
@@ -70,14 +70,14 @@ loan = Loan(
     Money("10000"),
     InterestRate("5% a"),
     generate_monthly_dates(datetime(2024, 2, 1), 12),
-    late_fee_rate=Decimal("0.05"),
+    fine_rate=Decimal("0.05"),
     grace_period_days=7,
 )
 ```
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `late_fee_rate` | `0.02` (2%) | Fine as a fraction of the expected installment amount |
+| `fine_rate` | `0.02` (2%) | Fine as a fraction of the expected installment amount |
 | `grace_period_days` | `0` | Days after the due date before fines are applied |
 
 ## How Fines Work
@@ -113,11 +113,16 @@ print(f"Outstanding fines: {loan.outstanding_fines}")
 
 ### Fine Amounts Come from the Original Schedule
 
-Fines are calculated as `late_fee_rate * expected_payment_amount`, where the expected payment comes from the **original** amortization schedule — not the rebuilt schedule. This ensures fine amounts are predictable and don't change as payments are recorded.
+Fines are calculated as `fine_rate * expected_payment_amount`, where the expected payment comes from the **original** amortization schedule — not the rebuilt schedule. This ensures fine amounts are predictable and don't change as payments are recorded.
 
 ## Mora Interest
 
-When a borrower pays late, they are charged extra interest for the days beyond the due date. This happens automatically:
+When a borrower pays late, they are charged extra interest for the days beyond the due date. The interest is automatically split into two separate cash flow items:
+
+- **Regular interest** (`"actual_interest"`) — accrued from the last payment to the due date
+- **Mora interest** (`"actual_mora_interest"`) — accrued from the due date to the payment date
+
+On-time and early payments produce only a regular interest item (no mora).
 
 ```python
 loan = Loan(
@@ -130,8 +135,9 @@ loan = Loan(
 # Miss installment 1, pay 2 weeks late
 # The borrower pays:
 #   1. A fine (2% of the expected installment)
-#   2. Extra interest for 14 days beyond the due date (mora interest)
-#   3. The remaining amount reduces principal
+#   2. Regular interest for 31 days (disbursement to due date)
+#   3. Mora interest for 14 days (due date to payment date)
+#   4. The remaining amount reduces principal
 with Warp(loan, datetime(2024, 2, 15)) as warped:
     warped.pay_installment(Money("3600.00"), "Late payment")
     print(f"Outstanding fines: {warped.outstanding_fines}")
@@ -171,18 +177,36 @@ print(loan.is_payment_late(datetime(2024, 2, 1), datetime(2024, 2, 9)))  # True
 
 Note: the grace period only affects **fines**. Mora interest always accrues for every day past the due date, regardless of the grace period.
 
-## Tracking Fines in Cash Flows
+## Tracking Payments in Cash Flows
 
-Fine events appear in the loan's actual cash flow with the category `"fine"`:
+All cash flow items use explicit category prefixes. Expected schedule items use `expected_`, actual recorded payments use `actual_`:
 
 ```python
 actual_cf = loan.get_actual_cash_flow()
 
-# Query fine events
-fines = actual_cf.query.filter_by(category="fine").all()
+# Query fine application events
+fines = actual_cf.query.filter_by(category="fine_applied").all()
 for fine in fines:
     print(f"{fine.datetime}: {fine.amount} — {fine.description}")
+
+# Query mora interest payments
+mora = actual_cf.query.filter_by(category="actual_mora_interest").all()
+for item in mora:
+    print(f"{item.datetime}: {item.amount} — {item.description}")
 ```
+
+### Cash Flow Categories
+
+| Category | Meaning |
+|---|---|
+| `"expected_disbursement"` | Loan disbursement (expected schedule) |
+| `"expected_interest"` | Scheduled interest payment |
+| `"expected_principal"` | Scheduled principal payment |
+| `"actual_interest"` | Regular interest paid (up to due date) |
+| `"actual_mora_interest"` | Mora interest paid (beyond due date) |
+| `"actual_principal"` | Principal paid |
+| `"actual_fine"` | Fine paid |
+| `"fine_applied"` | Fine applied to loan |
 
 ## Key Properties
 

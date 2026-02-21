@@ -33,7 +33,7 @@ MoneyWarp is a Python library for working with the time value of money. It treat
 - 📅 **Easy date generation** with smart month-end handling via python-dateutil
 - 🔒 **Type-safe interest rates** with explicit percentage handling
 - 🧮 **Robust numerics** powered by scipy for IRR and financial calculations
-- ⚖️ **Late fee engine** with fines, mora interest, and configurable grace periods
+- ⚖️ **Fine engine** with fines, mora interest, and configurable grace periods
 - 🍭 **Sugar payment methods** — `pay_installment()` and `anticipate_payment()`
 
 ## 🧮 Time Value of Money Functions
@@ -70,7 +70,7 @@ Explore the comprehensive examples and API reference:
 - **[Present Value & IRR](examples/present_value_irr.md)** - TVM functions and analysis
 - **[Time Machine](examples/time_machine.md)** - Travel through time with loans
 - **[Cash Flow Analysis](examples/cash_flow.md)** - Work with cash flow streams
-- **[Late Fees & Payments](examples/late_fees.md)** - Fines, mora interest, and payment methods
+- **[Fines & Payments](examples/fines.md)** - Fines, mora interest, and payment methods
 - **[API Reference](modules.md)** - Complete function documentation
 
 ## 🏗️ Architecture
@@ -85,7 +85,7 @@ MoneyWarp is built around core financial concepts:
 
 ## 🧪 Quality & Testing
 
-- **465 comprehensive tests** with 100% core functionality coverage
+- **469 comprehensive tests** with 100% core functionality coverage
 - **Type safety**: Full mypy compatibility with zero type errors
 - **Code quality**: Passes ruff linting and black formatting
 - **Robust numerics**: Scipy-powered calculations for reliability

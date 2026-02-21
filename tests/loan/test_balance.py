@@ -156,7 +156,7 @@ def test_loan_current_balance_composition():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), late_fee_rate=Decimal("0.02"))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), fine_rate=Decimal("0.02"))
 
     # Let interest accrue and apply fines
     with Warp(loan, datetime(2024, 2, 5)) as warped_loan:
@@ -204,7 +204,7 @@ def test_loan_balance_components_with_fines_and_payments():
     rate = InterestRate("6% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), late_fee_rate=Decimal("0.03"))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), fine_rate=Decimal("0.03"))
 
     # Let payment become late and apply fine
     with Warp(loan, datetime(2024, 2, 10)) as warped_loan:

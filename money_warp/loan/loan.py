@@ -21,7 +21,7 @@ class Loan:
     Features:
     - Flexible payment schedules using configurable schedulers
     - Automatic payment allocation: Fines → Interest → Principal
-    - Configurable late payment fines (default 2% of missed payment)
+    - Configurable fines (default 2% of missed payment)
     - Configurable grace periods before fines apply
     - Time-aware fine calculation and application
     - Comprehensive cash flow tracking including fine events
@@ -43,7 +43,7 @@ class Loan:
         ...     Money("10000"),
         ...     InterestRate("5% annual"),
         ...     [datetime(2024, 2, 1)],
-        ...     late_fee_rate=Decimal("0.05"),  # 5% fine
+        ...     fine_rate=Decimal("0.05"),  # 5% fine
         ...     grace_period_days=7  # 7-day grace period
         ... )
         >>>
@@ -65,7 +65,7 @@ class Loan:
         due_dates: List[datetime],
         disbursement_date: Optional[datetime] = None,
         scheduler: Optional[Type[BaseScheduler]] = None,
-        late_fee_rate: Optional[Decimal] = None,
+        fine_rate: Optional[Decimal] = None,
         grace_period_days: int = 0,
     ) -> None:
         """
@@ -77,26 +77,26 @@ class Loan:
             due_dates: List of payment due dates (flexible scheduling)
             disbursement_date: When the loan was disbursed (defaults to first due date - 30 days)
             scheduler: Scheduler class to use for calculations (defaults to PriceScheduler)
-            late_fee_rate: Late payment fee as decimal (defaults to 0.02 for 2%)
-            grace_period_days: Days before late fees apply (defaults to 0)
+            fine_rate: Fine as decimal fraction of missed payment (defaults to 0.02 for 2%)
+            grace_period_days: Days after due date before fines apply (defaults to 0)
 
         Examples:
-            >>> # Basic loan with default 2% late fee, no grace period
+            >>> # Basic loan with default 2% fine, no grace period
             >>> loan = Loan(Money("10000"), InterestRate("5% annual"),
             ...            [datetime(2024, 2, 1)])
             >>>
-            >>> # Loan with custom 5% late fee and 3-day grace period
+            >>> # Loan with custom 5% fine and 3-day grace period
             >>> loan = Loan(Money("10000"), InterestRate("5% annual"),
             ...            [datetime(2024, 2, 1)],
-            ...            late_fee_rate=Decimal("0.05"), grace_period_days=3)
+            ...            fine_rate=Decimal("0.05"), grace_period_days=3)
         """
         # Validate inputs first
         if not due_dates:
             raise ValueError("At least one due date is required")
         if principal.is_negative() or principal.is_zero():
             raise ValueError("Principal must be positive")
-        if late_fee_rate is not None and late_fee_rate < 0:
-            raise ValueError("Late fee rate must be non-negative")
+        if fine_rate is not None and fine_rate < 0:
+            raise ValueError("Fine rate must be non-negative")
         if grace_period_days < 0:
             raise ValueError("Grace period days must be non-negative")
 
@@ -105,7 +105,7 @@ class Loan:
         self.due_dates = sorted(due_dates)  # Ensure dates are sorted
         self.disbursement_date = disbursement_date or (self.due_dates[0] - timedelta(days=30))
         self.scheduler = scheduler or PriceScheduler
-        self.late_fee_rate = late_fee_rate if late_fee_rate is not None else Decimal("0.02")
+        self.fine_rate = fine_rate if fine_rate is not None else Decimal("0.02")
         self.grace_period_days = grace_period_days
 
         # State tracking
@@ -127,7 +127,7 @@ class Loan:
         # Apply all principal payments made up to current time (respecting warped time)
         current_time = self.now()
         for payment in self._all_payments:
-            if payment.datetime <= current_time and payment.category in ("actual_principal", "principal"):
+            if payment.datetime <= current_time and payment.category in ("actual_principal", "expected_principal"):
                 balance = balance - payment.amount
 
         # Ensure balance doesn't go negative
@@ -140,13 +140,10 @@ class Loan:
     def accrued_interest(self) -> Money:
         """Get the current accrued interest since last payment."""
         days = self.days_since_last_payment()
-        daily_rate = self.interest_rate.to_daily().as_decimal
-
         principal_bal = self.principal_balance
 
         if principal_bal.is_positive() and days > 0:
-            interest_amount = principal_bal.raw_amount * ((1 + daily_rate) ** Decimal(str(days)) - 1)
-            return Money(interest_amount)
+            return Money(self.interest_rate.accrue(principal_bal.raw_amount, days))
         else:
             return Money.zero()
 
@@ -207,7 +204,7 @@ class Loan:
         Get the expected payment amount for a specific due date from the original schedule.
 
         This always references the original loan terms (not the rebuilt schedule),
-        which is important for late fee calculations.
+        which is important for fine calculations.
 
         Args:
             due_date: The due date to get the expected payment for
@@ -279,7 +276,7 @@ class Loan:
             if not payment_made:
                 # Apply fine: percentage of expected payment amount
                 expected_payment = self.get_expected_payment_amount(due_date)
-                fine_amount = Money(expected_payment.raw_amount * self.late_fee_rate)
+                fine_amount = Money(expected_payment.raw_amount * self.fine_rate)
 
                 # Record the fine
                 self.fines_applied[due_date] = fine_amount
@@ -441,7 +438,7 @@ class Loan:
         items = []
 
         # Add disbursement
-        items.append(CashFlowItem(self.principal, self.disbursement_date, "Loan disbursement", "disbursement"))
+        items.append(CashFlowItem(self.principal, self.disbursement_date, "Loan disbursement", "expected_disbursement"))
 
         # Use the original schedule for expected cash flow
         schedule = self.get_original_schedule()
@@ -454,7 +451,7 @@ class Loan:
                     Money(-entry.interest_payment.raw_amount),
                     entry.due_date,
                     f"Interest payment {entry.payment_number}",
-                    "interest",
+                    "expected_interest",
                 )
             )
 
@@ -463,7 +460,7 @@ class Loan:
                     Money(-entry.principal_payment.raw_amount),
                     entry.due_date,
                     f"Principal payment {entry.payment_number}",
-                    "principal",
+                    "expected_principal",
                 )
             )
 
@@ -473,9 +470,10 @@ class Loan:
         """
         Snapshot interest parameters before mutating _all_payments.
 
-        Returns (days, principal_balance) where days is the accrual period
-        from the last payment to interest_date, and principal_balance is
-        the outstanding principal as of payment_date.
+        Returns (days, principal_balance, last_pay_date) where days is the
+        accrual period from the last payment to interest_date, principal_balance
+        is the outstanding principal as of payment_date, and last_pay_date is
+        the date of the most recent prior payment (or disbursement_date).
         """
         prior_items = [p for p in self._all_payments if p.datetime <= payment_date]
         last_pay_date = prior_items[-1].datetime if prior_items else self.disbursement_date
@@ -483,12 +481,46 @@ class Loan:
 
         principal_balance = self.principal
         for p in self._all_payments:
-            if p.datetime <= payment_date and p.category in ("actual_principal", "principal"):
+            if p.datetime <= payment_date and p.category in ("actual_principal", "expected_principal"):
                 principal_balance = principal_balance - p.amount
         if principal_balance.is_negative():
             principal_balance = Money.zero()
 
-        return days, principal_balance
+        return days, principal_balance, last_pay_date
+
+    def _split_interest(
+        self,
+        total_accrued: Decimal,
+        total_to_pay: Money,
+        days: int,
+        principal_balance: Money,
+        due_date: Optional[datetime],
+        last_payment_date: Optional[datetime],
+    ) -> tuple:
+        """
+        Split accrued interest into regular and mora components.
+
+        Returns (regular_amount, mora_amount). All interest is regular when
+        due_date is not provided or the payment is not late.
+        """
+        if due_date is None or last_payment_date is None:
+            return total_to_pay, Money.zero()
+
+        regular_days = (due_date - last_payment_date).days
+
+        if regular_days <= 0:
+            return Money.zero(), total_to_pay
+
+        if regular_days >= days:
+            return total_to_pay, Money.zero()
+
+        regular_accrued = self.interest_rate.accrue(principal_balance.raw_amount, regular_days)
+
+        if total_to_pay >= Money(total_accrued):
+            return Money(regular_accrued), Money(total_accrued - regular_accrued)
+
+        regular_amount = Money(min(regular_accrued, total_to_pay.raw_amount))
+        return regular_amount, total_to_pay - regular_amount
 
     def _allocate_payment(
         self,
@@ -497,11 +529,13 @@ class Loan:
         days: int,
         principal_balance: Money,
         description: Optional[str],
+        due_date: Optional[datetime] = None,
+        last_payment_date: Optional[datetime] = None,
     ) -> tuple:
         """
-        Allocate a payment across fines, interest, and principal.
+        Allocate a payment across fines, interest, mora interest, and principal.
 
-        Returns (fine_paid, interest_paid, principal_paid, remaining_amount).
+        Returns (fine_paid, interest_paid, mora_paid, principal_paid).
         Appends CashFlowItems to _all_payments as a side effect.
         """
         remaining = amount
@@ -515,15 +549,34 @@ class Loan:
             remaining = remaining - fine_paid
 
         interest_paid = Money.zero()
+        mora_paid = Money.zero()
         if remaining.is_positive() and principal_balance.is_positive() and days > 0:
-            daily_rate = self.interest_rate.to_daily().as_decimal
-            accrued = principal_balance.raw_amount * ((1 + daily_rate) ** Decimal(str(days)) - 1)
-            interest_paid = Money(min(accrued, remaining.raw_amount))
-            if interest_paid.is_positive():
-                self._all_payments.append(
-                    CashFlowItem(interest_paid, payment_date, f"Interest portion - {label}", "actual_interest")
+            total_accrued = self.interest_rate.accrue(principal_balance.raw_amount, days)
+            total_interest_to_pay = Money(min(total_accrued, remaining.raw_amount))
+
+            if total_interest_to_pay.is_positive():
+                regular_amount, mora_amount = self._split_interest(
+                    total_accrued,
+                    total_interest_to_pay,
+                    days,
+                    principal_balance,
+                    due_date,
+                    last_payment_date,
                 )
-                remaining = remaining - interest_paid
+
+                if regular_amount.is_positive():
+                    self._all_payments.append(
+                        CashFlowItem(regular_amount, payment_date, f"Interest portion - {label}", "actual_interest")
+                    )
+                    interest_paid = regular_amount
+
+                if mora_amount.is_positive():
+                    self._all_payments.append(
+                        CashFlowItem(mora_amount, payment_date, f"Mora interest - {label}", "actual_mora_interest")
+                    )
+                    mora_paid = mora_amount
+
+                remaining = remaining - interest_paid - mora_paid
 
         principal_paid = Money.zero()
         if remaining.is_positive():
@@ -532,7 +585,7 @@ class Loan:
                 CashFlowItem(principal_paid, payment_date, f"Principal portion - {label}", "actual_principal")
             )
 
-        return fine_paid, interest_paid, principal_paid
+        return fine_paid, interest_paid, mora_paid, principal_paid
 
     def _record_payment(
         self,
@@ -569,9 +622,21 @@ class Loan:
 
         self.calculate_late_fines(payment_date)
 
-        days, principal_balance = self._compute_interest_snapshot(payment_date, interest_date)
-        fine_paid, interest_paid, principal_paid = self._allocate_payment(
-            amount, payment_date, days, principal_balance, description
+        days, principal_balance, last_pay_date = self._compute_interest_snapshot(payment_date, interest_date)
+
+        try:
+            next_due = self._next_unpaid_due_date()
+        except ValueError:
+            next_due = None
+
+        fine_paid, interest_paid, mora_paid, principal_paid = self._allocate_payment(
+            amount,
+            payment_date,
+            days,
+            principal_balance,
+            description,
+            due_date=next_due,
+            last_payment_date=last_pay_date,
         )
 
         ending_balance = principal_balance - principal_paid
@@ -587,7 +652,7 @@ class Loan:
                 beginning_balance=principal_balance,
                 payment_amount=amount - fine_paid,
                 principal_payment=principal_paid,
-                interest_payment=interest_paid,
+                interest_payment=interest_paid + mora_paid,
                 ending_balance=ending_balance,
             )
         )
@@ -804,5 +869,5 @@ class Loan:
         return (
             f"Loan(principal={self.principal!r}, interest_rate={self.interest_rate!r}, "
             f"due_dates={self.due_dates!r}, disbursement_date={self.disbursement_date!r}, "
-            f"late_fee_rate={self.late_fee_rate!r}, grace_period_days={self.grace_period_days!r})"
+            f"fine_rate={self.fine_rate!r}, grace_period_days={self.grace_period_days!r})"
         )

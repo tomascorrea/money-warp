@@ -1,4 +1,4 @@
-"""Tests for late payments: fees/fines, mora interest accrual, and late overpayment allocation."""
+"""Tests for fines and late overpayment allocation."""
 
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -13,8 +13,8 @@ def test_loan_creation_with_fine_parameters():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, late_fee_rate=Decimal("0.03"), grace_period_days=5)
-    assert loan.late_fee_rate == Decimal("0.03")
+    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.03"), grace_period_days=5)
+    assert loan.fine_rate == Decimal("0.03")
     assert loan.grace_period_days == 5
 
 
@@ -24,7 +24,7 @@ def test_loan_creation_with_default_fine_parameters():
     due_dates = [datetime(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates)
-    assert loan.late_fee_rate == Decimal("0.02")  # Default 2%
+    assert loan.fine_rate == Decimal("0.02")  # Default 2%
     assert loan.grace_period_days == 0  # Default no grace period
 
 
@@ -33,8 +33,8 @@ def test_loan_creation_negative_fine_rate_raises_error():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    with pytest.raises(ValueError, match="Late fee rate must be non-negative"):
-        Loan(principal, rate, due_dates, late_fee_rate=Decimal("-0.01"))
+    with pytest.raises(ValueError, match="Fine rate must be non-negative"):
+        Loan(principal, rate, due_dates, fine_rate=Decimal("-0.01"))
 
 
 def test_loan_creation_negative_grace_period_raises_error():
@@ -112,7 +112,7 @@ def test_loan_calculate_late_fines_applies_fine():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, late_fee_rate=Decimal("0.02"), grace_period_days=0)
+    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.02"), grace_period_days=0)
     late_date = datetime(2024, 2, 5)  # 4 days late
 
     new_fines = loan.calculate_late_fines(late_date)
@@ -125,7 +125,7 @@ def test_loan_calculate_late_fines_correct_amount():
     rate = InterestRate("6% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, late_fee_rate=Decimal("0.05"))  # 5% fine
+    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.05"))  # 5% fine
     expected_payment = loan.get_expected_payment_amount(datetime(2024, 2, 1))
     expected_fine = Money(expected_payment.raw_amount * Decimal("0.05"))
 
@@ -138,7 +138,7 @@ def test_loan_calculate_late_fines_only_once_per_due_date():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, late_fee_rate=Decimal("0.02"))
+    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.02"))
 
     # Apply fines twice for same due date
     first_fines = loan.calculate_late_fines(datetime(2024, 2, 5))
@@ -153,7 +153,7 @@ def test_loan_calculate_late_fines_multiple_due_dates():
     rate = InterestRate("6% a")
     due_dates = [datetime(2024, 2, 1), datetime(2024, 3, 1)]
 
-    loan = Loan(principal, rate, due_dates, late_fee_rate=Decimal("0.02"))
+    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.02"))
 
     # Both payments are late
     late_date = datetime(2024, 3, 5)
@@ -168,7 +168,7 @@ def test_loan_record_payment_allocates_to_fines_first():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, late_fee_rate=Decimal("0.02"))
+    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.02"))
 
     # Apply fines first
     loan.calculate_late_fines(datetime(2024, 2, 5))
@@ -189,7 +189,7 @@ def test_loan_record_payment_allocates_fines_then_principal():
     rate = InterestRate("0% a")  # No interest for simplicity
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, late_fee_rate=Decimal("0.10"))  # 10% fine
+    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.10"))  # 10% fine
 
     # Apply fines
     loan.calculate_late_fines(datetime(2024, 2, 5))
@@ -214,7 +214,7 @@ def test_loan_current_balance_includes_outstanding_fines():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, late_fee_rate=Decimal("0.02"))
+    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.02"))
     initial_balance = loan.current_balance
 
     # Apply fines
@@ -230,7 +230,7 @@ def test_loan_is_paid_off_considers_fines():
     rate = InterestRate("0% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, late_fee_rate=Decimal("0.05"))
+    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.05"))
 
     # Make partial payment that doesn't cover full installment
     loan.record_payment(Money("500.00"), datetime(2024, 1, 31))
@@ -257,7 +257,7 @@ def test_loan_fine_calculation_with_different_rates(fine_rate, expected_multipli
     rate = InterestRate("6% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, late_fee_rate=fine_rate)
+    loan = Loan(principal, rate, due_dates, fine_rate=fine_rate)
     expected_payment = loan.get_expected_payment_amount(datetime(2024, 2, 1))
     expected_fine = Money(expected_payment.raw_amount * expected_multiplier)
 
@@ -287,52 +287,6 @@ def test_loan_grace_period_scenarios(grace_days, check_day, should_be_late):
     assert loan.is_payment_late(due_date, check_date) == should_be_late
 
 
-# --- Late payment interest accrual (mora) tests ---
-
-
-def test_pay_installment_late_accrues_extra_interest():
-    """Paying after the due date should charge more interest than the original schedule expected."""
-    principal = Money("10000.00")
-    rate = InterestRate("6% a")
-    due_dates = [datetime(2025, 2, 1)]
-    disbursement = datetime(2025, 1, 1)
-
-    loan = Loan(principal, rate, due_dates, disbursement_date=disbursement)
-    original_schedule = loan.get_original_schedule()
-    scheduled_interest = original_schedule[0].interest_payment
-
-    with Warp(loan, datetime(2025, 2, 15)) as warped:
-        warped.pay_installment(Money("10500.00"))
-        interest_items = [p for p in warped._all_payments if p.category == "actual_interest"]
-
-    assert interest_items[0].amount > scheduled_interest
-
-
-@pytest.mark.parametrize(
-    "late_days",
-    [1, 7, 14, 30],
-)
-def test_pay_installment_late_interest_matches_manual_calculation(late_days):
-    """Interest on late payment matches daily-compounded accrual from disbursement to payment date."""
-    principal = Money("10000.00")
-    rate = InterestRate("6% a")
-    due_date = datetime(2025, 2, 1)
-    disbursement = datetime(2025, 1, 1)
-
-    loan = Loan(principal, rate, [due_date], disbursement_date=disbursement)
-    payment_date = due_date + timedelta(days=late_days)
-    total_days = (payment_date - disbursement).days
-
-    daily_rate = rate.to_daily().as_decimal
-    expected_interest = Decimal("10000") * ((1 + daily_rate) ** total_days - 1)
-
-    with Warp(loan, payment_date) as warped:
-        warped.pay_installment(Money("11000.00"))
-        interest_items = [p for p in warped._all_payments if p.category == "actual_interest"]
-
-    assert interest_items[0].amount == Money(expected_interest)
-
-
 def test_pay_installment_late_triggers_fines_and_extra_interest():
     """Late payment should apply both fines and charge interest beyond the due date."""
     principal = Money("10000.00")
@@ -345,38 +299,21 @@ def test_pay_installment_late_triggers_fines_and_extra_interest():
         rate,
         [due_date],
         disbursement_date=disbursement,
-        late_fee_rate=Decimal("0.05"),
+        fine_rate=Decimal("0.05"),
     )
 
     with Warp(loan, datetime(2025, 2, 15)) as warped:
         warped.pay_installment(Money("11000.00"))
         fine_items = [p for p in warped._all_payments if p.category == "actual_fine"]
         interest_items = [p for p in warped._all_payments if p.category == "actual_interest"]
+        mora_items = [p for p in warped._all_payments if p.category == "actual_mora_interest"]
 
     assert len(fine_items) == 1
     assert fine_items[0].amount > Money.zero()
     assert len(interest_items) == 1
     assert interest_items[0].amount > Money.zero()
-
-
-def test_pay_installment_on_time_interest_unchanged():
-    """On-time payment still charges interest exactly up to the due date (regression guard)."""
-    principal = Money("10000.00")
-    rate = InterestRate("6% a")
-    due_date = datetime(2025, 2, 1)
-    disbursement = datetime(2025, 1, 1)
-
-    loan = Loan(principal, rate, [due_date], disbursement_date=disbursement)
-    days_to_due = (due_date - disbursement).days
-
-    daily_rate = rate.to_daily().as_decimal
-    expected_interest = Decimal("10000") * ((1 + daily_rate) ** days_to_due - 1)
-
-    with Warp(loan, due_date) as warped:
-        warped.pay_installment(Money("10500.00"))
-        interest_items = [p for p in warped._all_payments if p.category == "actual_interest"]
-
-    assert interest_items[0].amount == Money(expected_interest)
+    assert len(mora_items) == 1
+    assert mora_items[0].amount > Money.zero()
 
 
 # --- Late overpayment covering multiple installments ---
@@ -399,7 +336,7 @@ def test_late_overpayment_fine_equals_two_percent_of_scheduled_payment():
         InterestRate("6% a"),
         [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)],
         disbursement_date=datetime(2025, 1, 1),
-        late_fee_rate=Decimal("0.02"),
+        fine_rate=Decimal("0.02"),
     )
 
     scheduled_payment = loan.get_expected_payment_amount(datetime(2025, 2, 1))
@@ -412,24 +349,25 @@ def test_late_overpayment_fine_equals_two_percent_of_scheduled_payment():
     assert fine_items[0].amount == expected_fine
 
 
-def test_late_overpayment_mora_interest_for_45_days():
-    """Interest = 45-day daily-compounded accrual on full $10k principal."""
+def test_late_overpayment_total_interest_for_45_days():
+    """Total interest (regular + mora) = 45-day daily-compounded accrual on full $10k principal."""
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
         [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)],
         disbursement_date=datetime(2025, 1, 1),
-        late_fee_rate=Decimal("0.02"),
+        fine_rate=Decimal("0.02"),
     )
 
     daily_rate = InterestRate("6% a").to_daily().as_decimal
-    expected_interest = Decimal("10000") * ((1 + daily_rate) ** 45 - 1)
+    expected_total = Decimal("10000") * ((1 + daily_rate) ** 45 - 1)
 
     with Warp(loan, datetime(2025, 2, 15)) as warped:
         warped.pay_installment(Money("7000.00"))
-        interest_items = [p for p in warped._all_payments if p.category == "actual_interest"]
+        interest_items = [p for p in warped._all_payments if p.category in ("actual_interest", "actual_mora_interest")]
+        total_interest = sum((p.amount for p in interest_items), Money.zero())
 
-    assert interest_items[0].amount == Money(expected_interest)
+    assert total_interest == Money(expected_total)
 
 
 def test_late_overpayment_principal_is_remainder_after_fine_and_interest():
@@ -439,7 +377,7 @@ def test_late_overpayment_principal_is_remainder_after_fine_and_interest():
         InterestRate("6% a"),
         [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)],
         disbursement_date=datetime(2025, 1, 1),
-        late_fee_rate=Decimal("0.02"),
+        fine_rate=Decimal("0.02"),
     )
 
     scheduled_payment = loan.get_expected_payment_amount(datetime(2025, 2, 1))
@@ -462,7 +400,7 @@ def test_late_overpayment_ending_balance_in_actual_entry():
         InterestRate("6% a"),
         [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)],
         disbursement_date=datetime(2025, 1, 1),
-        late_fee_rate=Decimal("0.02"),
+        fine_rate=Decimal("0.02"),
     )
 
     scheduled_payment = loan.get_expected_payment_amount(datetime(2025, 2, 1))
@@ -486,7 +424,7 @@ def test_late_overpayment_covers_two_installments():
         InterestRate("6% a"),
         [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)],
         disbursement_date=datetime(2025, 1, 1),
-        late_fee_rate=Decimal("0.02"),
+        fine_rate=Decimal("0.02"),
     )
 
     with Warp(loan, datetime(2025, 2, 15)) as warped:
@@ -503,7 +441,7 @@ def test_late_overpayment_projected_entry_closes_loan():
         InterestRate("6% a"),
         [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)],
         disbursement_date=datetime(2025, 1, 1),
-        late_fee_rate=Decimal("0.02"),
+        fine_rate=Decimal("0.02"),
     )
 
     with Warp(loan, datetime(2025, 2, 15)) as warped:

@@ -169,20 +169,22 @@ def test_warp_to_past_ignores_future_payments():
 
 
 def test_warp_to_future_keeps_all_past_payments():
-    # Disable fines so each payment produces exactly interest + principal (2 items)
+    # Disable fines so payments produce interest/mora + principal only.
+    # Payment 1 (Jan 10) is early -> interest + principal = 2 items
+    # Payment 2 (Feb 10) is late vs Jan 15 due date -> interest + mora + principal = 3 items
     loan = Loan(
         Money("10000"),
         InterestRate("5% annual"),
         [datetime(2024, 1, 15), datetime(2024, 2, 15)],
-        late_fee_rate=Decimal("0"),
+        fine_rate=Decimal("0"),
     )
 
     loan.record_payment(Money("500"), datetime(2024, 1, 10), "Payment 1")
     loan.record_payment(Money("600"), datetime(2024, 2, 10), "Payment 2")
 
-    # Warp to future date — both past payments must be visible (4 items: 2 x 2 components)
+    # Warp to future date — both past payments must be visible (5 items: 2 + 3)
     with Warp(loan, datetime(2025, 1, 1)) as warped_loan:
-        assert len(warped_loan._actual_payments) == 4
+        assert len(warped_loan._actual_payments) == 5
 
 
 # String representations

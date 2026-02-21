@@ -32,7 +32,7 @@ money_warp/
 
 ### Explicit Interest Rates
 
-`InterestRate` eliminates the "is 5 the rate or the percentage?" ambiguity. It stores a decimal rate plus a `CompoundingFrequency` enum (`DAILY`, `MONTHLY`, `QUARTERLY`, `SEMI_ANNUALLY`, `ANNUALLY`, `CONTINUOUS`). All conversions go through an effective annual rate as the canonical intermediate form.
+`InterestRate` eliminates the "is 5 the rate or the percentage?" ambiguity. It stores a decimal rate plus a `CompoundingFrequency` enum (`DAILY`, `MONTHLY`, `QUARTERLY`, `SEMI_ANNUALLY`, `ANNUALLY`, `CONTINUOUS`). All conversions go through an effective annual rate as the canonical intermediate form. The `accrue(principal, days)` method computes compound interest on a principal over a number of days, centralising the formula that was previously duplicated across the `Loan` class.
 
 String parsing accepts human-friendly formats like `"5.25% a"` or `"0.004167 m"`.
 
@@ -58,9 +58,11 @@ Rather than encoding "monthly" or "bi-weekly" into the loan, the constructor acc
 
 Every recorded payment carries three dates: `payment_date` (when money moved), `interest_date` (cutoff for interest accrual), and `processing_date` (audit trail). Decoupling `interest_date` from `payment_date` enables early-payment discounts (fewer interest days) and mora interest on late payments (extra interest days beyond the due date). Sugar methods (`pay_installment`, `anticipate_payment`) set these dates automatically from `self.now()`.
 
-### Payment Allocation and Late Fees
+### Payment Allocation, Fines, and Mora Interest
 
-All payments allocate funds in strict priority: outstanding fines first, then accrued interest, then principal. Late payments trigger two costs: a flat fine (percentage of the missed installment, calculated from the original schedule) and mora interest (daily-compounded interest for the extra days beyond the due date). A configurable `grace_period_days` delays fine application. The `fines_applied` dict prevents duplicate fines for the same due date.
+All payments allocate funds in strict priority: outstanding fines first, then accrued interest, then principal. Late payments trigger two costs: a flat fine (percentage of the missed installment, calculated from the original schedule) and mora interest (daily-compounded interest for the extra days beyond the due date). When a late payment is recorded, the interest is split into two `CashFlowItem` entries: regular interest (`"actual_interest"`, up to the due date) and mora interest (`"actual_mora_interest"`, beyond the due date). A configurable `grace_period_days` delays fine application. The `fines_applied` dict prevents duplicate fines for the same due date.
+
+All `CashFlowItem` categories use explicit prefixes: `expected_` for projected schedule items (`"expected_disbursement"`, `"expected_interest"`, `"expected_principal"`) and `actual_` for recorded payments (`"actual_interest"`, `"actual_mora_interest"`, `"actual_principal"`, `"actual_fine"`).
 
 ### Time Awareness via Function Replacement
 

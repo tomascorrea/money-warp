@@ -87,7 +87,7 @@ def test_loan_many_payments():
     # Should have 1 disbursement + 24 * 2 (interest, principal) = 49 items
     assert len(cash_flow) == 49
 
-    interest_items = cash_flow.query.filter_by(category="interest").all()
-    principal_items = cash_flow.query.filter_by(category="principal").all()
+    interest_items = cash_flow.query.filter_by(category="expected_interest").all()
+    principal_items = cash_flow.query.filter_by(category="expected_principal").all()
     assert len(interest_items) == 24
     assert len(principal_items) == 24

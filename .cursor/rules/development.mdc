@@ -42,7 +42,7 @@ The `knowledge/` directory contains one file per feature area. Each file describ
 money-warp/
 ├── knowledge/         # Living feature documentation (see Core Principles §2)
 │   ├── architecture.md   # Overall design, component relationships
-│   ├── loan.md           # Loan model, schedulers, late fees
+│   ├── loan.md           # Loan model, schedulers, fines, mora interest
 │   ├── warp.md           # Time Machine context manager
 │   ├── tvm.md            # Present value, IRR, MIRR
 │   └── environment.md    # Dev environment setup

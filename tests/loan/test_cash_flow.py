@@ -14,7 +14,7 @@ def test_loan_generate_expected_cash_flow_includes_disbursement():
     loan = Loan(principal, rate, due_dates)
     cash_flow = loan.generate_expected_cash_flow()
 
-    disbursement_items = cash_flow.query.filter_by(category="disbursement").all()
+    disbursement_items = cash_flow.query.filter_by(category="expected_disbursement").all()
     assert len(disbursement_items) == 1
     assert disbursement_items[0].amount == principal
 
@@ -27,8 +27,8 @@ def test_loan_generate_expected_cash_flow_has_payment_breakdown():
     loan = Loan(principal, rate, due_dates)
     cash_flow = loan.generate_expected_cash_flow()
 
-    interest_items = cash_flow.query.filter_by(category="interest").all()
-    principal_items = cash_flow.query.filter_by(category="principal").all()
+    interest_items = cash_flow.query.filter_by(category="expected_interest").all()
+    principal_items = cash_flow.query.filter_by(category="expected_principal").all()
 
     assert len(interest_items) == 1
     assert len(principal_items) == 1
@@ -45,8 +45,8 @@ def test_loan_generate_expected_cash_flow_multiple_payments():
     # Should have 1 disbursement + 3 interest + 3 principal = 7 items
     assert len(cash_flow) == 7
 
-    interest_items = cash_flow.query.filter_by(category="interest").all()
-    principal_items = cash_flow.query.filter_by(category="principal").all()
+    interest_items = cash_flow.query.filter_by(category="expected_interest").all()
+    principal_items = cash_flow.query.filter_by(category="expected_principal").all()
     assert len(interest_items) == 3
     assert len(principal_items) == 3
 
@@ -73,7 +73,7 @@ def test_loan_get_actual_cash_flow_empty_initially():
     actual_cf = loan.get_actual_cash_flow()
 
     # Should have disbursement + expected payments, but no actual payments yet
-    disbursement_items = actual_cf.query.filter_by(category="disbursement").all()
+    disbursement_items = actual_cf.query.filter_by(category="expected_disbursement").all()
     actual_payment_items = actual_cf.query.filter_by(category="actual_interest").all()
 
     assert len(disbursement_items) == 1
@@ -103,7 +103,7 @@ def test_loan_get_actual_cash_flow_includes_fines():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, late_fee_rate=Decimal("0.02"), grace_period_days=3)
+    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.02"), grace_period_days=3)
 
     # Apply fines and make payment
     loan.calculate_late_fines(datetime(2024, 2, 10))

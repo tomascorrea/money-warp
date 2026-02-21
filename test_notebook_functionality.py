@@ -31,12 +31,12 @@ def test_loan_creation():
         month = ((month - 1) % 12) + 1
         due_dates.append(datetime(year, month, start_date.day))
 
-    # Create loan with late fee settings
+    # Create loan with fine settings
     loan = Loan(
         principal=principal,
         interest_rate=interest_rate,
         due_dates=due_dates,
-        late_fee_rate=Decimal("0.02"),  # 2%
+        fine_rate=Decimal("0.02"),  # 2%
         grace_period_days=0,
     )
 
@@ -44,7 +44,7 @@ def test_loan_creation():
     print(f"   Principal: ${loan.principal.real_amount:,.2f}")
     print(f"   Interest Rate: {loan.interest_rate}")
     print(f"   Payments: {len(loan.due_dates)}")
-    print(f"   Late Fee Rate: {float(loan.late_fee_rate * 100):.1f}%")
+    print(f"   Fine Rate: {float(loan.fine_rate * 100):.1f}%")
     print(f"   Current Balance: ${loan.current_balance.real_amount:,.2f}")
 
     return loan
@@ -90,7 +90,7 @@ def test_time_machine(loan):
         print(f"✅ Warped to {future_date.strftime('%Y-%m-%d')}")
         print(f"   Warped balance: ${warped_balance.real_amount:,.2f}")
 
-        # Test late fee calculation
+        # Test fine calculation
         fines = warped_loan.calculate_late_fines(future_date)
         if fines.is_positive():
             print(f"   Late fines applied: ${fines.real_amount:,.2f}")
@@ -164,7 +164,7 @@ def test_late_payment_scenario(loan):
         print(f"   Outstanding fines: ${warped_loan.outstanding_fines.real_amount:,.2f}")
 
         if new_fines.is_positive():
-            print(f"   Fine rate applied: {float(loan.late_fee_rate * 100):.1f}%")
+            print(f"   Fine rate applied: {float(loan.fine_rate * 100):.1f}%")
 
 
 def main():

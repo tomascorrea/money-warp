@@ -11,7 +11,7 @@ The `Loan` class is a state machine that models a personal loan with daily-compo
 | `due_dates` | `List[datetime]` | required | Sorted automatically |
 | `disbursement_date` | `Optional[datetime]` | first due date - 30d | When funds are released |
 | `scheduler` | `Optional[Type[BaseScheduler]]` | `PriceScheduler` | Amortization strategy |
-| `late_fee_rate` | `Optional[Decimal]` | `0.02` (2%) | Fine as fraction of expected payment |
+| `fine_rate` | `Optional[Decimal]` | `0.02` (2%) | Fine as fraction of expected payment |
 | `grace_period_days` | `int` | `0` | Days after due date before fines apply |
 
 ## Three-Date Payment Model
@@ -47,7 +47,7 @@ Neither method takes a date parameter — they use `self.now()` (which respects 
 All payment methods allocate funds in strict priority order:
 
 1. **Outstanding fines** first
-2. **Accrued interest** (daily-compounded since last payment, up to `interest_date`)
+2. **Accrued interest** (daily-compounded since last payment, up to `interest_date`; split into regular + mora when late)
 3. **Principal** remainder
 
 Interest days and principal balance are pre-computed at the top of `_record_payment` using `payment_date` as the filter for existing payments, before any internal state is mutated.
@@ -62,7 +62,7 @@ If no payments have been made, returns the original static schedule.
 
 ### `get_original_schedule()`
 
-Always returns the static schedule based on original loan terms, ignoring any payments. Used internally for late fee calculations (`get_expected_payment_amount`) and for comparison.
+Always returns the static schedule based on original loan terms, ignoring any payments. Used internally for fine calculations (`get_expected_payment_amount`) and for comparison.
 
 ### PaymentScheduleEntry
 
@@ -96,7 +96,12 @@ A late payment incurs two costs, both handled automatically by `pay_installment`
 
 ### Mora Interest
 
-When `pay_installment` is called after the due date, `interest_date = max(self.now(), next_due_date)` causes interest to accrue beyond the due date up to the actual payment date. The borrower pays more interest for the additional late days.
+When `pay_installment` is called after the due date, `interest_date = max(self.now(), next_due_date)` causes interest to accrue beyond the due date up to the actual payment date. The interest is split into two separate `CashFlowItem` entries:
+
+- **Regular interest** (`"actual_interest"`) — accrued from last payment to the due date.
+- **Mora interest** (`"actual_mora_interest"`) — accrued from the due date to the payment date.
+
+The split is computed so that `regular + mora = total compound interest`. Regular interest equals what the original schedule expected; mora is the additional cost of being late. On-time and early payments produce only a regular interest item (no mora). All compound interest accrual uses `InterestRate.accrue(principal, days)` — a single method that encapsulates the formula `principal * ((1 + daily_rate) ** days - 1)`.
 
 ### Late Overpayment
 
@@ -106,8 +111,23 @@ Example: $10k loan, 3 monthly installments at 6%, borrower misses installment 1 
 
 ## Cash Flow Generation
 
-- `generate_expected_cash_flow()` — disbursement (positive, category `"disbursement"`) plus original scheduled payments split into interest and principal items (negative). Uses `get_original_schedule()`.
-- `get_actual_cash_flow()` — expected items plus recorded payments and fine-application events.
+- `generate_expected_cash_flow()` — disbursement (positive, category `"expected_disbursement"`) plus original scheduled payments split into interest (`"expected_interest"`) and principal (`"expected_principal"`) items (negative). Uses `get_original_schedule()`.
+- `get_actual_cash_flow()` — expected items plus recorded payments (`"actual_interest"`, `"actual_mora_interest"`, `"actual_principal"`, `"actual_fine"`) and fine-application events (`"fine_applied"`).
+
+### CashFlowItem Categories
+
+All categories are explicitly prefixed to distinguish expected schedule items from actual recorded payments:
+
+| Category | Origin | Meaning |
+|---|---|---|
+| `"expected_disbursement"` | Expected | Loan disbursement |
+| `"expected_interest"` | Expected | Scheduled interest payment |
+| `"expected_principal"` | Expected | Scheduled principal payment |
+| `"actual_interest"` | Actual | Regular interest paid (up to due date) |
+| `"actual_mora_interest"` | Actual | Mora interest paid (beyond due date) |
+| `"actual_principal"` | Actual | Principal paid |
+| `"actual_fine"` | Actual | Fine paid |
+| `"fine_applied"` | Event | Fine applied to loan (increases amount owed) |
 
 ## TVM Sugar
 
