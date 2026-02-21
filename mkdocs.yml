@@ -1,11 +1,10 @@
 site_name: money-warp
-repo_url: https://github.com/tomas_correa/money-warp
-site_url: https://tomas_correa.github.io/money-warp
+repo_url: https://github.com/tomascorrea/money-warp
+site_url: https://tomascorrea.github.io/money-warp
 site_description: MoneyWarp – Bend time. Model cash.
-site_author: Robbin dev team
+site_author: Tomas Correa
 edit_uri: edit/main/docs/
-repo_name: tomas_correa/money-warp
-copyright: Maintained by <a href="https://tomas_correa.com">Florian</a>.
+repo_name: tomascorrea/money-warp
 
 nav:
   - Home: index.md
@@ -17,7 +16,9 @@ nav:
     - Date Generation: examples/date_generation.md
     - Time Machine (Warp): examples/time_machine.md
     - Present Value & IRR: examples/present_value_irr.md
+    - Fines & Mora Interest: examples/fines.md
   - API Reference: modules.md
+
 plugins:
   - search
   - mkdocstrings:
@@ -36,20 +37,25 @@ plugins:
             show_inheritance_diagram: false
 
 theme:
-  name: readthedocs
-  feature:
-    tabs: true
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: white
+      primary: deep purple
       accent: deep orange
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: black
+      primary: deep purple
       accent: deep orange
       toggle:
         icon: material/brightness-4
@@ -60,7 +66,7 @@ theme:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/tomas_correa/money-warp
+      link: https://github.com/tomascorrea/money-warp
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/money-warp
 
@@ -69,3 +75,10 @@ markdown_extensions:
       permalink: true
   - pymdownx.arithmatex:
       generic: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details

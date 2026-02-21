@@ -2,10 +2,10 @@
 
 **Bend time. Model cash.**
 
-[![Release](https://img.shields.io/github/v/release/tomas_correa/money-warp)](https://img.shields.io/github/v/release/tomas_correa/money-warp)
-[![Build status](https://img.shields.io/github/actions/workflow/status/tomas_correa/money-warp/main.yml?branch=main)](https://github.com/tomas_correa/money-warp/actions/workflows/main.yml?query=branch%3Amain)
-[![codecov](https://codecov.io/gh/tomas_correa/money-warp/branch/main/graph/badge.svg)](https://codecov.io/gh/tomas_correa/money-warp)
-[![License](https://img.shields.io/github/license/tomas_correa/money-warp)](https://img.shields.io/github/license/tomas_correa/money-warp)
+[![Release](https://img.shields.io/github/v/release/tomascorrea/money-warp)](https://img.shields.io/github/v/release/tomascorrea/money-warp)
+[![Build status](https://img.shields.io/github/actions/workflow/status/tomascorrea/money-warp/main.yml?branch=main)](https://github.com/tomascorrea/money-warp/actions/workflows/main.yml?query=branch%3Amain)
+[![codecov](https://codecov.io/gh/tomascorrea/money-warp/branch/main/graph/badge.svg)](https://codecov.io/gh/tomascorrea/money-warp)
+[![License](https://img.shields.io/github/license/tomascorrea/money-warp)](https://img.shields.io/github/license/tomascorrea/money-warp)
 
 > **⚠️ Development Stage Notice**
 > 
@@ -14,7 +14,7 @@
 > - ✅ Core classes (`Money`, `InterestRate`, `CashFlow`, `Loan`) are stable
 > - ✅ Comprehensive test suite with 469 tests
 > - ⚠️ API may evolve based on user feedback
-> - ⚠️ Not yet published to PyPI
+> - ✅ Published to PyPI
 > - 🚧 Additional features and schedulers in development
 
 MoneyWarp is a Python library for working with the time value of money. It treats loans, annuities, and investments as simple cash flows through time — and gives you the tools to warp them back and forth between present, future, and everything in between.

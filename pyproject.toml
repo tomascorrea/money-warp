@@ -1,11 +1,26 @@
 [tool.poetry]
 name = "money_warp"
-version = "0.0.1"
+version = "0.1.0"
 description = "MoneyWarp – Bend time. Model cash."
-authors = ["Robbin dev team <fdev@robbin.com.br>"]
-repository = "https://github.com/tomas_correa/money-warp"
-documentation = "https://tomas_correa.github.io/money-warp/"
+license = "MIT"
+authors = ["Tomas Correa <tomas.correa@gmail.com>"]
+repository = "https://github.com/tomascorrea/money-warp"
+documentation = "https://tomascorrea.github.io/money-warp/"
 readme = "README.md"
+keywords = ["finance", "money", "loan", "interest-rate", "cash-flow", "time-value-of-money"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Office/Business :: Financial",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
 packages = [
   {include = "money_warp"}
 ]
@@ -27,6 +42,7 @@ hypothesis = {version = "^6.151.9", python = ">=3.10"}
 mkdocs = "^1.6.1"
 mkdocstrings = "^0.29.1"
 mkdocstrings-python = "^1.16.10"
+mkdocs-material = "^9.7.2"
 
 
 [tool.poetry.group.notebook.dependencies]
