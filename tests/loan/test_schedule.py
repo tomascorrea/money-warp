@@ -10,7 +10,7 @@ def test_loan_get_amortization_schedule_structure():
     rate = InterestRate("6% a")
     due_dates = [datetime(2024, 2, 1), datetime(2024, 3, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     schedule = loan.get_amortization_schedule()
 
     assert len(schedule) == 2
@@ -24,7 +24,7 @@ def test_loan_get_amortization_schedule_entries():
     rate = InterestRate("6% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     schedule = loan.get_amortization_schedule()
 
     entry = schedule[0]
@@ -42,7 +42,7 @@ def test_loan_single_payment_zero_interest():
     rate = InterestRate("0% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     schedule = loan.get_amortization_schedule()
 
     # Should equal principal exactly
@@ -55,7 +55,7 @@ def test_loan_very_small_principal():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     cash_flow = loan.generate_expected_cash_flow()
 
     # Should still generate valid cash flow
@@ -67,7 +67,7 @@ def test_loan_high_interest_rate():
     rate = InterestRate("50% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     schedule = loan.get_amortization_schedule()
 
     # Should be significantly higher than principal (50% annual for ~30 days)
@@ -81,7 +81,7 @@ def test_loan_many_payments():
     # Create monthly payments for 2 years
     due_dates = [datetime(2024, 1, 1) + timedelta(days=30 * i) for i in range(1, 25)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     cash_flow = loan.generate_expected_cash_flow()
 
     # Should have 1 disbursement + 24 * 2 (interest, principal) = 49 items

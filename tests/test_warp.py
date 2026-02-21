@@ -18,7 +18,7 @@ def sample_loan():
         datetime(2024, 2, 15),
         datetime(2024, 3, 15),
     ]
-    return Loan(principal, interest_rate, due_dates)
+    return Loan(principal, interest_rate, due_dates, disbursement_date=datetime(2024, 1, 1))
 
 
 # Date parsing tests
@@ -150,7 +150,10 @@ def test_warp_days_since_last_payment_uses_warped_time(sample_loan):
 def test_warp_to_past_ignores_future_payments():
     # Create loan with payments at different dates
     loan = Loan(
-        Money("10000"), InterestRate("5% annual"), [datetime(2024, 1, 15), datetime(2024, 2, 15), datetime(2024, 3, 15)]
+        Money("10000"),
+        InterestRate("5% annual"),
+        [datetime(2024, 1, 15), datetime(2024, 2, 15), datetime(2024, 3, 15)],
+        disbursement_date=datetime(2024, 1, 1),
     )
 
     # Add payments
@@ -176,6 +179,7 @@ def test_warp_to_future_keeps_all_past_payments():
         Money("10000"),
         InterestRate("5% annual"),
         [datetime(2024, 1, 15), datetime(2024, 2, 15)],
+        disbursement_date=datetime(2024, 1, 1),
         fine_rate=Decimal("0"),
     )
 
@@ -189,7 +193,9 @@ def test_warp_to_future_keeps_all_past_payments():
 
 # String representations
 def test_warp_string_representation():
-    loan = Loan(Money("1000"), InterestRate("5% annual"), [datetime(2024, 1, 1)])
+    loan = Loan(
+        Money("1000"), InterestRate("5% annual"), [datetime(2024, 1, 1)], disbursement_date=datetime(2023, 12, 1)
+    )
     warp = Warp(loan, "2030-01-15")
 
     str_repr = str(warp)
@@ -198,7 +204,9 @@ def test_warp_string_representation():
 
 
 def test_warp_repr_representation():
-    loan = Loan(Money("1000"), InterestRate("5% annual"), [datetime(2024, 1, 1)])
+    loan = Loan(
+        Money("1000"), InterestRate("5% annual"), [datetime(2024, 1, 1)], disbursement_date=datetime(2023, 12, 1)
+    )
     warp = Warp(loan, "2030-01-15")
 
     repr_str = repr(warp)

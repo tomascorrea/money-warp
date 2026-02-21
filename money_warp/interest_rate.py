@@ -6,6 +6,8 @@ from decimal import Decimal
 from enum import Enum
 from typing import Dict, Optional, Union
 
+from money_warp.money import Money
+
 
 class CompoundingFrequency(Enum):
     """Frequency of compounding per year."""
@@ -202,21 +204,22 @@ class InterestRate:
         # For periodic rates: compound the periodic rate for the full year
         return (1 + self._decimal_rate) ** Decimal(str(n)) - 1
 
-    def accrue(self, principal: Decimal, days: int) -> Decimal:
+    def accrue(self, principal: Money, days: int) -> Money:
         """
         Compute compound interest accrued on a principal over a number of days.
 
         Formula: principal * ((1 + daily_rate) ** days - 1)
 
         Args:
-            principal: The principal amount as a Decimal.
+            principal: The principal amount.
             days: Number of days to accrue interest over.
 
         Returns:
-            The accrued interest amount (not including the principal).
+            The accrued interest (not including the principal).
         """
         daily_rate = self.to_daily().as_decimal
-        return principal * ((1 + daily_rate) ** Decimal(str(days)) - 1)
+        accrued = principal.raw_amount * ((1 + daily_rate) ** Decimal(str(days)) - 1)
+        return Money(accrued)
 
     def __str__(self) -> str:
         """Clear string representation."""

@@ -11,7 +11,7 @@ def test_loan_generate_expected_cash_flow_includes_disbursement():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     cash_flow = loan.generate_expected_cash_flow()
 
     disbursement_items = cash_flow.query.filter_by(category="expected_disbursement").all()
@@ -24,7 +24,7 @@ def test_loan_generate_expected_cash_flow_has_payment_breakdown():
     rate = InterestRate("6% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     cash_flow = loan.generate_expected_cash_flow()
 
     interest_items = cash_flow.query.filter_by(category="expected_interest").all()
@@ -39,7 +39,7 @@ def test_loan_generate_expected_cash_flow_multiple_payments():
     rate = InterestRate("6% a")
     due_dates = [datetime(2024, 2, 1), datetime(2024, 3, 1), datetime(2024, 4, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     cash_flow = loan.generate_expected_cash_flow()
 
     # Should have 1 disbursement + 3 interest + 3 principal = 7 items
@@ -56,7 +56,7 @@ def test_loan_generate_expected_cash_flow_net_zero():
     rate = InterestRate("0% a")  # Zero interest for simplicity
     due_dates = [datetime(2024, 2, 1), datetime(2024, 3, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     cash_flow = loan.generate_expected_cash_flow()
 
     # Net should be close to zero (disbursement + payments)
@@ -69,7 +69,7 @@ def test_loan_get_actual_cash_flow_empty_initially():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     actual_cf = loan.get_actual_cash_flow()
 
     # Should have disbursement + expected payments, but no actual payments yet
@@ -85,7 +85,7 @@ def test_loan_get_actual_cash_flow_includes_payments():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     loan.record_payment(Money("5000.00"), datetime(2024, 1, 15), "First payment")
 
     actual_cf = loan.get_actual_cash_flow()
@@ -103,7 +103,14 @@ def test_loan_get_actual_cash_flow_includes_fines():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.02"), grace_period_days=3)
+    loan = Loan(
+        principal,
+        rate,
+        due_dates,
+        disbursement_date=datetime(2024, 1, 1),
+        fine_rate=Decimal("0.02"),
+        grace_period_days=3,
+    )
 
     # Apply fines and make payment
     loan.calculate_late_fines(datetime(2024, 2, 10))

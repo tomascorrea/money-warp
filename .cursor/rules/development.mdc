@@ -16,7 +16,14 @@ This document contains development guidelines and rules for working on the **mon
 - **Review existing code**: Understand how your changes fit into the existing codebase
 - **Break down complex tasks**: Split large features into smaller, manageable pieces
 
-### 2. Knowledge Directory ⭐
+### 2. Two Audiences for Documentation ⭐
+**`docs/` and `README.md` are for humans. `knowledge/` is for the AI.**
+
+- **`docs/` and `README.md`**: Written for human readers — developers, users, contributors. Focus on clarity, examples, and getting-started guidance. Keep the tone approachable.
+- **`knowledge/`**: Written for AI context — the agent reads these files to understand the current state of the codebase. Focus on precision, design decisions, API surface, gotchas, and non-obvious learnings. Conciseness matters more than prose quality.
+- **Both must stay in sync**: When a feature changes, update both the human-facing docs and the AI-facing knowledge files. They describe the same system from different angles.
+
+### 3. Knowledge Directory (AI Context) ⭐
 **Maintain `knowledge/` as living documentation of features, architecture, and hard-won learnings.**
 
 The `knowledge/` directory contains one file per feature area. Each file describes the **current state** of that area — its design, API surface, key decisions, and gotchas.
@@ -34,6 +41,13 @@ The `knowledge/` directory contains one file per feature area. Each file describ
 - Task lists, progress tracking, or backlog items (use Cursor's built-in planning)
 - Changelogs or timestamps (knowledge files describe the present, not the history)
 - Documentation for end users (that lives in `docs/`)
+
+### 4. Use Money for Money ⭐
+**ALWAYS use the `Money` type when representing monetary amounts.**
+
+- **Function parameters and return types**: If a value represents money, it must be `Money` — never a raw `Decimal`, `float`, or `int`.
+- **Internal calculations**: Use `Money.raw_amount` only when raw `Decimal` arithmetic is unavoidable inside a method. Wrap the result back into `Money` before returning.
+- **Rationale**: `Money` carries precision semantics (`raw_amount` vs `real_amount`), supports safe arithmetic, and makes interfaces self-documenting. Passing bare `Decimal` values forces every caller to know whether the value is rounded or not.
 
 ## Project Structure Guidelines
 

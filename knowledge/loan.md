@@ -9,7 +9,7 @@ The `Loan` class is a state machine that models a personal loan with daily-compo
 | `principal` | `Money` | required | Must be positive |
 | `interest_rate` | `InterestRate` | required | Annual rate |
 | `due_dates` | `List[datetime]` | required | Sorted automatically |
-| `disbursement_date` | `Optional[datetime]` | first due date - 30d | When funds are released |
+| `disbursement_date` | `Optional[datetime]` | now | When funds are released; must be strictly before first due date |
 | `scheduler` | `Optional[Type[BaseScheduler]]` | `PriceScheduler` | Amortization strategy |
 | `fine_rate` | `Optional[Decimal]` | `0.02` (2%) | Fine as fraction of expected payment |
 | `grace_period_days` | `int` | `0` | Days after due date before fines apply |

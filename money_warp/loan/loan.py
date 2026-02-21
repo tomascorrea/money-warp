@@ -75,7 +75,7 @@ class Loan:
             principal: The loan amount
             interest_rate: The annual interest rate
             due_dates: List of payment due dates (flexible scheduling)
-            disbursement_date: When the loan was disbursed (defaults to first due date - 30 days)
+            disbursement_date: When the loan was disbursed (defaults to now). Must be before the first due date.
             scheduler: Scheduler class to use for calculations (defaults to PriceScheduler)
             fine_rate: Fine as decimal fraction of missed payment (defaults to 0.02 for 2%)
             grace_period_days: Days after due date before fines apply (defaults to 0)
@@ -103,7 +103,9 @@ class Loan:
         self.principal = principal
         self.interest_rate = interest_rate
         self.due_dates = sorted(due_dates)  # Ensure dates are sorted
-        self.disbursement_date = disbursement_date or (self.due_dates[0] - timedelta(days=30))
+        self.disbursement_date = disbursement_date if disbursement_date is not None else self.datetime_func.now()
+        if self.disbursement_date >= self.due_dates[0]:
+            raise ValueError("disbursement_date must be before the first due date")
         self.scheduler = scheduler or PriceScheduler
         self.fine_rate = fine_rate if fine_rate is not None else Decimal("0.02")
         self.grace_period_days = grace_period_days
@@ -143,7 +145,7 @@ class Loan:
         principal_bal = self.principal_balance
 
         if principal_bal.is_positive() and days > 0:
-            return Money(self.interest_rate.accrue(principal_bal.raw_amount, days))
+            return self.interest_rate.accrue(principal_bal, days)
         else:
             return Money.zero()
 
@@ -490,7 +492,7 @@ class Loan:
 
     def _split_interest(
         self,
-        total_accrued: Decimal,
+        total_accrued: Money,
         total_to_pay: Money,
         days: int,
         principal_balance: Money,
@@ -514,12 +516,12 @@ class Loan:
         if regular_days >= days:
             return total_to_pay, Money.zero()
 
-        regular_accrued = self.interest_rate.accrue(principal_balance.raw_amount, regular_days)
+        regular_accrued = self.interest_rate.accrue(principal_balance, regular_days)
 
-        if total_to_pay >= Money(total_accrued):
-            return Money(regular_accrued), Money(total_accrued - regular_accrued)
+        if total_to_pay >= total_accrued:
+            return regular_accrued, total_accrued - regular_accrued
 
-        regular_amount = Money(min(regular_accrued, total_to_pay.raw_amount))
+        regular_amount = Money(min(regular_accrued.raw_amount, total_to_pay.raw_amount))
         return regular_amount, total_to_pay - regular_amount
 
     def _allocate_payment(
@@ -551,8 +553,8 @@ class Loan:
         interest_paid = Money.zero()
         mora_paid = Money.zero()
         if remaining.is_positive() and principal_balance.is_positive() and days > 0:
-            total_accrued = self.interest_rate.accrue(principal_balance.raw_amount, days)
-            total_interest_to_pay = Money(min(total_accrued, remaining.raw_amount))
+            total_accrued = self.interest_rate.accrue(principal_balance, days)
+            total_interest_to_pay = Money(min(total_accrued.raw_amount, remaining.raw_amount))
 
             if total_interest_to_pay.is_positive():
                 regular_amount, mora_amount = self._split_interest(

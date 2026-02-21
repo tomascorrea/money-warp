@@ -12,7 +12,7 @@ def test_loan_record_payment_updates_balance():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     loan.record_payment(Money("5000.00"), datetime(2024, 1, 15))
 
     # Balance should be reduced by principal portion
@@ -57,7 +57,7 @@ def test_loan_record_payment_multiple_payments():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     loan.record_payment(Money("3000.00"), datetime(2024, 1, 15))
     loan.record_payment(Money("2000.00"), datetime(2024, 1, 20))
 
@@ -69,7 +69,7 @@ def test_loan_record_payment_overpayment_zeros_balance():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     loan.record_payment(Money("15000.00"), datetime(2024, 1, 15))
 
     assert loan.current_balance == Money.zero()
@@ -81,7 +81,7 @@ def test_loan_record_payment_negative_amount_raises_error():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
 
     with pytest.raises(ValueError, match="Payment amount must be positive"):
         loan.record_payment(Money("-1000.00"), datetime(2024, 1, 15))
@@ -92,7 +92,7 @@ def test_loan_record_payment_zero_amount_raises_error():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
 
     with pytest.raises(ValueError, match="Payment amount must be positive"):
         loan.record_payment(Money.zero(), datetime(2024, 1, 15))

@@ -45,7 +45,7 @@ def test_loan_days_since_last_payment_defaults_to_now():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     # Should not raise error and return some number
     days = loan.days_since_last_payment()
     assert isinstance(days, int)
@@ -57,7 +57,7 @@ def test_loan_principal_balance_initial():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
 
     assert loan.principal_balance == principal
 
@@ -68,7 +68,7 @@ def test_loan_principal_balance_after_payment():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     initial_principal = loan.principal_balance
 
     # Make a payment
@@ -85,7 +85,7 @@ def test_loan_principal_balance_zero_after_full_payment():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
 
     # Make overpayment to cover all principal
     loan.record_payment(Money("2000.00"), datetime(2024, 1, 15))

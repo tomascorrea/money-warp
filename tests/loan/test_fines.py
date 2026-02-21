@@ -13,7 +13,14 @@ def test_loan_creation_with_fine_parameters():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.03"), grace_period_days=5)
+    loan = Loan(
+        principal,
+        rate,
+        due_dates,
+        disbursement_date=datetime(2024, 1, 1),
+        fine_rate=Decimal("0.03"),
+        grace_period_days=5,
+    )
     assert loan.fine_rate == Decimal("0.03")
     assert loan.grace_period_days == 5
 
@@ -23,7 +30,7 @@ def test_loan_creation_with_default_fine_parameters():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     assert loan.fine_rate == Decimal("0.02")  # Default 2%
     assert loan.grace_period_days == 0  # Default no grace period
 
@@ -34,7 +41,7 @@ def test_loan_creation_negative_fine_rate_raises_error():
     due_dates = [datetime(2024, 2, 1)]
 
     with pytest.raises(ValueError, match="Fine rate must be non-negative"):
-        Loan(principal, rate, due_dates, fine_rate=Decimal("-0.01"))
+        Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), fine_rate=Decimal("-0.01"))
 
 
 def test_loan_creation_negative_grace_period_raises_error():
@@ -43,7 +50,7 @@ def test_loan_creation_negative_grace_period_raises_error():
     due_dates = [datetime(2024, 2, 1)]
 
     with pytest.raises(ValueError, match="Grace period days must be non-negative"):
-        Loan(principal, rate, due_dates, grace_period_days=-1)
+        Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), grace_period_days=-1)
 
 
 def test_loan_initial_fine_properties():
@@ -51,7 +58,7 @@ def test_loan_initial_fine_properties():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     assert loan.total_fines == Money.zero()
     assert loan.outstanding_fines == Money.zero()
     assert len(loan.fines_applied) == 0
@@ -62,7 +69,7 @@ def test_loan_get_expected_payment_amount_valid_date():
     rate = InterestRate("6% a")
     due_dates = [datetime(2024, 2, 1), datetime(2024, 3, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     expected_payment = loan.get_expected_payment_amount(datetime(2024, 2, 1))
     assert expected_payment > Money.zero()
 
@@ -72,7 +79,7 @@ def test_loan_get_expected_payment_amount_invalid_date_raises_error():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
     with pytest.raises(ValueError, match="Due date .* is not in loan's due dates"):
         loan.get_expected_payment_amount(datetime(2024, 3, 1))
 
@@ -82,7 +89,7 @@ def test_loan_is_payment_late_within_grace_period():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, grace_period_days=5)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), grace_period_days=5)
     check_date = datetime(2024, 2, 3)  # 2 days after due date, within grace period
     assert not loan.is_payment_late(datetime(2024, 2, 1), check_date)
 
@@ -92,7 +99,7 @@ def test_loan_is_payment_late_after_grace_period():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, grace_period_days=5)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), grace_period_days=5)
     check_date = datetime(2024, 2, 7)  # 6 days after due date, past grace period
     assert loan.is_payment_late(datetime(2024, 2, 1), check_date)
 
@@ -102,7 +109,7 @@ def test_loan_is_payment_late_no_grace_period():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, grace_period_days=0)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), grace_period_days=0)
     check_date = datetime(2024, 2, 2)  # 1 day after due date
     assert loan.is_payment_late(datetime(2024, 2, 1), check_date)
 
@@ -112,7 +119,14 @@ def test_loan_calculate_late_fines_applies_fine():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.02"), grace_period_days=0)
+    loan = Loan(
+        principal,
+        rate,
+        due_dates,
+        disbursement_date=datetime(2024, 1, 1),
+        fine_rate=Decimal("0.02"),
+        grace_period_days=0,
+    )
     late_date = datetime(2024, 2, 5)  # 4 days late
 
     new_fines = loan.calculate_late_fines(late_date)
@@ -125,7 +139,9 @@ def test_loan_calculate_late_fines_correct_amount():
     rate = InterestRate("6% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.05"))  # 5% fine
+    loan = Loan(
+        principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), fine_rate=Decimal("0.05")
+    )  # 5% fine
     expected_payment = loan.get_expected_payment_amount(datetime(2024, 2, 1))
     expected_fine = Money(expected_payment.raw_amount * Decimal("0.05"))
 
@@ -138,7 +154,7 @@ def test_loan_calculate_late_fines_only_once_per_due_date():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.02"))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), fine_rate=Decimal("0.02"))
 
     # Apply fines twice for same due date
     first_fines = loan.calculate_late_fines(datetime(2024, 2, 5))
@@ -153,7 +169,7 @@ def test_loan_calculate_late_fines_multiple_due_dates():
     rate = InterestRate("6% a")
     due_dates = [datetime(2024, 2, 1), datetime(2024, 3, 1)]
 
-    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.02"))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), fine_rate=Decimal("0.02"))
 
     # Both payments are late
     late_date = datetime(2024, 3, 5)
@@ -168,7 +184,7 @@ def test_loan_record_payment_allocates_to_fines_first():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.02"))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), fine_rate=Decimal("0.02"))
 
     # Apply fines first
     loan.calculate_late_fines(datetime(2024, 2, 5))
@@ -189,7 +205,9 @@ def test_loan_record_payment_allocates_fines_then_principal():
     rate = InterestRate("0% a")  # No interest for simplicity
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.10"))  # 10% fine
+    loan = Loan(
+        principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), fine_rate=Decimal("0.10")
+    )  # 10% fine
 
     # Apply fines
     loan.calculate_late_fines(datetime(2024, 2, 5))
@@ -214,7 +232,7 @@ def test_loan_current_balance_includes_outstanding_fines():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.02"))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), fine_rate=Decimal("0.02"))
     initial_balance = loan.current_balance
 
     # Apply fines
@@ -230,7 +248,7 @@ def test_loan_is_paid_off_considers_fines():
     rate = InterestRate("0% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, fine_rate=Decimal("0.05"))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), fine_rate=Decimal("0.05"))
 
     # Make partial payment that doesn't cover full installment
     loan.record_payment(Money("500.00"), datetime(2024, 1, 31))
@@ -257,7 +275,7 @@ def test_loan_fine_calculation_with_different_rates(fine_rate, expected_multipli
     rate = InterestRate("6% a")
     due_dates = [datetime(2024, 2, 1)]
 
-    loan = Loan(principal, rate, due_dates, fine_rate=fine_rate)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), fine_rate=fine_rate)
     expected_payment = loan.get_expected_payment_amount(datetime(2024, 2, 1))
     expected_fine = Money(expected_payment.raw_amount * expected_multiplier)
 
@@ -281,7 +299,7 @@ def test_loan_grace_period_scenarios(grace_days, check_day, should_be_late):
     due_date = datetime(2024, 2, 1)
     due_dates = [due_date]
 
-    loan = Loan(principal, rate, due_dates, grace_period_days=grace_days)
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1), grace_period_days=grace_days)
     check_date = due_date + timedelta(days=check_day)
 
     assert loan.is_payment_late(due_date, check_date) == should_be_late
