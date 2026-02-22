@@ -28,7 +28,7 @@ money_warp/
 
 ### Dual-Precision Money
 
-`Money` stores a `raw_amount: Decimal` at full precision for intermediate calculations and exposes a `real_amount: Decimal` rounded to 2 decimal places for display and comparison. All arithmetic returns new `Money` instances (immutable value object). Comparisons use `real_amount`, so two values that round to the same cents are considered equal.
+`Money` stores a `raw_amount: Decimal` at full precision for intermediate calculations and exposes a `real_amount: Decimal` rounded to 2 decimal places for display and comparison. All arithmetic returns new `Money` instances (immutable value object). Comparisons (`==`, `<`, `<=`, `>`, `>=`) use `real_amount`, so two values that round to the same cents are considered equal. Both `Money` and `Decimal` are accepted on the right-hand side, so `Money("100.50") == Decimal("100.50")` works directly without extracting `.real_amount`.
 
 ### Explicit Interest Rates
 

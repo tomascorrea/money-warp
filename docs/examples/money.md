@@ -117,18 +117,25 @@ Internal precision: 164.2500000000000000000000000
 
 ## Comparison Operations
 
-Comparisons use the 2-decimal "real money" representation:
+Comparisons use the 2-decimal "real money" representation. You can compare `Money` against another `Money` or directly against a `Decimal`:
 
 ```python
+from decimal import Decimal
+
 money1 = Money("100.001")  # Rounds to 100.00
 money2 = Money("100.009")  # Rounds to 100.01
 
 print(f"Money1: {money1}")  # 100.00
 print(f"Money2: {money2}")  # 100.01
 
+# Money vs Money
 print(f"Equal? {money1 == money2}")           # False
 print(f"Money1 < Money2? {money1 < money2}") # True
 print(f"Money1 <= 100.00? {money1 <= Money('100.00')}")  # True
+
+# Money vs Decimal -- no need to extract .real_amount
+print(f"Equals Decimal? {money1 == Decimal('100.00')}")  # True
+print(f"Greater than? {money2 > Decimal('100.00')}")     # True
 ```
 
 ## Working with Cents
@@ -272,7 +279,7 @@ print(f"Memory efficient: {money}")  # Only stores one Decimal
 1. **Use strings for input**: `Money("99.99")` not `Money(99.99)`
 2. **Leverage precision**: Internal calculations maintain full precision
 3. **Display consistency**: All output shows 2 decimals automatically
-4. **Comparison safety**: Comparisons use "real money" (2 decimal) values
+4. **Comparison safety**: Comparisons use "real money" (2 decimal) values -- works with both `Money` and `Decimal`
 5. **Zero handling**: Use `Money.zero()` and `.is_zero()` for clarity
 
 ## Common Patterns
