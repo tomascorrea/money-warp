@@ -179,6 +179,51 @@ def test_money_greater_than_or_equal_equal():
     assert money1 >= money2
 
 
+# Money vs Decimal comparison tests
+def test_money_equality_with_decimal():
+    assert Money("100.50") == Decimal("100.50")
+
+
+def test_money_equality_with_decimal_rounds():
+    assert Money("100.504") == Decimal("100.50")
+
+
+def test_money_inequality_with_decimal():
+    assert Money("100.50") != Decimal("100.51")
+
+
+def test_money_less_than_decimal():
+    assert Money("100.00") < Decimal("100.50")
+
+
+def test_money_less_than_or_equal_decimal_smaller():
+    assert Money("100.00") <= Decimal("100.50")
+
+
+def test_money_less_than_or_equal_decimal_equal():
+    assert Money("100.50") <= Decimal("100.50")
+
+
+def test_money_greater_than_decimal():
+    assert Money("100.50") > Decimal("100.00")
+
+
+def test_money_greater_than_or_equal_decimal_larger():
+    assert Money("100.50") >= Decimal("100.00")
+
+
+def test_money_greater_than_or_equal_decimal_equal():
+    assert Money("100.50") >= Decimal("100.50")
+
+
+def test_money_equality_with_unsupported_type_returns_not_implemented():
+    assert Money("100.50").__eq__("100.50") is NotImplemented
+
+
+def test_money_equality_with_int_returns_not_implemented():
+    assert Money("100").__eq__(100) is NotImplemented
+
+
 # Property tests
 def test_money_cents_property_conversion():
     money = Money("123.45")

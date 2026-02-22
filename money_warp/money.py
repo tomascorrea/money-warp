@@ -60,27 +60,48 @@ class Money:
         """Absolute value."""
         return Money(abs(self._amount))
 
+    def _compare_value(self, other: object) -> Union[Decimal, type(NotImplemented)]:
+        """Extract the Decimal value to compare against, or NotImplemented."""
+        if isinstance(other, Money):
+            return other.real_amount
+        if isinstance(other, Decimal):
+            return other
+        return NotImplemented
+
     def __eq__(self, other: object) -> bool:
-        """Compare at 'real money' precision."""
-        if not isinstance(other, Money):
+        """Compare at 'real money' precision. Accepts Money or Decimal."""
+        value = self._compare_value(other)
+        if value is NotImplemented:
             return NotImplemented
-        return self.real_amount == other.real_amount
+        return self.real_amount == value
 
-    def __lt__(self, other: "Money") -> bool:
-        """Less than comparison at real money precision."""
-        return self.real_amount < other.real_amount
+    def __lt__(self, other: Union["Money", Decimal]) -> bool:
+        """Less than comparison at real money precision. Accepts Money or Decimal."""
+        value = self._compare_value(other)
+        if value is NotImplemented:
+            return NotImplemented
+        return self.real_amount < value
 
-    def __le__(self, other: "Money") -> bool:
-        """Less than or equal comparison at real money precision."""
-        return self.real_amount <= other.real_amount
+    def __le__(self, other: Union["Money", Decimal]) -> bool:
+        """Less than or equal comparison at real money precision. Accepts Money or Decimal."""
+        value = self._compare_value(other)
+        if value is NotImplemented:
+            return NotImplemented
+        return self.real_amount <= value
 
-    def __gt__(self, other: "Money") -> bool:
-        """Greater than comparison at real money precision."""
-        return self.real_amount > other.real_amount
+    def __gt__(self, other: Union["Money", Decimal]) -> bool:
+        """Greater than comparison at real money precision. Accepts Money or Decimal."""
+        value = self._compare_value(other)
+        if value is NotImplemented:
+            return NotImplemented
+        return self.real_amount > value
 
-    def __ge__(self, other: "Money") -> bool:
-        """Greater than or equal comparison at real money precision."""
-        return self.real_amount >= other.real_amount
+    def __ge__(self, other: Union["Money", Decimal]) -> bool:
+        """Greater than or equal comparison at real money precision. Accepts Money or Decimal."""
+        value = self._compare_value(other)
+        if value is NotImplemented:
+            return NotImplemented
+        return self.real_amount >= value
 
     @property
     def raw_amount(self) -> Decimal:

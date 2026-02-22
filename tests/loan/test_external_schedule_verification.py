@@ -69,17 +69,17 @@ def external_loan_schedule():
 
 @pytest.mark.parametrize("period_idx", range(11))
 def test_price_schedule_pmt_matches_external(external_loan_schedule, period_idx):
-    assert external_loan_schedule[period_idx].payment_amount.real_amount == EXPECTED_PMT
+    assert external_loan_schedule[period_idx].payment_amount == EXPECTED_PMT
 
 
 def test_price_schedule_last_pmt_by_difference(external_loan_schedule):
-    assert external_loan_schedule[-1].payment_amount.real_amount == Decimal(OUR_LAST_PERIOD["payment"])
+    assert external_loan_schedule[-1].payment_amount == Decimal(OUR_LAST_PERIOD["payment"])
 
 
 def test_price_schedule_total_owed(external_loan_schedule):
     total = sum(
-        (entry.payment_amount.real_amount for entry in external_loan_schedule),
-        Decimal("0"),
+        (entry.payment_amount for entry in external_loan_schedule),
+        Money.zero(),
     )
     assert total == EXPECTED_PMT * 11 + Decimal(OUR_LAST_PERIOD["payment"])
 
@@ -90,11 +90,11 @@ def test_price_schedule_total_owed(external_loan_schedule):
     ids=[f"period-{row['period']}" for row in EXTERNAL_SCHEDULE[:11]],
 )
 def test_price_schedule_interest_matches_external(external_loan_schedule, period_idx, expected):
-    assert external_loan_schedule[period_idx].interest_payment.real_amount == Decimal(expected["interest"])
+    assert external_loan_schedule[period_idx].interest_payment == Decimal(expected["interest"])
 
 
 def test_price_schedule_last_interest_by_difference(external_loan_schedule):
-    assert external_loan_schedule[-1].interest_payment.real_amount == Decimal(OUR_LAST_PERIOD["interest"])
+    assert external_loan_schedule[-1].interest_payment == Decimal(OUR_LAST_PERIOD["interest"])
 
 
 @pytest.mark.parametrize(
@@ -103,11 +103,11 @@ def test_price_schedule_last_interest_by_difference(external_loan_schedule):
     ids=[f"period-{row['period']}" for row in EXTERNAL_SCHEDULE[:11]],
 )
 def test_price_schedule_principal_matches_external(external_loan_schedule, period_idx, expected):
-    assert external_loan_schedule[period_idx].principal_payment.real_amount == Decimal(expected["principal"])
+    assert external_loan_schedule[period_idx].principal_payment == Decimal(expected["principal"])
 
 
 def test_price_schedule_last_principal_by_difference(external_loan_schedule):
-    assert external_loan_schedule[-1].principal_payment.real_amount == Decimal(OUR_LAST_PERIOD["principal"])
+    assert external_loan_schedule[-1].principal_payment == Decimal(OUR_LAST_PERIOD["principal"])
 
 
 @pytest.mark.parametrize(
@@ -116,7 +116,7 @@ def test_price_schedule_last_principal_by_difference(external_loan_schedule):
     ids=[f"period-{row['period']}" for row in EXTERNAL_SCHEDULE],
 )
 def test_price_schedule_balance_matches_external(external_loan_schedule, period_idx, expected):
-    assert external_loan_schedule[period_idx].ending_balance.real_amount == Decimal(expected["balance"])
+    assert external_loan_schedule[period_idx].ending_balance == Decimal(expected["balance"])
 
 
 @pytest.mark.parametrize(
@@ -129,11 +129,11 @@ def test_price_schedule_days_in_period_matches_external(external_loan_schedule, 
 
 
 def test_price_schedule_final_balance_is_zero(external_loan_schedule):
-    assert external_loan_schedule[-1].ending_balance.real_amount == Decimal("0.00")
+    assert external_loan_schedule[-1].ending_balance == Decimal("0.00")
 
 
 def test_price_schedule_total_principal_equals_loan_amount(external_loan_schedule):
-    assert external_loan_schedule.total_principal.real_amount == Decimal("10000.00")
+    assert external_loan_schedule.total_principal == Decimal("10000.00")
 
 
 @pytest.mark.parametrize(
@@ -201,4 +201,4 @@ def test_external_loan_schedule_by_principal(principal, rate, expected):
     ]
     loan = Loan(principal, interest_rate, due_dates, disbursement_date)
     schedule = loan.get_original_schedule()
-    assert schedule[0].payment_amount.real_amount == Decimal(expected)
+    assert schedule[0].payment_amount == Decimal(expected)
