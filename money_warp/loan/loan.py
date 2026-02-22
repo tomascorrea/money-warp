@@ -9,6 +9,7 @@ from ..cash_flow import CashFlow, CashFlowItem
 from ..interest_rate import InterestRate
 from ..money import Money
 from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
+from ..tax.base import BaseTax, TaxResult
 
 
 class MoraStrategy(Enum):
@@ -81,6 +82,7 @@ class Loan:
         grace_period_days: int = 0,
         mora_interest_rate: Optional[InterestRate] = None,
         mora_strategy: MoraStrategy = MoraStrategy.COMPOUND,
+        taxes: Optional[List[BaseTax]] = None,
     ) -> None:
         """
         Create a loan with flexible payment schedule.
@@ -95,6 +97,7 @@ class Loan:
             grace_period_days: Days after due date before fines apply (defaults to 0)
             mora_interest_rate: Interest rate for mora (late) interest (defaults to interest_rate)
             mora_strategy: How mora interest is computed (defaults to COMPOUND)
+            taxes: Optional list of taxes applied to this loan (e.g., IOF)
 
         Examples:
             >>> # Basic loan with default 2% fine, no grace period
@@ -132,11 +135,13 @@ class Loan:
         self.scheduler = scheduler or PriceScheduler
         self.fine_rate = fine_rate if fine_rate is not None else Decimal("0.02")
         self.grace_period_days = grace_period_days
+        self.taxes: List[BaseTax] = taxes or []
 
         # State tracking
         self._all_payments: List[CashFlowItem] = []  # All payments ever made
         self._actual_schedule_entries: List[PaymentScheduleEntry] = []  # Actual payment history as schedule entries
         self.fines_applied: Dict[datetime, Money] = {}  # Track fines applied per due date
+        self._tax_cache: Optional[Dict[str, TaxResult]] = None
 
     @property
     def _actual_payments(self) -> List[CashFlowItem]:
@@ -218,6 +223,35 @@ class Loan:
 
         outstanding = total_fines - fines_paid
         return outstanding if outstanding.is_positive() else Money.zero()
+
+    @property
+    def tax_amounts(self) -> Dict[str, TaxResult]:
+        """Per-tax results keyed by tax class name. Computed lazily and cached."""
+        if self._tax_cache is not None:
+            return self._tax_cache
+
+        results: Dict[str, TaxResult] = {}
+        if self.taxes:
+            schedule = self.get_original_schedule()
+            for tax in self.taxes:
+                key = type(tax).__name__
+                results[key] = tax.calculate(schedule, self.disbursement_date)
+
+        self._tax_cache = results
+        return results
+
+    @property
+    def total_tax(self) -> Money:
+        """Sum of all taxes applied to this loan."""
+        amounts = self.tax_amounts
+        if not amounts:
+            return Money.zero()
+        return Money(sum(r.total.raw_amount for r in amounts.values()))
+
+    @property
+    def net_disbursement(self) -> Money:
+        """Amount the borrower actually receives (principal minus total tax)."""
+        return self.principal - self.total_tax
 
     def now(self) -> datetime:
         """Get the current datetime. Can be overridden for time travel scenarios."""
@@ -466,13 +500,36 @@ class Loan:
         Fines are contingent events and are not included in the expected cash flow.
         Use get_actual_cash_flow() to see what actually happened, including fines.
 
+        When taxes are present, the disbursement reflects the net amount received
+        by the borrower, and the tax is recorded as a separate outflow at disbursement.
+
         Returns:
             CashFlow with loan disbursement and expected payment schedule
         """
         items = []
 
-        # Add disbursement
-        items.append(CashFlowItem(self.principal, self.disbursement_date, "Loan disbursement", "expected_disbursement"))
+        total_tax = self.total_tax
+        if total_tax.is_positive():
+            items.append(
+                CashFlowItem(
+                    self.net_disbursement,
+                    self.disbursement_date,
+                    "Loan disbursement (net of tax)",
+                    "expected_disbursement",
+                )
+            )
+            items.append(
+                CashFlowItem(
+                    Money(-total_tax.raw_amount),
+                    self.disbursement_date,
+                    "Tax deducted at disbursement",
+                    "expected_tax",
+                )
+            )
+        else:
+            items.append(
+                CashFlowItem(self.principal, self.disbursement_date, "Loan disbursement", "expected_disbursement")
+            )
 
         # Use the original schedule for expected cash flow
         schedule = self.get_original_schedule()

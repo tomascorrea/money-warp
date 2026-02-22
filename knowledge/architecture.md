@@ -19,6 +19,10 @@ money_warp/
 │   ├── base.py            # BaseScheduler (abstract)
 │   ├── price_scheduler.py           # PriceScheduler (French amortization)
 │   └── inverted_price_scheduler.py  # InvertedPriceScheduler (SAC)
+├── tax/
+│   ├── base.py            # BaseTax (abstract), TaxResult, TaxInstallmentDetail
+│   ├── iof.py             # IOF (Brazilian financial operations tax)
+│   └── grossup.py         # grossup() function, GrossupResult
 ├── present_value.py       # PV, NPV, IRR, MIRR, discount_factor
 ├── warp.py                # Warp context manager + WarpedTime
 └── date_utils.py          # Date generation utilities
@@ -76,11 +80,18 @@ Money ──────────► CashFlowItem ─────────
 InterestRate ─────────────────────────────► Loan
                                            │   │
                                 Scheduler ◄─┘   └──► Warp
-                                                     (clones + time-warps)
+                                   │              (clones + time-warps)
+                                   ▼
+                              BaseTax (IOF)
+                                   │
+                              grossup()
 ```
 
 - `CashFlowItem.amount` is a `Money`
 - `CashFlow` aggregation methods return `Money`
 - `Loan` uses `InterestRate` for compounding, `Money` for amounts, and generates `CashFlow` objects
 - `Loan` delegates schedule generation to a `BaseScheduler` subclass
+- `Loan` optionally stores `BaseTax` instances for tax reporting in cash flows
+- `BaseTax` implementations (e.g. `IOF`) compute taxes from a `PaymentSchedule`
+- `grossup()` uses a scheduler and taxes to compute a grossed-up principal
 - `Warp` deep-clones a `Loan` and replaces its time source
