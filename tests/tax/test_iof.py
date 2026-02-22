@@ -5,7 +5,15 @@ from decimal import Decimal
 
 import pytest
 
-from money_warp import IOF, InterestRate, InvertedPriceScheduler, Money, PriceScheduler
+from money_warp import (
+    IOF,
+    CorporateIOF,
+    IndividualIOF,
+    InterestRate,
+    InvertedPriceScheduler,
+    Money,
+    PriceScheduler,
+)
 
 
 @pytest.fixture
@@ -198,3 +206,93 @@ def test_iof_zero_rates_produce_zero_tax(daily_rate, additional_rate, disburseme
     )
     result = iof.calculate(schedule, disbursement_date)
     assert result.total.is_zero()
+
+
+# --- IndividualIOF preset ---
+
+
+def test_individual_iof_default_daily_rate():
+    iof = IndividualIOF()
+    assert iof.daily_rate == Decimal("0.000082")
+
+
+def test_individual_iof_default_additional_rate():
+    iof = IndividualIOF()
+    assert iof.additional_rate == Decimal("0.0038")
+
+
+def test_individual_iof_is_instance_of_iof():
+    assert isinstance(IndividualIOF(), IOF)
+
+
+def test_individual_iof_override_daily_rate():
+    iof = IndividualIOF(daily_rate=Decimal("0.0001"))
+    assert iof.daily_rate == Decimal("0.0001")
+
+
+def test_individual_iof_override_additional_rate():
+    iof = IndividualIOF(additional_rate="0.5%")
+    assert iof.additional_rate == Decimal("0.005")
+
+
+def test_individual_iof_calculate_produces_positive_result(disbursement_date):
+    iof = IndividualIOF()
+    schedule = PriceScheduler.generate_schedule(
+        Money("10000"),
+        InterestRate("2% monthly"),
+        [datetime(2024, 2, 1)],
+        disbursement_date,
+    )
+    result = iof.calculate(schedule, disbursement_date)
+    assert result.total.is_positive()
+
+
+# --- CorporateIOF preset ---
+
+
+def test_corporate_iof_default_daily_rate():
+    iof = CorporateIOF()
+    assert iof.daily_rate == Decimal("0.000041")
+
+
+def test_corporate_iof_default_additional_rate():
+    iof = CorporateIOF()
+    assert iof.additional_rate == Decimal("0.0038")
+
+
+def test_corporate_iof_is_instance_of_iof():
+    assert isinstance(CorporateIOF(), IOF)
+
+
+def test_corporate_iof_override_daily_rate():
+    iof = CorporateIOF(daily_rate="0.01%")
+    assert iof.daily_rate == Decimal("0.0001")
+
+
+def test_corporate_iof_override_additional_rate():
+    iof = CorporateIOF(additional_rate=Decimal("0.005"))
+    assert iof.additional_rate == Decimal("0.005")
+
+
+def test_corporate_iof_calculate_produces_positive_result(disbursement_date):
+    iof = CorporateIOF()
+    schedule = PriceScheduler.generate_schedule(
+        Money("10000"),
+        InterestRate("2% monthly"),
+        [datetime(2024, 2, 1)],
+        disbursement_date,
+    )
+    result = iof.calculate(schedule, disbursement_date)
+    assert result.total.is_positive()
+
+
+def test_corporate_iof_lower_daily_than_individual(disbursement_date):
+    schedule = PriceScheduler.generate_schedule(
+        Money("10000"),
+        InterestRate("2% monthly"),
+        [datetime(2024, 2, 1)],
+        disbursement_date,
+    )
+    individual_result = IndividualIOF().calculate(schedule, disbursement_date)
+    corporate_result = CorporateIOF().calculate(schedule, disbursement_date)
+    assert corporate_result.total < individual_result.total

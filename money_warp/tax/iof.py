@@ -2,11 +2,26 @@
 
 from datetime import datetime
 from decimal import Decimal
+from enum import Enum
 from typing import List, Union
 
 from ..money import Money
 from ..scheduler.schedule import PaymentSchedule
 from .base import BaseTax, TaxInstallmentDetail, TaxResult
+
+
+class IOFRounding(Enum):
+    """Rounding strategy for IOF component aggregation.
+
+    PRECISE: sum high-precision daily and additional components, round once
+        per installment.  This is the mathematically purer approach.
+    PER_COMPONENT: round each component (daily, additional) to 2 decimal
+        places before summing.  Matches the behavior of common Brazilian
+        lending platforms.
+    """
+
+    PRECISE = "precise"
+    PER_COMPONENT = "per_component"
 
 
 class IOF(BaseTax):
@@ -21,6 +36,7 @@ class IOF(BaseTax):
         daily_rate: Daily IOF rate as decimal or string (e.g., Decimal("0.000082") or "0.0082%")
         additional_rate: Additional flat IOF rate as decimal or string (e.g., Decimal("0.0038") or "0.38%")
         max_daily_days: Maximum number of days for daily rate calculation (default 365)
+        rounding: Rounding strategy for component aggregation (default PRECISE)
     """
 
     def __init__(
@@ -28,10 +44,12 @@ class IOF(BaseTax):
         daily_rate: Union[str, Decimal],
         additional_rate: Union[str, Decimal],
         max_daily_days: int = 365,
+        rounding: IOFRounding = IOFRounding.PRECISE,
     ) -> None:
         self._daily_rate = self._parse_rate(daily_rate)
         self._additional_rate = self._parse_rate(additional_rate)
         self._max_daily_days = max_daily_days
+        self._rounding = rounding
 
     @staticmethod
     def _parse_rate(rate: Union[str, Decimal]) -> Decimal:
@@ -57,6 +75,11 @@ class IOF(BaseTax):
     def max_daily_days(self) -> int:
         """Maximum days for daily rate calculation."""
         return self._max_daily_days
+
+    @property
+    def rounding(self) -> IOFRounding:
+        """The rounding strategy used for component aggregation."""
+        return self._rounding
 
     def calculate(
         self,
@@ -84,7 +107,11 @@ class IOF(BaseTax):
 
             daily_iof = Money(principal_raw * self._daily_rate * days)
             additional_iof = Money(principal_raw * self._additional_rate)
-            installment_tax = daily_iof + additional_iof
+
+            if self._rounding == IOFRounding.PER_COMPONENT:
+                installment_tax = Money(daily_iof.real_amount) + Money(additional_iof.real_amount)
+            else:
+                installment_tax = daily_iof + additional_iof
 
             details.append(
                 TaxInstallmentDetail(
@@ -102,5 +129,52 @@ class IOF(BaseTax):
         return (
             f"IOF(daily_rate={self._daily_rate}, "
             f"additional_rate={self._additional_rate}, "
-            f"max_daily_days={self._max_daily_days})"
+            f"max_daily_days={self._max_daily_days}, "
+            f"rounding={self._rounding})"
         )
+
+
+class IndividualIOF(IOF):
+    """IOF for Pessoa Fisica (PF) -- individual/natural person borrowers.
+
+    Pre-configured with the standard PF rates:
+    - Daily rate: 0.0082% (0.000082)
+    - Additional rate: 0.38% (0.0038)
+
+    All parameters can be overridden if the rates change by regulation.
+    """
+
+    DEFAULT_DAILY_RATE = Decimal("0.000082")
+    DEFAULT_ADDITIONAL_RATE = Decimal("0.0038")
+
+    def __init__(
+        self,
+        daily_rate: Union[str, Decimal] = DEFAULT_DAILY_RATE,
+        additional_rate: Union[str, Decimal] = DEFAULT_ADDITIONAL_RATE,
+        max_daily_days: int = 365,
+        rounding: IOFRounding = IOFRounding.PRECISE,
+    ) -> None:
+        super().__init__(daily_rate, additional_rate, max_daily_days, rounding)
+
+
+class CorporateIOF(IOF):
+    """IOF for Pessoa Juridica (PJ) -- legal entity/company borrowers.
+
+    Pre-configured with the standard PJ rates:
+    - Daily rate: 0.0041% (0.000041)
+    - Additional rate: 0.38% (0.0038)
+
+    All parameters can be overridden if the rates change by regulation.
+    """
+
+    DEFAULT_DAILY_RATE = Decimal("0.000041")
+    DEFAULT_ADDITIONAL_RATE = Decimal("0.0038")
+
+    def __init__(
+        self,
+        daily_rate: Union[str, Decimal] = DEFAULT_DAILY_RATE,
+        additional_rate: Union[str, Decimal] = DEFAULT_ADDITIONAL_RATE,
+        max_daily_days: int = 365,
+        rounding: IOFRounding = IOFRounding.PRECISE,
+    ) -> None:
+        super().__init__(daily_rate, additional_rate, max_daily_days, rounding)

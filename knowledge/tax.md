@@ -80,14 +80,48 @@ class TaxInstallmentDetail:
 
 ```python
 class IOF(BaseTax):
-    def __init__(self, daily_rate, additional_rate, max_daily_days=365)
+    def __init__(self, daily_rate, additional_rate, max_daily_days=365, rounding=IOFRounding.PRECISE)
 ```
 
 - `daily_rate`: daily IOF rate (e.g. `"0.0082%"` or `Decimal("0.000082")`)
 - `additional_rate`: flat additional IOF rate (e.g. `"0.38%"` or `Decimal("0.0038")`)
 - `max_daily_days`: cap on days for daily rate calculation (default 365)
+- `rounding`: component aggregation strategy (see IOFRounding below)
 
 Accepts strings with optional `%` suffix, or `Decimal` values.
+
+### IOFRounding
+
+```python
+class IOFRounding(Enum):
+    PRECISE = "precise"
+    PER_COMPONENT = "per_component"
+```
+
+Controls how the daily and additional IOF components are combined per installment:
+
+- **PRECISE** (default): sums high-precision components, rounds once per installment. Mathematically purer -- the total is the rounded sum of full-precision parts.
+- **PER_COMPONENT**: rounds each component (daily, additional) to 2 decimal places before summing. Matches the rounding behavior of common Brazilian lending platforms.
+
+The difference is at most 1 cent per installment. Use `PER_COMPONENT` when you need exact reconciliation with external systems that round per component.
+
+### IndividualIOF / CorporateIOF
+
+Pre-configured subclasses of `IOF` with standard Brazilian rates:
+
+```python
+IndividualIOF()   # PF: daily=0.0082%, additional=0.38%
+CorporateIOF()    # PJ: daily=0.0041%, additional=0.38%
+```
+
+All parameters can be overridden if rates change by regulation:
+
+```python
+IndividualIOF(daily_rate=Decimal("0.0001"))  # custom daily rate
+CorporateIOF(rounding=IOFRounding.PER_COMPONENT)  # different rounding
+```
+
+Both inherit all behavior from `IOF` -- no new calculation logic.
 
 ### grossup()
 
@@ -142,7 +176,8 @@ loan = grossup_loan(
 
 ## Key Learnings / Gotchas
 
-- IOF calculation uses `raw_amount` for high-precision arithmetic, wrapping results back into `Money` at each step to maintain the dual-precision semantics.
+- IOF calculation uses `raw_amount` for high-precision arithmetic, wrapping results back into `Money` at each step to maintain the dual-precision semantics. When `PER_COMPONENT` rounding is used, each component is re-wrapped via `Money(component.real_amount)` to "bake in" the 2dp rounding before addition.
+- External validation against a Brazilian lending platform shows our PER_COMPONENT mode matches periods 1-11 exactly. Period 12 differs by 1 cent due to our last-payment-by-difference approach in PriceScheduler (same root cause as the schedule PMT discrepancy).
 - The grossup uses `scipy.optimize.fsolve` to solve `f(p) = p - requested_amount - tax(p) = 0`. The objective function converts between float (scipy domain) and `Money`/`Decimal` (our domain) at the boundary. The numpy array from fsolve is accessed via `.flat[0]` to extract the scalar.
 - The tax cache on `Loan` (`_tax_cache`) is set to `None` initially and computed on first access to `tax_amounts`. Since the original schedule is immutable (depends only on `principal`, `interest_rate`, `due_dates`, `disbursement_date`, and `scheduler`), the cache never needs invalidation.
 - When taxes are present, `generate_expected_cash_flow()` records the disbursement as the net amount (not the full principal) and adds a separate negative `"expected_tax"` item. This means the CET IRR calculation automatically accounts for the tax.
