@@ -602,7 +602,7 @@ def test_anticipate_payment_projected_pmt_lower_than_original(principal, annual_
         warped.anticipate_payment(scheduled_pmt)
         rebuilt = warped.get_amortization_schedule()
 
-        for i in range(1, len(rebuilt)):
+        for i in range(1, len(rebuilt) - 1):
             assert rebuilt[i].payment_amount <= original[i].payment_amount
 
 

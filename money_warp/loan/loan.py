@@ -735,6 +735,8 @@ class Loan:
             description=description,
         )
 
+    _COVERAGE_TOLERANCE = Money("0.01")
+
     def _covered_due_date_count(self) -> int:
         """
         Determine how many due dates have been covered by comparing the remaining
@@ -742,6 +744,8 @@ class Loan:
 
         A due date is considered covered when the remaining principal is at or below
         the ending balance that the original schedule expected after that installment.
+        A small tolerance absorbs rounding differences between the schedule (which
+        rounds at each step) and record_payment (which uses full precision).
         """
         if not self._actual_schedule_entries:
             return 0
@@ -749,7 +753,7 @@ class Loan:
         original = self.get_original_schedule()
         covered = 0
         for entry in original:
-            if remaining <= entry.ending_balance:
+            if remaining <= entry.ending_balance + self._COVERAGE_TOLERANCE:
                 covered += 1
             else:
                 break

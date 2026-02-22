@@ -76,6 +76,24 @@ All schedulers implement `BaseScheduler.generate_schedule(principal, interest_ra
 
 Fixed total payment per period. Interest portion decreases and principal portion increases over time. The PMT is computed as `principal / sum(1 / (1 + daily_rate)^n)` where `n` is the number of days from disbursement to each due date.
 
+#### Matching external systems with `InterestRate` precision
+
+Some lending systems (e.g. Brazilian banks) truncate the effective annual rate to a fixed number of decimal places before deriving the daily rate. This introduces a tiny difference in the daily rate which can shift the PMT by several cents on large principals.
+
+`InterestRate` supports two optional parameters to reproduce this behaviour:
+
+- `precision: int` — number of decimal places to keep on the effective annual rate during conversions. `None` (default) preserves full precision.
+- `rounding: str` — Python `decimal` rounding mode (default `ROUND_HALF_UP`).
+
+Precision is applied in `_to_effective_annual()`, the hub through which `to_daily()`, `to_monthly()`, and `to_annual()` all pass. The stored `_decimal_rate` and the converted output rate are **not** separately quantized — they naturally inherit limited precision from the quantized annual.
+
+Example: a Brazilian system stores the annual rate as `0.126825` (6 decimal places) for a 1% monthly rate whose full annual is `0.126825030...`. To match:
+
+```python
+rate = InterestRate("1% m", precision=6)
+loan = Loan(Money("10000"), rate, due_dates, disbursement_date)
+```
+
 ### InvertedPriceScheduler (Constant Amortization System / SAC)
 
 Fixed principal payment per period (`principal / number_of_payments`). Interest is computed on the outstanding balance, so total payment decreases over time. The last payment adjusts to ensure zero final balance.

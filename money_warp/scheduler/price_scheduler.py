@@ -61,37 +61,42 @@ class PriceScheduler(BaseScheduler):
 
         # Create an instance with the loan parameters
         scheduler = cls(principal.raw_amount, daily_rate, return_days, disbursement_date)
-        pmt = scheduler.calculate_constant_return_pmt()
+        pmt = Money(scheduler.calculate_constant_return_pmt()).real_amount
 
-        # Generate schedule entries
+        # Generate schedule entries with step-level rounding.
+        # Each intermediate value (interest, principal, balance) is rounded
+        # to 2 decimal places before feeding into the next period.
+        # The last installment is calculated by difference to guarantee
+        # a zero final balance.
         entries = []
-        remaining_balance = principal.raw_amount
+        remaining_balance = principal.real_amount
 
         for i, due_date in enumerate(due_dates):
-            # Calculate days since last payment (or disbursement)
             prev_date = disbursement_date if i == 0 else due_dates[i - 1]
             days = (due_date - prev_date).days
 
-            # Store beginning balance
             beginning_balance = remaining_balance
 
-            # Calculate interest for this period using compound daily interest
-            # Interest = balance * ((1 + daily_rate)^days - 1)
-            interest_amount = remaining_balance * ((Decimal("1") + daily_rate) ** Decimal(str(days)) - Decimal("1"))
+            interest_amount = Money(
+                remaining_balance * ((Decimal("1") + daily_rate) ** Decimal(str(days)) - Decimal("1"))
+            ).real_amount
 
-            # Principal payment is PMT minus interest
-            principal_payment = pmt - interest_amount
+            is_last = i == len(due_dates) - 1
+            if is_last:
+                principal_payment = remaining_balance
+                total_payment = principal_payment + interest_amount
+            else:
+                total_payment = pmt
+                principal_payment = pmt - interest_amount
 
-            # Update remaining balance
-            remaining_balance -= principal_payment
+            remaining_balance = beginning_balance - principal_payment
 
-            # Create schedule entry
             entry = PaymentScheduleEntry(
                 payment_number=i + 1,
                 due_date=due_date,
                 days_in_period=days,
                 beginning_balance=Money(beginning_balance),
-                payment_amount=Money(pmt),
+                payment_amount=Money(total_payment),
                 principal_payment=Money(principal_payment),
                 interest_payment=Money(interest_amount),
                 ending_balance=Money(max(Decimal("0"), remaining_balance)),

@@ -2,7 +2,7 @@
 
 import math
 import re
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from enum import Enum
 from typing import Dict, Optional, Union
 
@@ -32,12 +32,16 @@ class InterestRate:
     _decimal_rate: Decimal
     _percentage_rate: Decimal
     period: CompoundingFrequency
+    _precision: Optional[int]
+    _rounding: str
 
     def __init__(
         self,
         rate: Union[str, Decimal, float],
         period: Optional[CompoundingFrequency] = None,
         as_percentage: bool = False,
+        precision: Optional[int] = None,
+        rounding: str = ROUND_HALF_UP,
     ) -> None:
         """
         Create an interest rate.
@@ -46,15 +50,20 @@ class InterestRate:
             rate: Rate as string ("5.25% a", "0.004167 m") or numeric value
             period: Compounding frequency (required if rate is numeric)
             as_percentage: If True and rate is numeric, treat as percentage
+            precision: Number of decimal places for the effective annual rate
+                       during conversions. None keeps full precision.
+            rounding: Rounding mode from the decimal module (e.g. ROUND_HALF_UP,
+                      ROUND_DOWN). Only used when precision is set.
         """
+        self._precision = precision
+        self._rounding = rounding
+
         if isinstance(rate, str):
-            # Parse string format
             parsed_rate = self._parse_rate_string(rate)
             self._decimal_rate = parsed_rate["decimal_rate"]  # type: ignore[assignment]
             self._percentage_rate = parsed_rate["percentage_rate"]  # type: ignore[assignment]
             self.period = parsed_rate["period"]  # type: ignore[assignment]
         else:
-            # Numeric rate - period is required
             if period is None:
                 raise ValueError("period is required when rate is numeric")
 
@@ -146,11 +155,15 @@ class InterestRate:
         if self.period == CompoundingFrequency.DAILY:
             return self
 
-        # Convert to effective annual, then to daily
         effective_annual = self._to_effective_annual()
         daily_rate = (1 + effective_annual) ** (Decimal("1") / Decimal("365")) - 1
 
-        return InterestRate(daily_rate, CompoundingFrequency.DAILY, as_percentage=False)
+        return InterestRate(
+            daily_rate,
+            CompoundingFrequency.DAILY,
+            precision=self._precision,
+            rounding=self._rounding,
+        )
 
     def to_monthly(self) -> "InterestRate":
         """Convert to monthly rate."""
@@ -160,7 +173,12 @@ class InterestRate:
         effective_annual = self._to_effective_annual()
         monthly_rate = (1 + effective_annual) ** (Decimal("1") / Decimal("12")) - 1
 
-        return InterestRate(monthly_rate, CompoundingFrequency.MONTHLY, as_percentage=False)
+        return InterestRate(
+            monthly_rate,
+            CompoundingFrequency.MONTHLY,
+            precision=self._precision,
+            rounding=self._rounding,
+        )
 
     def to_annual(self) -> "InterestRate":
         """Convert to annual rate."""
@@ -170,7 +188,8 @@ class InterestRate:
         return InterestRate(
             self._to_effective_annual(),
             CompoundingFrequency.ANNUALLY,
-            as_percentage=False,
+            precision=self._precision,
+            rounding=self._rounding,
         )
 
     def to_periodic_rate(self, num_periods: int) -> Decimal:
@@ -190,19 +209,25 @@ class InterestRate:
         effective_annual = self._to_effective_annual()
         return (1 + effective_annual) ** (Decimal("1") / Decimal(str(num_periods))) - 1
 
+    def _quantize(self, value: Decimal) -> Decimal:
+        """Apply precision rounding if configured, otherwise return unchanged."""
+        if self._precision is None:
+            return value
+        return value.quantize(Decimal(10) ** -self._precision, rounding=self._rounding)
+
     def _to_effective_annual(self) -> Decimal:
         """Convert any rate to effective annual rate."""
         if self.period == CompoundingFrequency.ANNUALLY:
-            return self._decimal_rate
+            return self._quantize(self._decimal_rate)
 
         # Formula: (1 + r)^n - 1, where r is the periodic rate and n is periods per year
         n = self.period.value
         if n == float("inf"):  # Continuous compounding
             # e^r - 1, where r is the continuous rate
-            return Decimal(str(math.e)) ** self._decimal_rate - 1
+            return self._quantize(Decimal(str(math.e)) ** self._decimal_rate - 1)
 
         # For periodic rates: compound the periodic rate for the full year
-        return (1 + self._decimal_rate) ** Decimal(str(n)) - 1
+        return self._quantize((1 + self._decimal_rate) ** Decimal(str(n)) - 1)
 
     def accrue(self, principal: Money, days: int) -> Money:
         """
@@ -227,12 +252,17 @@ class InterestRate:
 
     def __repr__(self) -> str:
         """Developer representation."""
-        return f"InterestRate({self._decimal_rate}, {self.period})"
+        base = f"InterestRate({self._decimal_rate}, {self.period}"
+        if self._precision is not None:
+            base += f", precision={self._precision}, rounding={self._rounding!r}"
+        return base + ")"
 
     def __eq__(self, other: object) -> bool:
         """Compare rates by converting to effective annual."""
         if not isinstance(other, InterestRate):
             return NotImplemented
+        if self._precision != other._precision or self._rounding != other._rounding:
+            return False
         return abs(self._to_effective_annual() - other._to_effective_annual()) < Decimal("0.0000001")
 
     def __lt__(self, other: "InterestRate") -> bool:

@@ -355,3 +355,43 @@ def test_interest_rate_string_parsing_all_full_words():
     for word, expected_freq in frequencies.items():
         rate = InterestRate(f"5% {word}")
         assert rate.period == expected_freq
+
+
+# --- Precision tests ---
+
+
+def test_precision_none_preserves_full_precision():
+    rate = InterestRate("1% m")
+    annual = rate._to_effective_annual()
+    assert annual == (1 + Decimal("0.01")) ** 12 - 1
+
+
+def test_precision_quantizes_effective_annual():
+    rate = InterestRate("1% m", precision=6)
+    assert rate._to_effective_annual() == Decimal("0.126825")
+
+
+def test_precision_propagates_to_daily_conversion():
+    rate = InterestRate("1% m", precision=6)
+    daily = rate.to_daily()
+    expected_daily = (1 + Decimal("0.126825")) ** (Decimal(1) / Decimal(365)) - 1
+    assert daily.as_decimal == expected_daily
+
+
+def test_precision_propagates_to_monthly_conversion():
+    rate = InterestRate("5% a", precision=4)
+    monthly = rate.to_monthly()
+    assert monthly._precision == 4
+
+
+def test_rounding_mode_round_down():
+    from decimal import ROUND_DOWN
+
+    rate = InterestRate("1% m", precision=6, rounding=ROUND_DOWN)
+    annual = rate._to_effective_annual()
+    assert annual == Decimal("0.126825")
+
+
+def test_precision_does_not_alter_stored_rate():
+    rate = InterestRate("1% m", precision=6)
+    assert rate.as_decimal == Decimal("0.01")
