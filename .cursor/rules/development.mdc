@@ -49,6 +49,13 @@ The `knowledge/` directory contains one file per feature area. Each file describ
 - **Internal calculations**: Use `Money.raw_amount` only when raw `Decimal` arithmetic is unavoidable inside a method. Wrap the result back into `Money` before returning.
 - **Rationale**: `Money` carries precision semantics (`raw_amount` vs `real_amount`), supports safe arithmetic, and makes interfaces self-documenting. Passing bare `Decimal` values forces every caller to know whether the value is rounded or not.
 
+### 5. Use scipy for Numerical Solving ⭐
+**ALWAYS use `scipy.optimize` (fsolve, brentq, etc.) for root-finding and numerical convergence problems. NEVER write hand-rolled iterative loops for these.**
+
+- **Root-finding**: Use `scipy.optimize.fsolve` or `scipy.optimize.brentq` instead of manual fixed-point iteration or bisection loops.
+- **Rationale**: scipy solvers are battle-tested, handle edge cases (convergence failure, ill-conditioned problems), and are more robust than hand-written loops. They also communicate intent more clearly — a call to `fsolve` signals "find the root" immediately.
+- **Pattern**: Define an objective function `f(x) = 0`, pass it to the solver with an initial guess, and check the convergence flag.
+
 ## Project Structure Guidelines
 
 ### Directory Structure

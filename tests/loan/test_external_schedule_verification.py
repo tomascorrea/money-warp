@@ -1,8 +1,7 @@
-"""Verify PriceScheduler output against an external Brazilian lending system.
+"""Verify PriceScheduler and IOF output against an external Brazilian lending system.
 
 The reference schedule comes from a PRICE amortization loan with BASE_365
 daily compounding, 1% monthly interest, 12 periods, principal of 10,000.
-IOF fields are ignored -- only interest, principal, and balance are checked.
 
 Last-payment difference
 -----------------------
@@ -15,6 +14,18 @@ PMT for the last period and adjusts the interest/principal split.
 As a result, periods 1-11 match the external system exactly, while period 12
 has a slightly different payment amount (888.10 vs 888.08) and interest
 (8.96 vs 8.94).  Both approaches zero out the balance.
+
+IOF rounding
+------------
+The external system rounds each IOF component (daily and additional) to 2
+decimal places before summing them per installment.  Our IOFRounding.PER_COMPONENT
+mode replicates this and matches periods 1-11 exactly.  Period 12 has a 1-cent
+difference (29.65 vs 29.64) that propagates to the total (201.89 vs 201.88).
+This mirrors the last-payment-by-difference discrepancy in the schedule itself.
+
+Our default IOFRounding.PRECISE mode keeps full precision during component
+addition and rounds once per installment; it stays within 1 cent of every
+external value.
 """
 
 from datetime import datetime
@@ -22,7 +33,7 @@ from decimal import Decimal
 
 import pytest
 
-from money_warp import InterestRate, Loan, Money
+from money_warp import IOF, InterestRate, IOFRounding, Loan, Money, PriceScheduler
 
 EXTERNAL_SCHEDULE = [
     {"period": 1, "days": 28, "payment": "888.08", "interest": "92.02", "principal": "796.06", "balance": "9203.94"},
@@ -43,27 +54,33 @@ OUR_LAST_PERIOD = {"payment": "888.10", "interest": "8.96", "principal": "879.14
 
 EXPECTED_PMT = Decimal("888.08")
 
+EXTERNAL_IOF = [
+    {"period": 1, "iof": "4.86"},
+    {"period": 2, "iof": "6.86"},
+    {"period": 3, "iof": "8.94"},
+    {"period": 4, "iof": "11.06"},
+    {"period": 5, "iof": "13.22"},
+    {"period": 6, "iof": "15.42"},
+    {"period": 7, "iof": "17.71"},
+    {"period": 8, "iof": "19.99"},
+    {"period": 9, "iof": "22.33"},
+    {"period": 10, "iof": "24.71"},
+    {"period": 11, "iof": "27.14"},
+    {"period": 12, "iof": "29.64"},
+]
+
+EXTERNAL_TOTAL_IOF = Decimal("201.88")
+
+OUR_LAST_PERIOD_IOF = Decimal("29.65")
+
+ONE_CENT = Decimal("0.01")
+
 
 @pytest.fixture(scope="module")
 def external_loan_schedule():
     principal = Money("10000")
     interest_rate = InterestRate("1% m")
-    disbursement_date = datetime(2026, 2, 22)
-    due_dates = [
-        datetime(2026, 3, 22),
-        datetime(2026, 4, 22),
-        datetime(2026, 5, 22),
-        datetime(2026, 6, 22),
-        datetime(2026, 7, 22),
-        datetime(2026, 8, 22),
-        datetime(2026, 9, 22),
-        datetime(2026, 10, 22),
-        datetime(2026, 11, 22),
-        datetime(2026, 12, 22),
-        datetime(2027, 1, 22),
-        datetime(2027, 2, 22),
-    ]
-    loan = Loan(principal, interest_rate, due_dates, disbursement_date)
+    loan = Loan(principal, interest_rate, DUE_DATES, DISBURSEMENT_DATE)
     return loan.get_original_schedule()
 
 
@@ -136,6 +153,93 @@ def test_price_schedule_total_principal_equals_loan_amount(external_loan_schedul
     assert external_loan_schedule.total_principal == Decimal("10000.00")
 
 
+DISBURSEMENT_DATE = datetime(2026, 2, 22)
+
+DUE_DATES = [
+    datetime(2026, 3, 22),
+    datetime(2026, 4, 22),
+    datetime(2026, 5, 22),
+    datetime(2026, 6, 22),
+    datetime(2026, 7, 22),
+    datetime(2026, 8, 22),
+    datetime(2026, 9, 22),
+    datetime(2026, 10, 22),
+    datetime(2026, 11, 22),
+    datetime(2026, 12, 22),
+    datetime(2027, 1, 22),
+    datetime(2027, 2, 22),
+]
+
+IOF_DAILY_RATE = Decimal("0.000082")
+IOF_ADDITIONAL_RATE = Decimal("0.0038")
+
+
+@pytest.fixture(scope="module")
+def external_iof_per_component():
+    principal = Money("10000")
+    rate = InterestRate("1% m")
+    schedule = PriceScheduler.generate_schedule(principal, rate, DUE_DATES, DISBURSEMENT_DATE)
+    iof = IOF(
+        daily_rate=IOF_DAILY_RATE,
+        additional_rate=IOF_ADDITIONAL_RATE,
+        rounding=IOFRounding.PER_COMPONENT,
+    )
+    return iof.calculate(schedule, DISBURSEMENT_DATE)
+
+
+@pytest.fixture(scope="module")
+def external_iof_precise():
+    principal = Money("10000")
+    rate = InterestRate("1% m")
+    schedule = PriceScheduler.generate_schedule(principal, rate, DUE_DATES, DISBURSEMENT_DATE)
+    iof = IOF(
+        daily_rate=IOF_DAILY_RATE,
+        additional_rate=IOF_ADDITIONAL_RATE,
+        rounding=IOFRounding.PRECISE,
+    )
+    return iof.calculate(schedule, DISBURSEMENT_DATE)
+
+
+# --- IOF: PER_COMPONENT rounding (matches external system) ---
+
+
+@pytest.mark.parametrize(
+    "period_idx,expected",
+    [(i, row) for i, row in enumerate(EXTERNAL_IOF[:11])],
+    ids=[f"period-{row['period']}" for row in EXTERNAL_IOF[:11]],
+)
+def test_iof_per_component_matches_external(external_iof_per_component, period_idx, expected):
+    assert external_iof_per_component.per_installment[period_idx].tax_amount.real_amount == Decimal(expected["iof"])
+
+
+def test_iof_per_component_last_period_by_difference(external_iof_per_component):
+    assert external_iof_per_component.per_installment[-1].tax_amount.real_amount == OUR_LAST_PERIOD_IOF
+
+
+def test_iof_per_component_total_within_one_cent(external_iof_per_component):
+    assert abs(external_iof_per_component.total.real_amount - EXTERNAL_TOTAL_IOF) <= ONE_CENT
+
+
+# --- IOF: PRECISE rounding (default, within 1 cent of external) ---
+
+
+@pytest.mark.parametrize(
+    "period_idx,expected",
+    [(i, row) for i, row in enumerate(EXTERNAL_IOF)],
+    ids=[f"period-{row['period']}" for row in EXTERNAL_IOF],
+)
+def test_iof_precise_within_one_cent_of_external(external_iof_precise, period_idx, expected):
+    diff = abs(external_iof_precise.per_installment[period_idx].tax_amount.real_amount - Decimal(expected["iof"]))
+    assert diff <= ONE_CENT
+
+
+def test_iof_precise_total_within_one_cent(external_iof_precise):
+    assert abs(external_iof_precise.total.real_amount - EXTERNAL_TOTAL_IOF) <= ONE_CENT
+
+
+# --- PMT verification across various principals and rates ---
+
+
 @pytest.mark.parametrize(
     "principal,rate,expected",
     [
@@ -184,21 +288,6 @@ def test_price_schedule_total_principal_equals_loan_amount(external_loan_schedul
 def test_external_loan_schedule_by_principal(principal, rate, expected):
     principal = Money(principal)
     interest_rate = InterestRate(rate, precision=6)
-    disbursement_date = datetime(2026, 2, 22)
-    due_dates = [
-        datetime(2026, 3, 22),
-        datetime(2026, 4, 22),
-        datetime(2026, 5, 22),
-        datetime(2026, 6, 22),
-        datetime(2026, 7, 22),
-        datetime(2026, 8, 22),
-        datetime(2026, 9, 22),
-        datetime(2026, 10, 22),
-        datetime(2026, 11, 22),
-        datetime(2026, 12, 22),
-        datetime(2027, 1, 22),
-        datetime(2027, 2, 22),
-    ]
-    loan = Loan(principal, interest_rate, due_dates, disbursement_date)
+    loan = Loan(principal, interest_rate, DUE_DATES, DISBURSEMENT_DATE)
     schedule = loan.get_original_schedule()
     assert schedule[0].payment_amount == Decimal(expected)
