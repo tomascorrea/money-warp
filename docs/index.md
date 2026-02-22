@@ -12,7 +12,7 @@
 > MoneyWarp is currently in active development and should be considered **alpha/pre-release software**. While the core functionality is implemented and tested, the API may change between versions. Use in production environments at your own risk.
 >
 > - ✅ Core classes (`Money`, `InterestRate`, `CashFlow`, `Loan`) are stable
-> - ✅ Comprehensive test suite with 465 tests
+> - ✅ Comprehensive test suite with 700+ tests
 > - ✅ Time Machine, Present Value, and IRR functions complete
 > - ⚠️ API may evolve based on user feedback
 > - ⚠️ Not yet published to PyPI
@@ -35,6 +35,7 @@ MoneyWarp is a Python library for working with the time value of money. It treat
 - 🧮 **Robust numerics** powered by scipy for IRR and financial calculations
 - ⚖️ **Fine engine** with fines, mora interest, and configurable grace periods
 - 🍭 **Sugar payment methods** — `pay_installment()` and `anticipate_payment()`
+- 🇧🇷 **Tax module** — Brazilian IOF with pluggable tax strategy, grossup, and preset rates
 
 ## 🧮 Time Value of Money Functions
 
@@ -71,6 +72,7 @@ Explore the comprehensive examples and API reference:
 - **[Time Machine](examples/time_machine.md)** - Travel through time with loans
 - **[Cash Flow Analysis](examples/cash_flow.md)** - Work with cash flow streams
 - **[Fines & Payments](examples/fines.md)** - Fines, mora interest, and payment methods
+- **[Tax & IOF](examples/tax.md)** - Brazilian IOF, grossup, and pluggable taxes
 - **[API Reference](modules.md)** - Complete function documentation
 
 ## 🏗️ Architecture
@@ -81,11 +83,12 @@ MoneyWarp is built around core financial concepts:
 - **📈 InterestRate**: Type-safe rates with frequency conversions  
 - **💸 CashFlow**: Collections with SQLAlchemy-style querying
 - **🏦 Loan**: State machines for loan analysis and tracking
+- **🇧🇷 Tax**: Pluggable tax strategy with IOF, grossup, and presets
 - **🕰️ Warp**: Time Machine for temporal financial analysis
 
 ## 🧪 Quality & Testing
 
-- **469 comprehensive tests** with 100% core functionality coverage
+- **700+ comprehensive tests** with 100% core functionality coverage
 - **Type safety**: Full mypy compatibility with zero type errors
 - **Code quality**: Passes ruff linting and black formatting
 - **Robust numerics**: Scipy-powered calculations for reliability

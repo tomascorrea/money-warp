@@ -12,7 +12,7 @@
 > MoneyWarp is currently in active development and should be considered **alpha/pre-release software**. While the core functionality is implemented and tested, the API may change between versions. Use in production environments at your own risk.
 >
 > - ✅ Core classes (`Money`, `InterestRate`, `CashFlow`, `Loan`) are stable
-> - ✅ Comprehensive test suite with 469 tests
+> - ✅ Comprehensive test suite with 700+ tests
 > - ⚠️ API may evolve based on user feedback
 > - ✅ Published to PyPI
 > - 🚧 Additional features and schedulers in development
@@ -34,6 +34,7 @@ MoneyWarp is a Python library for working with the time value of money. It treat
 - 🧮 **Robust numerics** powered by scipy for IRR and financial calculations
 - ⚖️ **Fine engine** with fines, mora interest, and configurable grace periods
 - 🍭 **Sugar payment methods** — `pay_installment()` and `anticipate_payment()` for natural workflows
+- 🇧🇷 **Tax module** — Brazilian IOF with pluggable tax strategy, grossup, and preset rates
 
 ## 📦 Installation
 
@@ -275,9 +276,56 @@ print(f"Loan PV at 8%: {loan_pv}")  # Negative from borrower's perspective
 - 💰 **High precision**: Maintains decimal precision throughout calculations
 ```
 
+### Tax & Grossup (Brazilian IOF) 🇧🇷
+
+**Pluggable tax system with built-in IOF support and grossup for financed taxes:**
+
+```python
+from datetime import datetime
+from money_warp import (
+    Money, InterestRate, Loan, IndividualIOF, CorporateIOF,
+    grossup_loan, PriceScheduler, generate_monthly_dates,
+)
+
+# Use preset rates for individual borrowers (PF)
+iof = IndividualIOF()  # daily=0.0082%, additional=0.38%
+
+# Or for corporate borrowers (PJ)
+iof_pj = CorporateIOF()  # daily=0.0041%, additional=0.38%
+
+# Attach tax to a loan for reporting
+due_dates = generate_monthly_dates(datetime(2024, 2, 1), 12)
+loan = Loan(
+    Money("10000"), InterestRate("1% m"), due_dates,
+    disbursement_date=datetime(2024, 1, 1),
+    taxes=[iof],
+)
+print(f"Total IOF: {loan.total_tax}")
+print(f"Net disbursement: {loan.net_disbursement}")  # principal - tax
+
+# Grossup: borrower wants to receive exactly 10,000 after tax
+grossed_loan = grossup_loan(
+    requested_amount=Money("10000"),
+    interest_rate=InterestRate("1% m"),
+    due_dates=due_dates,
+    disbursement_date=datetime(2024, 1, 1),
+    scheduler=PriceScheduler,
+    taxes=[iof],
+)
+print(f"Grossed-up principal: {grossed_loan.principal}")    # > 10,000
+print(f"Net to borrower: {grossed_loan.net_disbursement}")  # ~= 10,000
+```
+
+**Key Features:**
+- 🔌 **Pluggable taxes**: Implement `BaseTax` for any tax type
+- 🇧🇷 **IOF built-in**: Brazilian IOF with daily + additional rate components
+- 👤 **Presets**: `IndividualIOF()` and `CorporateIOF()` with standard rates (overridable)
+- 🔄 **Grossup**: Scipy-powered solver finds the principal so `principal - tax = requested_amount`
+- 📊 **Rounding modes**: `PRECISE` (default) or `PER_COMPONENT` to match external systems
+
 ## 🏗️ Architecture
 
-MoneyWarp is built around four core concepts:
+MoneyWarp is built around five core concepts:
 
 ### 💰 Money
 High-precision monetary amounts using Python's `Decimal` for accuracy:
@@ -306,6 +354,13 @@ State machine for loan analysis with configurable schedulers:
 - **Flexible scheduling**: Any list of due dates, not just monthly
 - **Multiple schedulers**: PMT-based, fixed payment, custom algorithms
 
+### 🇧🇷 Tax
+Pluggable tax strategy with Brazilian IOF and grossup:
+- **BaseTax interface**: Implement `calculate()` for any tax type
+- **IOF**: Daily rate + additional rate components with configurable rounding
+- **Presets**: `IndividualIOF` (PF) and `CorporateIOF` (PJ) with standard rates
+- **Grossup**: Scipy-powered solver for financed tax calculations
+
 ## 📊 Supported Calculations
 
 ### Loan Schedules
@@ -331,12 +386,20 @@ State machine for loan analysis with configurable schedulers:
 - **Balance tracking**: Outstanding principal over time
 - **Robust numerics**: Scipy-powered calculations for complex scenarios
 
+### Tax Calculations
+- **IOF (Brazilian)**: Daily + additional rate on each installment's principal
+- **Grossup**: Find the principal so borrower receives the exact requested amount
+- **Per-installment breakdown**: Tax detail for every installment in the schedule
+- **Rounding modes**: Precise (sum-then-round) or per-component (round-then-sum)
+- **Custom taxes**: Extend `BaseTax` for any jurisdiction or tax type
+
 ## 🧪 Testing & Validation
 
 MoneyWarp includes comprehensive test coverage with validation against established financial libraries:
 
-- **469 total tests** with 100% core functionality coverage
+- **700+ total tests** with 100% core functionality coverage
 - **Reference validation** against [cartaorobbin/loan-calculator](https://github.com/cartaorobbin/loan-calculator)
+- **External IOF validation** against a production Brazilian lending platform
 - **Edge case handling**: Zero interest, irregular schedules, high precision
 - **Property-based testing**: Parametrized tests across various scenarios
 
@@ -366,6 +429,7 @@ MoneyWarp includes comprehensive test coverage with validation against establish
 - ✅ **Date Generation Utilities**: Smart payment scheduling - *COMPLETED*
 - ✅ **Fine Engine**: Fines, mora interest, grace periods - *COMPLETED*
 - ✅ **Payment Sugar Methods**: `pay_installment()`, `anticipate_payment()` - *COMPLETED*
+- ✅ **Tax Module**: Brazilian IOF, grossup, pluggable tax strategy - *COMPLETED*
 - **Additional Schedulers**: Custom schedules, balloon payments
 - **Performance optimization**: Vectorized calculations for large datasets
 - **Advanced TVM**: Bond pricing, option valuation

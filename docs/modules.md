@@ -231,3 +231,77 @@ MoneyWarp provides a comprehensive set of classes for financial calculations and
       show_root_heading: true
       show_source: false
       heading_level: 4
+
+## Tax Classes
+
+### BaseTax
+::: money_warp.BaseTax
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### IOF
+::: money_warp.IOF
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### IndividualIOF
+::: money_warp.IndividualIOF
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### CorporateIOF
+::: money_warp.CorporateIOF
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### IOFRounding
+::: money_warp.IOFRounding
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### TaxResult
+::: money_warp.TaxResult
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### TaxInstallmentDetail
+::: money_warp.TaxInstallmentDetail
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+## Grossup Functions
+
+### grossup
+::: money_warp.grossup
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### grossup_loan
+::: money_warp.grossup_loan
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### GrossupResult
+::: money_warp.GrossupResult
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
