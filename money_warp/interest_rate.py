@@ -20,6 +20,19 @@ class CompoundingFrequency(Enum):
     CONTINUOUS = float("inf")
 
 
+_VALID_STR_STYLES = ("long", "abbrev")
+
+_ABBREV_MAP = {
+    CompoundingFrequency.ANNUALLY: "a.a.",
+    CompoundingFrequency.MONTHLY: "a.m.",
+    CompoundingFrequency.DAILY: "a.d.",
+    CompoundingFrequency.QUARTERLY: "a.t.",
+    CompoundingFrequency.SEMI_ANNUALLY: "a.s.",
+}
+
+_ABBREV_TOKENS = {v: k for k, v in _ABBREV_MAP.items()}
+
+
 class InterestRate:
     """
     Represents an interest rate with explicit decimal/percentage handling.
@@ -42,21 +55,31 @@ class InterestRate:
         as_percentage: bool = False,
         precision: Optional[int] = None,
         rounding: str = ROUND_HALF_UP,
+        str_style: str = "long",
     ) -> None:
         """
         Create an interest rate.
 
         Args:
-            rate: Rate as string ("5.25% a", "0.004167 m") or numeric value
+            rate: Rate as string ("5.25% a", "0.004167 m") or numeric value.
+                  Abbreviated formats ("5.25% a.a.", "0.5% a.m.") are also
+                  accepted and automatically set str_style to "abbrev".
             period: Compounding frequency (required if rate is numeric)
             as_percentage: If True and rate is numeric, treat as percentage
             precision: Number of decimal places for the effective annual rate
                        during conversions. None keeps full precision.
             rounding: Rounding mode from the decimal module (e.g. ROUND_HALF_UP,
                       ROUND_DOWN). Only used when precision is set.
+            str_style: Controls period notation in __str__. "long" outputs the
+                       full name (e.g. "annually"), "abbrev" outputs the
+                       abbreviated form (e.g. "a.a.").
         """
+        if str_style not in _VALID_STR_STYLES:
+            raise ValueError(f"Invalid str_style: '{str_style}'. Expected one of {_VALID_STR_STYLES}")
+
         self._precision = precision
         self._rounding = rounding
+        self._str_style = str_style
 
         if isinstance(rate, str):
             parsed_rate = self._parse_rate_string(rate)
@@ -83,34 +106,34 @@ class InterestRate:
 
         Format: "<value> <frequency>" where:
         - value: number with optional % (e.g., "5.25%", "0.0525")
-        - frequency: a/annual, m/monthly, d/daily, q/quarterly, s/semi-annual
+        - frequency: a/annual, m/monthly, d/daily, q/quarterly, s/semi-annual,
+                     or abbreviated: a.a., a.m., a.d., a.t., a.s.
 
         Examples:
         - "5.25% a" or "5.25% annual" = 5.25% annually
         - "0.004167 m" or "0.004167 monthly" = 0.004167 monthly (decimal)
         - "2.5% q" or "2.5% quarterly" = 2.5% quarterly
+        - "5.25% a.a." = 5.25% annually (abbreviated, sets str_style="abbrev")
         """
-        # Clean up the string
         rate_string = rate_string.strip().lower()
 
-        # Parse the pattern: number (with optional %) + space + frequency
-        pattern = r"^([0-9]+\.?[0-9]*)(%?)\s+(a|annual|m|monthly|d|daily|q|quarterly|s|semi-annual)$"
+        long_freqs = r"a|annual|m|monthly|d|daily|q|quarterly|s|semi-annual"
+        abbrev_freqs = r"a\.a\.|a\.m\.|a\.d\.|a\.t\.|a\.s\."
+        pattern = rf"^([0-9]+\.?[0-9]*)(%?)\s+({abbrev_freqs}|{long_freqs})$"
         match = re.match(pattern, rate_string)
 
         if not match:
             raise ValueError(
                 f"Invalid rate format: '{rate_string}'. "
                 "Expected format: '<value> <frequency>' "
-                "(e.g., '5.25% a', '0.004167 monthly', '2.5% quarterly')"
+                "(e.g., '5.25% a', '0.004167 monthly', '2.5% a.a.')"
             )
 
         value_str, percent_sign, freq_str = match.groups()
 
-        # Parse the value
         value = Decimal(value_str)
         is_percentage = bool(percent_sign)
 
-        # Parse the frequency
         frequency_map = {
             "a": CompoundingFrequency.ANNUALLY,
             "annual": CompoundingFrequency.ANNUALLY,
@@ -124,9 +147,12 @@ class InterestRate:
             "semi-annual": CompoundingFrequency.SEMI_ANNUALLY,
         }
 
-        frequency = frequency_map[freq_str]
+        if freq_str in _ABBREV_TOKENS:
+            frequency = _ABBREV_TOKENS[freq_str]
+            self._str_style = "abbrev"
+        else:
+            frequency = frequency_map[freq_str]
 
-        # Calculate decimal and percentage rates
         if is_percentage:
             decimal_rate = value / 100
             percentage_rate = value
@@ -163,6 +189,7 @@ class InterestRate:
             CompoundingFrequency.DAILY,
             precision=self._precision,
             rounding=self._rounding,
+            str_style=self._str_style,
         )
 
     def to_monthly(self) -> "InterestRate":
@@ -178,6 +205,7 @@ class InterestRate:
             CompoundingFrequency.MONTHLY,
             precision=self._precision,
             rounding=self._rounding,
+            str_style=self._str_style,
         )
 
     def to_annual(self) -> "InterestRate":
@@ -190,6 +218,7 @@ class InterestRate:
             CompoundingFrequency.ANNUALLY,
             precision=self._precision,
             rounding=self._rounding,
+            str_style=self._str_style,
         )
 
     def to_periodic_rate(self, num_periods: int) -> Decimal:
@@ -248,7 +277,8 @@ class InterestRate:
 
     def __str__(self) -> str:
         """Clear string representation."""
-        return f"{self._percentage_rate:.3f}% {self.period.name.lower()}"
+        label = _ABBREV_MAP[self.period] if self._str_style == "abbrev" else self.period.name.lower()
+        return f"{self._percentage_rate:.3f}% {label}"
 
     def __repr__(self) -> str:
         """Developer representation."""

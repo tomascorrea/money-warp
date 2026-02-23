@@ -157,7 +157,7 @@ print(f"Back to present: {loan.current_balance}")
 ### Interest Rate Conversions
 
 ```python
-from money_warp import InterestRate
+from money_warp import InterestRate, CompoundingFrequency
 
 # Create rates with explicit formats
 annual_rate = InterestRate("5.25% a")     # 5.25% annually  
@@ -172,6 +172,14 @@ print(f"As daily: {annual_rate.to_daily()}")
 # Safe decimal/percentage handling
 print(f"As decimal: {annual_rate.as_decimal}")      # 0.0525
 print(f"As percentage: {annual_rate.as_percentage}") # 5.25
+
+# Abbreviated notation (Brazilian/LatAm convention)
+rate = InterestRate("5.25% a.a.")   # parsed as 5.25% annually
+print(rate)                         # "5.250% a.a." — round-trips automatically
+
+# Or set the style explicitly on numeric rates
+rate = InterestRate(1.5, CompoundingFrequency.MONTHLY, as_percentage=True, str_style="abbrev")
+print(rate)                         # "1.500% a.m."
 ```
 
 ### Easy Date Generation 📅
@@ -338,6 +346,7 @@ Type-safe interest rate handling with explicit conversions:
 - **Clear representation**: Eliminates 0.05 vs 5% confusion
 - **Frequency conversion**: Annual ↔ Monthly ↔ Daily ↔ Quarterly
 - **String parsing**: `"5.25% annual"` or `"0.004167 monthly"`
+- **Abbreviated notation**: `"5.25% a.a."`, `"1.5% a.m."` (Brazilian/LatAm convention)
 
 ### 💸 CashFlow
 Container for cash flow analysis with SQLAlchemy-style querying:

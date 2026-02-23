@@ -36,6 +36,13 @@ quarterly = InterestRate("1.3125% q")   # 1.3125% quarterly
 annual_long = InterestRate("5.25% annual")
 monthly_long = InterestRate("0.4375% monthly")
 
+# Abbreviated notation (Brazilian/LatAm convention)
+annual_abbrev = InterestRate("5.25% a.a.")    # ao ano
+monthly_abbrev = InterestRate("0.4375% a.m.") # ao mês
+daily_abbrev = InterestRate("0.0144% a.d.")   # ao dia
+quarterly_abbrev = InterestRate("2.75% a.t.")  # ao trimestre
+semi_annual_abbrev = InterestRate("3% a.s.")   # ao semestre
+
 # Decimal format (explicit)
 decimal_annual = InterestRate("0.0525 a")     # 5.25% as decimal
 decimal_monthly = InterestRate("0.004375 m")  # 0.4375% as decimal
@@ -333,13 +340,61 @@ good_rate3 = InterestRate("5% a")  # Recommended
 print(f"All equivalent: {good_rate1} = {good_rate2} = {good_rate3}")
 ```
 
+## Abbreviated Notation (str_style)
+
+MoneyWarp supports abbreviated period labels commonly used in Brazilian and Latin American finance. The `str_style` parameter controls how `__str__` renders the period:
+
+| Frequency | Long (`"long"`) | Abbreviated (`"abbrev"`) |
+|---|---|---|
+| Annually | `5.250% annually` | `5.250% a.a.` |
+| Monthly | `0.500% monthly` | `0.500% a.m.` |
+| Daily | `0.014% daily` | `0.014% a.d.` |
+| Quarterly | `2.750% quarterly` | `2.750% a.t.` |
+| Semi-annually | `3.000% semi_annually` | `3.000% a.s.` |
+
+### Auto-detection from string input
+
+When you parse a string that uses abbreviated tokens, the style is set automatically:
+
+```python
+rate = InterestRate("5.25% a.a.")
+print(rate)  # "5.250% a.a." — round-trips without extra config
+```
+
+### Explicit style on numeric rates
+
+For rates created from numbers, pass `str_style="abbrev"`:
+
+```python
+rate = InterestRate(
+    1.5, CompoundingFrequency.MONTHLY,
+    as_percentage=True, str_style="abbrev",
+)
+print(rate)  # "1.500% a.m."
+```
+
+### Style propagates through conversions
+
+Converting a rate preserves its display style:
+
+```python
+annual = InterestRate("6% a.a.")
+monthly = annual.to_monthly()
+daily = annual.to_daily()
+
+print(annual)   # "6.000% a.a."
+print(monthly)  # "0.487% a.m."
+print(daily)    # "0.016% a.d."
+```
+
 ## Best Practices
 
 1. **Use string format**: `InterestRate("5.25% a")` is clearest
-2. **Be explicit**: Always specify frequency (a/m/d/q)
+2. **Be explicit**: Always specify frequency (a/m/d/q/s or a.a./a.m./a.d./a.t./a.s.)
 3. **Convert appropriately**: Match compounding to your calculation needs
 4. **Validate inputs**: Handle user input with try/catch
 5. **Document assumptions**: Make compounding frequency clear in your code
+6. **Use abbreviated notation** when integrating with Brazilian/LatAm financial systems
 
 ## Common Patterns
 

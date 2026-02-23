@@ -395,3 +395,121 @@ def test_rounding_mode_round_down():
 def test_precision_does_not_alter_stored_rate():
     rate = InterestRate("1% m", precision=6)
     assert rate.as_decimal == Decimal("0.01")
+
+
+# --- str_style tests ---
+
+
+# Abbreviated string parsing
+@pytest.mark.parametrize(
+    "rate_string,expected_decimal,expected_percentage,expected_frequency",
+    [
+        ("5.25% a.a.", Decimal("0.0525"), Decimal("5.25"), CompoundingFrequency.ANNUALLY),
+        ("0.5% a.m.", Decimal("0.005"), Decimal("0.5"), CompoundingFrequency.MONTHLY),
+        ("0.0137% a.d.", Decimal("0.000137"), Decimal("0.0137"), CompoundingFrequency.DAILY),
+        ("2.75% a.t.", Decimal("0.0275"), Decimal("2.75"), CompoundingFrequency.QUARTERLY),
+        ("3% a.s.", Decimal("0.03"), Decimal("3.0"), CompoundingFrequency.SEMI_ANNUALLY),
+        ("0.0525 a.a.", Decimal("0.0525"), Decimal("5.25"), CompoundingFrequency.ANNUALLY),
+        ("0.004167 a.m.", Decimal("0.004167"), Decimal("0.4167"), CompoundingFrequency.MONTHLY),
+    ],
+)
+def test_interest_rate_abbreviated_string_parsing(
+    rate_string, expected_decimal, expected_percentage, expected_frequency
+):
+    rate = InterestRate(rate_string)
+    assert rate.as_decimal == expected_decimal
+
+
+def test_interest_rate_abbreviated_parsing_stores_percentage():
+    rate = InterestRate("5.25% a.a.")
+    assert rate.as_percentage == Decimal("5.25")
+
+
+def test_interest_rate_abbreviated_parsing_stores_frequency():
+    rate = InterestRate("0.5% a.m.")
+    assert rate.period == CompoundingFrequency.MONTHLY
+
+
+# Auto-detection of str_style from abbreviated input
+def test_interest_rate_abbreviated_input_auto_sets_abbrev_style():
+    rate = InterestRate("5% a.a.")
+    assert str(rate) == "5.000% a.a."
+
+
+def test_interest_rate_long_input_keeps_long_style():
+    rate = InterestRate("5% a")
+    assert str(rate) == "5.000% annually"
+
+
+# Explicit str_style on numeric constructor
+@pytest.mark.parametrize(
+    "frequency,expected_label",
+    [
+        (CompoundingFrequency.ANNUALLY, "a.a."),
+        (CompoundingFrequency.MONTHLY, "a.m."),
+        (CompoundingFrequency.DAILY, "a.d."),
+        (CompoundingFrequency.QUARTERLY, "a.t."),
+        (CompoundingFrequency.SEMI_ANNUALLY, "a.s."),
+    ],
+)
+def test_interest_rate_str_style_abbrev_numeric_constructor(frequency, expected_label):
+    rate = InterestRate(0.05, frequency, str_style="abbrev")
+    assert str(rate) == f"5.000% {expected_label}"
+
+
+def test_interest_rate_str_style_long_numeric_constructor():
+    rate = InterestRate(0.05, CompoundingFrequency.ANNUALLY, str_style="long")
+    assert str(rate) == "5.000% annually"
+
+
+# Round-trip: parse abbreviated -> str outputs abbreviated
+@pytest.mark.parametrize(
+    "rate_string,expected_str",
+    [
+        ("5.25% a.a.", "5.250% a.a."),
+        ("0.5% a.m.", "0.500% a.m."),
+        ("0.0137% a.d.", "0.014% a.d."),
+        ("2.75% a.t.", "2.750% a.t."),
+        ("3% a.s.", "3.000% a.s."),
+    ],
+)
+def test_interest_rate_abbreviated_round_trip(rate_string, expected_str):
+    rate = InterestRate(rate_string)
+    assert str(rate) == expected_str
+
+
+# Style propagation through conversions
+def test_interest_rate_abbrev_style_propagates_to_monthly():
+    rate = InterestRate("6% a.a.")
+    monthly = rate.to_monthly()
+    assert "a.m." in str(monthly)
+
+
+def test_interest_rate_abbrev_style_propagates_to_daily():
+    rate = InterestRate("6% a.a.")
+    daily = rate.to_daily()
+    assert "a.d." in str(daily)
+
+
+def test_interest_rate_abbrev_style_propagates_to_annual():
+    rate = InterestRate("0.5% a.m.")
+    annual = rate.to_annual()
+    assert "a.a." in str(annual)
+
+
+def test_interest_rate_long_style_propagates_to_monthly():
+    rate = InterestRate("6% a")
+    monthly = rate.to_monthly()
+    assert "monthly" in str(monthly)
+
+
+# Invalid str_style
+def test_interest_rate_invalid_str_style_raises_error():
+    with pytest.raises(ValueError, match="Invalid str_style"):
+        InterestRate(0.05, CompoundingFrequency.ANNUALLY, str_style="invalid")
+
+
+# Default str_style is "long"
+def test_interest_rate_default_str_style_is_long():
+    rate = InterestRate(0.05, CompoundingFrequency.ANNUALLY)
+    assert str(rate) == "5.000% annually"

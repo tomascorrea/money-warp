@@ -38,7 +38,7 @@ money_warp/
 
 `InterestRate` eliminates the "is 5 the rate or the percentage?" ambiguity. It stores a decimal rate plus a `CompoundingFrequency` enum (`DAILY`, `MONTHLY`, `QUARTERLY`, `SEMI_ANNUALLY`, `ANNUALLY`, `CONTINUOUS`). All conversions go through an effective annual rate as the canonical intermediate form. The `accrue(principal, days)` method computes compound interest on a principal over a number of days, centralising the formula that was previously duplicated across the `Loan` class.
 
-String parsing accepts human-friendly formats like `"5.25% a"` or `"0.004167 m"`.
+String parsing accepts human-friendly formats like `"5.25% a"` or `"0.004167 m"`, as well as abbreviated (Brazilian/LatAm) notation: `"5.25% a.a."`, `"0.5% a.m."`, `"0.0137% a.d."`, `"2.75% a.t."`, `"3% a.s."`. The `str_style` constructor parameter (`"long"` default, or `"abbrev"`) controls how `__str__` renders the period label. Parsing an abbreviated string auto-sets `str_style="abbrev"` so that `str()` round-trips correctly. The style propagates through `to_daily()`, `to_monthly()`, and `to_annual()` conversions.
 
 ### CashFlow as a Query-able Container
 
