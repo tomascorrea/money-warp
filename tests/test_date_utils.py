@@ -27,13 +27,12 @@ def test_generate_monthly_dates_basic():
 
 
 def test_generate_monthly_dates_handles_end_of_month():
-    # Test that relativedelta handles end-of-month correctly
     start_date = datetime(2024, 1, 31)
     dates = generate_monthly_dates(start_date, 3)
     expected = [
         datetime(2024, 1, 31),
-        datetime(2024, 2, 29),  # 2024 is leap year, Feb has 29 days
-        datetime(2024, 3, 29),  # Maintains the adjusted day from February
+        datetime(2024, 2, 29),  # 2024 is leap year, clamped to 29
+        datetime(2024, 3, 31),  # Anchored to original day 31
     ]
     assert dates == expected
 
@@ -54,8 +53,8 @@ def test_generate_monthly_dates_february_non_leap_year():
     dates = generate_monthly_dates(start_date, 3)
     expected = [
         datetime(2023, 1, 29),
-        datetime(2023, 2, 28),  # 2023 is not leap year, Feb has 28 days
-        datetime(2023, 3, 28),  # Maintains the adjusted day from February
+        datetime(2023, 2, 28),  # 2023 is not leap year, clamped to 28
+        datetime(2023, 3, 29),  # Anchored to original day 29
     ]
     assert dates == expected
 
@@ -81,6 +80,39 @@ def test_generate_monthly_dates_negative_payments_raises_error():
     start_date = datetime(2024, 1, 15)
     with pytest.raises(ValueError, match="Number of payments must be positive"):
         generate_monthly_dates(start_date, -1)
+
+
+def test_generate_monthly_dates_anchors_day_across_short_months():
+    start_date = datetime(2024, 1, 31)
+    dates = generate_monthly_dates(start_date, 6)
+    expected = [
+        datetime(2024, 1, 31),
+        datetime(2024, 2, 29),  # Leap year Feb, clamped to 29
+        datetime(2024, 3, 31),  # Back to 31
+        datetime(2024, 4, 30),  # April has 30 days, clamped
+        datetime(2024, 5, 31),  # Back to 31
+        datetime(2024, 6, 30),  # June has 30 days, clamped
+    ]
+    assert dates == expected
+
+
+def test_generate_monthly_dates_anchors_day_30_across_february():
+    start_date = datetime(2023, 11, 30)
+    dates = generate_monthly_dates(start_date, 5)
+    expected = [
+        datetime(2023, 11, 30),
+        datetime(2023, 12, 30),
+        datetime(2024, 1, 30),
+        datetime(2024, 2, 29),  # Leap year Feb, clamped from 30
+        datetime(2024, 3, 30),  # Back to 30
+    ]
+    assert dates == expected
+
+
+def test_generate_monthly_dates_single_payment():
+    start_date = datetime(2024, 3, 31)
+    dates = generate_monthly_dates(start_date, 1)
+    assert dates == [datetime(2024, 3, 31)]
 
 
 # Bi-weekly dates tests
@@ -135,14 +167,13 @@ def test_generate_quarterly_dates_basic():
 
 
 def test_generate_quarterly_dates_handles_month_lengths():
-    # Test that relativedelta handles different month lengths correctly
     start_date = datetime(2024, 1, 31)
     dates = generate_quarterly_dates(start_date, 4)
     expected = [
         datetime(2024, 1, 31),
-        datetime(2024, 4, 30),  # April has 30 days, relativedelta handles this
-        datetime(2024, 7, 30),  # Stays consistent with April's adjustment
-        datetime(2024, 10, 30),
+        datetime(2024, 4, 30),  # April has 30 days, clamped
+        datetime(2024, 7, 31),  # Anchored to original day 31
+        datetime(2024, 10, 31),  # Anchored to original day 31
     ]
     assert dates == expected
 
@@ -154,6 +185,19 @@ def test_generate_quarterly_dates_year_rollover():
         datetime(2024, 10, 15),
         datetime(2025, 1, 15),
         datetime(2025, 4, 15),
+    ]
+    assert dates == expected
+
+
+def test_generate_quarterly_dates_anchors_day_across_short_months():
+    start_date = datetime(2024, 1, 31)
+    dates = generate_quarterly_dates(start_date, 5)
+    expected = [
+        datetime(2024, 1, 31),
+        datetime(2024, 4, 30),  # April has 30 days, clamped
+        datetime(2024, 7, 31),  # Back to 31
+        datetime(2024, 10, 31),  # Back to 31
+        datetime(2025, 1, 31),  # Back to 31
     ]
     assert dates == expected
 
@@ -183,6 +227,19 @@ def test_generate_annual_dates_leap_year_edge_case():
         datetime(2024, 2, 29),
         datetime(2025, 2, 28),  # 2025 is not leap year, relativedelta handles this
         datetime(2026, 2, 28),  # 2026 is not leap year
+    ]
+    assert dates == expected
+
+
+def test_generate_annual_dates_anchors_day_across_leap_years():
+    start_date = datetime(2024, 2, 29)  # Leap year
+    dates = generate_annual_dates(start_date, 5)
+    expected = [
+        datetime(2024, 2, 29),
+        datetime(2025, 2, 28),  # Non-leap, clamped to 28
+        datetime(2026, 2, 28),  # Non-leap, clamped to 28
+        datetime(2027, 2, 28),  # Non-leap, clamped to 28
+        datetime(2028, 2, 29),  # Leap year again, back to 29
     ]
     assert dates == expected
 
@@ -268,9 +325,9 @@ def test_quarterly_dates_business_scenario():
 
     expected = [
         datetime(2024, 3, 31),
-        datetime(2024, 6, 30),  # June has 30 days, so adjusted from 31
-        datetime(2024, 9, 30),  # Maintains the adjusted day from June
-        datetime(2024, 12, 30),  # Maintains the adjusted day
+        datetime(2024, 6, 30),  # June has 30 days, clamped
+        datetime(2024, 9, 30),  # September has 30 days, clamped
+        datetime(2024, 12, 31),  # Anchored to original day 31
     ]
     assert dates == expected
 

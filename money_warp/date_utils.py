@@ -25,14 +25,7 @@ def generate_monthly_dates(start_date: datetime, num_payments: int) -> List[date
     if num_payments <= 0:
         raise ValueError("Number of payments must be positive")
 
-    dates = []
-    current_date = start_date
-
-    for _ in range(num_payments):
-        dates.append(current_date)
-        current_date += relativedelta(months=1)
-
-    return dates
+    return [start_date + relativedelta(months=i) for i in range(num_payments)]
 
 
 def generate_biweekly_dates(start_date: datetime, num_payments: int) -> List[datetime]:
@@ -112,14 +105,7 @@ def generate_quarterly_dates(start_date: datetime, num_payments: int) -> List[da
     if num_payments <= 0:
         raise ValueError("Number of payments must be positive")
 
-    dates = []
-    current_date = start_date
-
-    for _ in range(num_payments):
-        dates.append(current_date)
-        current_date += relativedelta(months=3)
-
-    return dates
+    return [start_date + relativedelta(months=3 * i) for i in range(num_payments)]
 
 
 def generate_annual_dates(start_date: datetime, num_payments: int) -> List[datetime]:
@@ -141,14 +127,7 @@ def generate_annual_dates(start_date: datetime, num_payments: int) -> List[datet
     if num_payments <= 0:
         raise ValueError("Number of payments must be positive")
 
-    dates = []
-    current_date = start_date
-
-    for _ in range(num_payments):
-        dates.append(current_date)
-        current_date += relativedelta(years=1)
-
-    return dates
+    return [start_date + relativedelta(years=i) for i in range(num_payments)]
 
 
 def generate_custom_interval_dates(start_date: datetime, num_payments: int, interval_days: int) -> List[datetime]:

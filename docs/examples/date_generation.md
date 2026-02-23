@@ -44,8 +44,8 @@ print(f"12 monthly payments starting Jan 15")
 
 # End-of-month intelligence
 eom_dates = generate_monthly_dates(datetime(2024, 1, 31), 4)
-# Results: [Jan 31, Feb 29, Mar 29, Apr 29]
-# Notice how it maintains consistency after February adjustment
+# Results: [Jan 31, Feb 29, Mar 31, Apr 30]
+# Each date anchors to the original day (31st), clamped per month
 ```
 
 ### Bi-weekly Dates
@@ -88,8 +88,8 @@ print(f"Quarterly payments: Q1, Q2, Q3, Q4...")
 
 # End-of-quarter example
 quarter_end = generate_quarterly_dates(datetime(2024, 3, 31), 4)
-# Results: [Mar 31, Jun 30, Sep 30, Dec 30]
-# Smart handling of different quarter-end dates
+# Results: [Mar 31, Jun 30, Sep 30, Dec 31]
+# Anchors to original day (31st), clamped for 30-day months
 ```
 
 ### Annual Dates
@@ -103,9 +103,9 @@ from money_warp import generate_annual_dates
 dates = generate_annual_dates(datetime(2024, 1, 1), 30)
 
 # Leap year handling
-leap_dates = generate_annual_dates(datetime(2024, 2, 29), 4)
-# Results: [2024-02-29, 2025-02-28, 2026-02-28, 2027-02-28]
-# Automatically adjusts for non-leap years
+leap_dates = generate_annual_dates(datetime(2024, 2, 29), 5)
+# Results: [2024-02-29, 2025-02-28, 2026-02-28, 2027-02-28, 2028-02-29]
+# Anchors to 29th — returns to Feb 29 when the next leap year arrives
 ```
 
 ### Custom Intervals
@@ -153,12 +153,13 @@ print(f"Monthly payment: {schedule[0].payment_amount}")
 # Starting on January 31st
 dates = generate_monthly_dates(datetime(2024, 1, 31), 6)
 
-# Results:
-# Jan 31 → Feb 29 (leap year, Feb has 29 days)
-# Feb 29 → Mar 29 (maintains the adjusted day)
-# Mar 29 → Apr 29 (consistent)
-# Apr 29 → May 29 (consistent)
-# May 29 → Jun 29 (consistent)
+# Results (each date anchored to original day 31):
+# Jan 31 (start)
+# Feb 29 (leap year, clamped from 31)
+# Mar 31 (back to 31)
+# Apr 30 (April has 30 days, clamped)
+# May 31 (back to 31)
+# Jun 30 (June has 30 days, clamped)
 
 for i, date in enumerate(dates, 1):
     print(f"Payment {i}: {date} (day {date.day})")
@@ -168,12 +169,14 @@ for i, date in enumerate(dates, 1):
 
 ```python
 # Annual payments starting on leap day
-leap_dates = generate_annual_dates(datetime(2024, 2, 29), 3)
+leap_dates = generate_annual_dates(datetime(2024, 2, 29), 5)
 
-# Results:
+# Results (anchored to 29th):
 # 2024-02-29 (leap year)
-# 2025-02-28 (not leap year, adjusted)
-# 2026-02-28 (not leap year, maintains adjustment)
+# 2025-02-28 (not leap year, clamped)
+# 2026-02-28 (not leap year, clamped)
+# 2027-02-28 (not leap year, clamped)
+# 2028-02-29 (leap year again, back to 29)
 ```
 
 ### Quarter-End Variations
@@ -182,10 +185,11 @@ leap_dates = generate_annual_dates(datetime(2024, 2, 29), 3)
 # Starting at end of March (31 days)
 quarter_dates = generate_quarterly_dates(datetime(2024, 3, 31), 4)
 
-# Results:
-# Mar 31 → Jun 30 (June has 30 days, adjusted)
-# Jun 30 → Sep 30 (maintains adjusted day)
-# Sep 30 → Dec 30 (maintains adjusted day)
+# Results (anchored to 31st):
+# Mar 31 (start)
+# Jun 30 (June has 30 days, clamped)
+# Sep 30 (September has 30 days, clamped)
+# Dec 31 (back to 31)
 ```
 
 ## Real-World Examples

@@ -205,7 +205,7 @@ from money_warp import (
 
 # Monthly payments (handles end-of-month intelligently)
 monthly_dates = generate_monthly_dates(datetime(2024, 1, 31), 12)
-print(f"Jan 31 → Feb 29 → Mar 29...")  # Smart month-end handling
+print(f"Jan 31 → Feb 29 → Mar 31...")  # Anchors to original day (31st)
 
 # Bi-weekly payments (every 14 days)
 biweekly_dates = generate_biweekly_dates(datetime(2024, 1, 1), 26)
@@ -233,7 +233,7 @@ loan = Loan(
 
 **Key Features:**
 - 🗓️ **Smart date handling**: Uses `python-dateutil` for robust month arithmetic
-- 📅 **End-of-month intelligence**: Jan 31 → Feb 29 → Mar 29 (maintains consistency)
+- 📅 **End-of-month intelligence**: Jan 31 → Feb 29 → Mar 31 (anchors to original day)
 - 🎯 **Simple API**: Just `datetime` and `int` parameters, no complex options
 - ⚡ **Instant integration**: Generated dates work directly with `Loan` objects
 - 🔒 **Type-safe**: Full type annotations and validation
