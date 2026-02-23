@@ -4,7 +4,8 @@ from decimal import Decimal
 
 import pytest
 
-from money_warp.interest_rate import CompoundingFrequency, InterestRate
+from money_warp.interest_rate import CompoundingFrequency, InterestRate, YearSize
+from money_warp.money import Money
 
 
 # String parsing tests
@@ -513,3 +514,127 @@ def test_interest_rate_invalid_str_style_raises_error():
 def test_interest_rate_default_str_style_is_long():
     rate = InterestRate(0.05, CompoundingFrequency.ANNUALLY)
     assert str(rate) == "5.000% annually"
+
+
+# --- YearSize tests ---
+
+
+def test_year_size_enum_values():
+    assert YearSize.banker.value == 360
+    assert YearSize.commercial.value == 365
+
+
+def test_year_size_default_is_commercial():
+    rate = InterestRate("10% a")
+    assert rate.year_size == YearSize.commercial
+
+
+def test_year_size_banker_stored_on_creation():
+    rate = InterestRate("10% a", year_size=YearSize.banker)
+    assert rate.year_size == YearSize.banker
+
+
+def test_year_size_banker_to_daily_uses_360():
+    rate = InterestRate("10% a", year_size=YearSize.banker)
+    daily = rate.to_daily()
+    expected = (1 + Decimal("0.10")) ** (Decimal("1") / Decimal("360")) - 1
+    assert daily.as_decimal == expected
+
+
+def test_year_size_commercial_to_daily_uses_365():
+    rate = InterestRate("10% a", year_size=YearSize.commercial)
+    daily = rate.to_daily()
+    expected = (1 + Decimal("0.10")) ** (Decimal("1") / Decimal("365")) - 1
+    assert daily.as_decimal == expected
+
+
+def test_year_size_banker_daily_rate_higher_than_commercial():
+    banker = InterestRate("10% a", year_size=YearSize.banker).to_daily()
+    commercial = InterestRate("10% a", year_size=YearSize.commercial).to_daily()
+    assert banker.as_decimal > commercial.as_decimal
+
+
+def test_year_size_banker_daily_to_annual_round_trip():
+    original = InterestRate("10% a", year_size=YearSize.banker)
+    daily = original.to_daily()
+    back = daily.to_annual()
+    assert abs(back.as_percentage - Decimal("10")) < Decimal("0.0001")
+
+
+def test_year_size_banker_effective_annual_from_daily():
+    daily_rate = (1 + Decimal("0.10")) ** (Decimal("1") / Decimal("360")) - 1
+    rate = InterestRate(daily_rate, CompoundingFrequency.DAILY, year_size=YearSize.banker)
+    annual = rate.to_annual()
+    assert abs(annual.as_percentage - Decimal("10")) < Decimal("0.001")
+
+
+def test_year_size_propagates_to_daily():
+    rate = InterestRate("10% a", year_size=YearSize.banker)
+    daily = rate.to_daily()
+    assert daily.year_size == YearSize.banker
+
+
+def test_year_size_propagates_to_monthly():
+    rate = InterestRate("10% a", year_size=YearSize.banker)
+    monthly = rate.to_monthly()
+    assert monthly.year_size == YearSize.banker
+
+
+def test_year_size_propagates_to_annual():
+    rate = InterestRate("1% m", year_size=YearSize.banker)
+    annual = rate.to_annual()
+    assert annual.year_size == YearSize.banker
+
+
+def test_year_size_banker_to_periodic_rate_short_circuits_360():
+    daily_dec = Decimal("0.000265")
+    rate = InterestRate(daily_dec, CompoundingFrequency.DAILY, year_size=YearSize.banker)
+    assert rate.to_periodic_rate(360) == daily_dec
+
+
+def test_year_size_commercial_to_periodic_rate_short_circuits_365():
+    daily_dec = Decimal("0.000261")
+    rate = InterestRate(daily_dec, CompoundingFrequency.DAILY, year_size=YearSize.commercial)
+    assert rate.to_periodic_rate(365) == daily_dec
+
+
+def test_year_size_banker_accrue_30_days():
+    rate = InterestRate("10% a", year_size=YearSize.banker)
+    principal = Money("1000")
+    accrued = rate.accrue(principal, 30)
+    daily = (1 + Decimal("0.10")) ** (Decimal("1") / Decimal("360")) - 1
+    expected = Decimal("1000") * ((1 + daily) ** Decimal("30") - 1)
+    assert accrued.real_amount == Money(expected).real_amount
+
+
+def test_year_size_commercial_accrue_30_days():
+    rate = InterestRate("10% a", year_size=YearSize.commercial)
+    principal = Money("1000")
+    accrued = rate.accrue(principal, 30)
+    daily = (1 + Decimal("0.10")) ** (Decimal("1") / Decimal("365")) - 1
+    expected = Decimal("1000") * ((1 + daily) ** Decimal("30") - 1)
+    assert accrued.real_amount == Money(expected).real_amount
+
+
+def test_year_size_banker_accrue_higher_than_commercial():
+    principal = Money("1000")
+    banker_accrued = InterestRate("10% a", year_size=YearSize.banker).accrue(principal, 30)
+    commercial_accrued = InterestRate("10% a", year_size=YearSize.commercial).accrue(principal, 30)
+    assert banker_accrued > commercial_accrued
+
+
+def test_year_size_repr_shows_banker():
+    rate = InterestRate("10% a", year_size=YearSize.banker)
+    assert "year_size=" in repr(rate)
+    assert "YearSize.banker" in repr(rate)
+
+
+def test_year_size_repr_omits_commercial():
+    rate = InterestRate("10% a", year_size=YearSize.commercial)
+    assert "year_size" not in repr(rate)
+
+
+def test_year_size_string_parsing_with_banker():
+    rate = InterestRate("5.25% a.a.", year_size=YearSize.banker)
+    assert rate.year_size == YearSize.banker
+    assert rate.as_decimal == Decimal("0.0525")

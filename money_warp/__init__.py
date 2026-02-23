@@ -9,7 +9,7 @@ from money_warp.date_utils import (
     generate_quarterly_dates,
     generate_weekly_dates,
 )
-from money_warp.interest_rate import CompoundingFrequency, InterestRate
+from money_warp.interest_rate import CompoundingFrequency, InterestRate, YearSize
 from money_warp.loan import Loan, MoraStrategy
 from money_warp.money import Money
 from money_warp.present_value import (
@@ -46,6 +46,7 @@ __all__ = [
     "Money",
     "InterestRate",
     "CompoundingFrequency",
+    "YearSize",
     "CashFlow",
     "CashFlowItem",
     "CashFlowQuery",

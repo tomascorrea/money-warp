@@ -9,6 +9,13 @@ from typing import Dict, Optional, Union
 from money_warp.money import Money
 
 
+class YearSize(Enum):
+    """Number of days that constitute one year for rate conversions."""
+
+    banker = 360
+    commercial = 365
+
+
 class CompoundingFrequency(Enum):
     """Frequency of compounding per year."""
 
@@ -47,6 +54,7 @@ class InterestRate:
     period: CompoundingFrequency
     _precision: Optional[int]
     _rounding: str
+    _year_size: YearSize
 
     def __init__(
         self,
@@ -56,6 +64,7 @@ class InterestRate:
         precision: Optional[int] = None,
         rounding: str = ROUND_HALF_UP,
         str_style: str = "long",
+        year_size: YearSize = YearSize.commercial,
     ) -> None:
         """
         Create an interest rate.
@@ -73,6 +82,8 @@ class InterestRate:
             str_style: Controls period notation in __str__. "long" outputs the
                        full name (e.g. "annually"), "abbrev" outputs the
                        abbreviated form (e.g. "a.a.").
+            year_size: Day-count convention for daily conversions.
+                       YearSize.commercial (365) or YearSize.banker (360).
         """
         if str_style not in _VALID_STR_STYLES:
             raise ValueError(f"Invalid str_style: '{str_style}'. Expected one of {_VALID_STR_STYLES}")
@@ -80,6 +91,7 @@ class InterestRate:
         self._precision = precision
         self._rounding = rounding
         self._str_style = str_style
+        self._year_size = year_size
 
         if isinstance(rate, str):
             parsed_rate = self._parse_rate_string(rate)
@@ -176,13 +188,26 @@ class InterestRate:
         """Get as percentage (5.0 = 5%)."""
         return self._percentage_rate
 
+    @property
+    def year_size(self) -> YearSize:
+        """Day-count convention used for daily conversions."""
+        return self._year_size
+
+    @property
+    def _periods_per_year(self) -> Union[int, float]:
+        """Number of compounding periods per year, respecting year_size for daily."""
+        if self.period == CompoundingFrequency.DAILY:
+            return self._year_size.value
+        return self.period.value
+
     def to_daily(self) -> "InterestRate":
         """Convert to daily rate."""
         if self.period == CompoundingFrequency.DAILY:
             return self
 
         effective_annual = self._to_effective_annual()
-        daily_rate = (1 + effective_annual) ** (Decimal("1") / Decimal("365")) - 1
+        days = Decimal(str(self._year_size.value))
+        daily_rate = (1 + effective_annual) ** (Decimal("1") / days) - 1
 
         return InterestRate(
             daily_rate,
@@ -190,6 +215,7 @@ class InterestRate:
             precision=self._precision,
             rounding=self._rounding,
             str_style=self._str_style,
+            year_size=self._year_size,
         )
 
     def to_monthly(self) -> "InterestRate":
@@ -206,6 +232,7 @@ class InterestRate:
             precision=self._precision,
             rounding=self._rounding,
             str_style=self._str_style,
+            year_size=self._year_size,
         )
 
     def to_annual(self) -> "InterestRate":
@@ -219,6 +246,7 @@ class InterestRate:
             precision=self._precision,
             rounding=self._rounding,
             str_style=self._str_style,
+            year_size=self._year_size,
         )
 
     def to_periodic_rate(self, num_periods: int) -> Decimal:
@@ -231,7 +259,7 @@ class InterestRate:
         Returns:
             Decimal: Periodic rate as decimal
         """
-        if self.period.value == num_periods:
+        if self._periods_per_year == num_periods:
             return self._decimal_rate
 
         # Convert to effective annual, then to desired frequency
@@ -250,7 +278,7 @@ class InterestRate:
             return self._quantize(self._decimal_rate)
 
         # Formula: (1 + r)^n - 1, where r is the periodic rate and n is periods per year
-        n = self.period.value
+        n = self._periods_per_year
         if n == float("inf"):  # Continuous compounding
             # e^r - 1, where r is the continuous rate
             return self._quantize(Decimal(str(math.e)) ** self._decimal_rate - 1)
@@ -285,6 +313,8 @@ class InterestRate:
         base = f"InterestRate({self._decimal_rate}, {self.period}"
         if self._precision is not None:
             base += f", precision={self._precision}, rounding={self._rounding!r}"
+        if self._year_size != YearSize.commercial:
+            base += f", year_size={self._year_size!r}"
         return base + ")"
 
     def __eq__(self, other: object) -> bool:

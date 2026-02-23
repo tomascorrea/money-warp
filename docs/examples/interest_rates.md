@@ -387,6 +387,74 @@ print(monthly)  # "0.487% a.m."
 print(daily)    # "0.016% a.d."
 ```
 
+## Year Size (Day-Count Convention)
+
+Financial markets use different day-count conventions when converting between daily and annual rates. MoneyWarp supports two conventions through the `YearSize` enum:
+
+| Convention | Days | Typical use |
+|---|---|---|
+| `YearSize.commercial` | 365 | Calendar-day markets (default) |
+| `YearSize.banker` | 360 | International banking, some LatAm conventions |
+
+### Basic usage
+
+```python
+from money_warp import InterestRate, YearSize
+
+# Default: commercial (365 days)
+commercial = InterestRate("10% a")
+print(commercial.to_daily())  # 365th root of 1.10
+
+# Banker convention (360 days)
+banker = InterestRate("10% a", year_size=YearSize.banker)
+print(banker.to_daily())  # 360th root of 1.10 — slightly higher daily rate
+```
+
+### How year size affects calculations
+
+The same annual rate produces different daily rates depending on the convention:
+
+```python
+from money_warp import InterestRate, YearSize, Money
+
+rate_365 = InterestRate("10% a", year_size=YearSize.commercial)
+rate_360 = InterestRate("10% a", year_size=YearSize.banker)
+
+print(f"Commercial daily: {rate_365.to_daily().as_decimal:.10f}")  # ~0.0002611578
+print(f"Banker daily:     {rate_360.to_daily().as_decimal:.10f}")  # ~0.0002651568
+
+# This difference compounds when accruing interest
+principal = Money("100000")
+print(f"30-day accrual (365): {rate_365.accrue(principal, 30)}")
+print(f"30-day accrual (360): {rate_360.accrue(principal, 30)}")  # higher
+```
+
+### Year size propagates through conversions
+
+Once set, the year size carries through all frequency conversions:
+
+```python
+rate = InterestRate("10% a", year_size=YearSize.banker)
+
+daily = rate.to_daily()
+monthly = rate.to_monthly()
+back_to_annual = daily.to_annual()
+
+print(daily.year_size)           # YearSize.banker
+print(monthly.year_size)         # YearSize.banker
+print(back_to_annual.year_size)  # YearSize.banker
+```
+
+### Inspecting year size
+
+```python
+rate = InterestRate("5% a", year_size=YearSize.banker)
+
+print(rate.year_size)       # YearSize.banker
+print(rate.year_size.value) # 360
+print(repr(rate))           # includes year_size when non-default
+```
+
 ## Best Practices
 
 1. **Use string format**: `InterestRate("5.25% a")` is clearest
@@ -395,6 +463,7 @@ print(daily)    # "0.016% a.d."
 4. **Validate inputs**: Handle user input with try/catch
 5. **Document assumptions**: Make compounding frequency clear in your code
 6. **Use abbreviated notation** when integrating with Brazilian/LatAm financial systems
+7. **Set `year_size`** when your market uses the 360-day banker convention
 
 ## Common Patterns
 

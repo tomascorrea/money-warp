@@ -40,6 +40,16 @@ money_warp/
 
 String parsing accepts human-friendly formats like `"5.25% a"` or `"0.004167 m"`, as well as abbreviated (Brazilian/LatAm) notation: `"5.25% a.a."`, `"0.5% a.m."`, `"0.0137% a.d."`, `"2.75% a.t."`, `"3% a.s."`. The `str_style` constructor parameter (`"long"` default, or `"abbrev"`) controls how `__str__` renders the period label. Parsing an abbreviated string auto-sets `str_style="abbrev"` so that `str()` round-trips correctly. The style propagates through `to_daily()`, `to_monthly()`, and `to_annual()` conversions.
 
+### Year Size (Day-Count Convention)
+
+The `YearSize` enum controls how many days constitute one year for daily rate conversions: `commercial` (365, default) and `banker` (360). The `year_size` parameter on `InterestRate.__init__` defaults to `YearSize.commercial` for backward compatibility. It affects three areas:
+
+- **Daily conversions** (`to_daily()`, `_to_effective_annual()` for DAILY rates): the exponent uses `year_size.value` instead of a hardcoded 365.
+- **`to_periodic_rate()`**: the short-circuit check compares against `year_size.value` for DAILY frequencies, so a banker-based daily rate correctly matches `num_periods=360`.
+- **`accrue()`**: inherits the correct daily rate through `to_daily()`.
+
+Monthly, quarterly, semi-annual, and annual conversions are unaffected by year size (they always use 12, 4, 2, and 1 periods per year respectively). The `year_size` propagates through all conversion methods (`to_daily`, `to_monthly`, `to_annual`) and is shown in `__repr__` only when non-default.
+
 ### CashFlow as a Query-able Container
 
 `CashFlow` holds a list of `CashFlowItem` objects (amount + datetime + optional description/category). The `query` property returns a `CashFlowQuery` builder that supports `filter_by()`, `order_by()`, `limit()`, `offset()`, and terminal methods like `all()`, `first()`, `sum_amounts()`, and `to_cash_flow()`. This lets calling code express complex filters without manual loops.

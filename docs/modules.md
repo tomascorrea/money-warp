@@ -135,6 +135,13 @@ MoneyWarp provides a comprehensive set of classes for financial calculations and
       show_source: false
       heading_level: 4
 
+### YearSize
+::: money_warp.YearSize
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
 ## Present Value Functions
 
 ### present_value

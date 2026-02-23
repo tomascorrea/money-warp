@@ -80,7 +80,7 @@ Explore the comprehensive examples and API reference:
 MoneyWarp is built around core financial concepts:
 
 - **💰 Money**: High-precision monetary amounts using Decimal
-- **📈 InterestRate**: Type-safe rates with frequency conversions and abbreviated notation
+- **📈 InterestRate**: Type-safe rates with frequency conversions, abbreviated notation, and day-count conventions
 - **💸 CashFlow**: Collections with SQLAlchemy-style querying
 - **🏦 Loan**: State machines for loan analysis and tracking
 - **🇧🇷 Tax**: Pluggable tax strategy with IOF, grossup, and presets
