@@ -274,7 +274,7 @@ def test_grossup_loan_converges_for_21_terms_with_iof():
         scheduler=PriceScheduler,
         taxes=taxes,
     )
-    assert abs(loan.net_disbursement - Money("10000")) <= Money("0.01")
+    assert loan.net_disbursement == Money("10000")
 
 
 @given(
@@ -284,7 +284,7 @@ def test_grossup_loan_converges_for_21_terms_with_iof():
     days_to_first=st.integers(min_value=1, max_value=30),
 )
 @settings(max_examples=200, deadline=None)
-def test_grossup_converges_for_varied_parameters(amount, num_terms, monthly_rate, days_to_first):
+def test_grossup_net_equals_requested_exact(amount, num_terms, monthly_rate, days_to_first):
     disbursement_date = datetime(2024, 1, 1)
     first_payment = disbursement_date + relativedelta(days=days_to_first)
     due_dates = [first_payment + relativedelta(months=i) for i in range(num_terms)]
@@ -300,5 +300,30 @@ def test_grossup_converges_for_varied_parameters(amount, num_terms, monthly_rate
         taxes=taxes,
     )
 
-    net = result.principal - result.total_tax
-    assert abs(net - result.requested_amount) <= Money("0.01")
+    assert result.principal - result.total_tax == Money(str(amount))
+
+
+@given(
+    amount=st.integers(min_value=500, max_value=500_000),
+    num_terms=st.integers(min_value=1, max_value=36),
+    monthly_rate=st.floats(min_value=0.005, max_value=0.10, allow_nan=False, allow_infinity=False),
+    days_to_first=st.integers(min_value=1, max_value=30),
+)
+@settings(max_examples=200, deadline=None)
+def test_grossup_loan_net_disbursement_exact(amount, num_terms, monthly_rate, days_to_first):
+    disbursement_date = datetime(2024, 1, 1)
+    first_payment = disbursement_date + relativedelta(days=days_to_first)
+    due_dates = [first_payment + relativedelta(months=i) for i in range(num_terms)]
+    rate = InterestRate(monthly_rate, CompoundingFrequency.MONTHLY)
+    taxes = [IOF(daily_rate="0.0082%", additional_rate="0.38%")]
+
+    loan = grossup_loan(
+        requested_amount=Money(str(amount)),
+        interest_rate=rate,
+        due_dates=due_dates,
+        disbursement_date=disbursement_date,
+        scheduler=PriceScheduler,
+        taxes=taxes,
+    )
+
+    assert loan.net_disbursement == Money(str(amount))

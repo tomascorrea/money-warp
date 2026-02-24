@@ -152,7 +152,7 @@ def grossup(
     upper = requested_raw * 2
 
     try:
-        solved_p = brentq(objective, lower, upper, xtol=0.01)
+        solved_p = brentq(objective, lower, upper, xtol=1e-4)
     except ValueError as exc:
         raise ValueError(f"Grossup solver did not converge: {exc}") from exc
 
