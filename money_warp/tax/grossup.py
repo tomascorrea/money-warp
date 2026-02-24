@@ -1,4 +1,4 @@
-"""Grossup calculation for financed taxes using scipy.optimize.fsolve."""
+"""Grossup calculation using scipy.optimize.brentq bracketed root-finding."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
-from scipy.optimize import fsolve  # type: ignore[import]
+from scipy.optimize import brentq  # type: ignore[import]
 
 from ..interest_rate import InterestRate
 from ..money import Money
@@ -113,8 +113,12 @@ def grossup(
 
     The borrower wants to receive ``requested_amount``. Taxes are calculated on
     the loan principal, which must be larger to compensate. Uses
-    ``scipy.optimize.fsolve`` to find the root of
+    ``scipy.optimize.brentq`` (bracketed bisection) to find the root of
     ``f(p) = p - requested_amount - tax(p) = 0``.
+
+    ``brentq`` is preferred over ``fsolve`` because the objective function has
+    a staircase shape (cent-level rounding in schedule/tax computation makes it
+    non-smooth), which can cause ``fsolve``'s numerical Jacobian to stall.
 
     Args:
         requested_amount: The net amount the borrower wants to receive.
@@ -139,18 +143,20 @@ def grossup(
 
     requested_raw = float(requested_amount.raw_amount)
 
-    def objective(p_arr: Any) -> float:
-        p = float(p_arr.flat[0])
+    def objective(p: float) -> float:
         principal = Money(Decimal(str(p)))
         tax = _compute_total_tax(principal, interest_rate, due_dates, disbursement_date, scheduler, taxes)
         return p - requested_raw - float(tax.raw_amount)
 
-    solution, info, ier, msg = fsolve(objective, requested_raw, full_output=True)
+    lower = requested_raw
+    upper = requested_raw * 2
 
-    if ier != 1:
-        raise ValueError(f"Grossup solver did not converge: {msg}")
+    try:
+        solved_p = brentq(objective, lower, upper, xtol=0.01)
+    except ValueError as exc:
+        raise ValueError(f"Grossup solver did not converge: {exc}") from exc
 
-    solved_principal = Money(Decimal(str(float(solution.flat[0]))))
+    solved_principal = Money(Decimal(str(solved_p)))
     total_tax = _compute_total_tax(solved_principal, interest_rate, due_dates, disbursement_date, scheduler, taxes)
 
     return GrossupResult(

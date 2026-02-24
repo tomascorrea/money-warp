@@ -24,7 +24,7 @@ IOF (and similar taxes) depend on the amortization schedule -- the daily IOF rat
 
 ### Grossup as a Standalone Function with `to_loan()` Convenience
 
-The grossup function lives outside the Loan class. It takes a `requested_amount` (what the borrower wants to receive) and uses `scipy.optimize.fsolve` to find the grossed-up principal such that `principal - tax = requested_amount`.
+The grossup function lives outside the Loan class. It takes a `requested_amount` (what the borrower wants to receive) and uses `scipy.optimize.brentq` (bracketed bisection) to find the grossed-up principal such that `principal - tax = requested_amount`.
 
 The returned `GrossupResult` carries all the parameters needed to construct a Loan, exposed via a `to_loan(**loan_kwargs)` convenience method. This is the most common usage pattern:
 
@@ -178,7 +178,7 @@ loan = grossup_loan(
 
 - IOF calculation uses `raw_amount` for high-precision arithmetic, wrapping results back into `Money` at each step to maintain the dual-precision semantics. When `PER_COMPONENT` rounding is used, each component is re-wrapped via `Money(component.real_amount)` to "bake in" the 2dp rounding before addition.
 - External validation against a Brazilian lending platform shows our PER_COMPONENT mode matches periods 1-11 exactly. Period 12 differs by 1 cent due to our last-payment-by-difference approach in PriceScheduler (same root cause as the schedule PMT discrepancy).
-- The grossup uses `scipy.optimize.fsolve` to solve `f(p) = p - requested_amount - tax(p) = 0`. The objective function converts between float (scipy domain) and `Money`/`Decimal` (our domain) at the boundary. The numpy array from fsolve is accessed via `.flat[0]` to extract the scalar.
+- The grossup uses `scipy.optimize.brentq` (bracketed bisection) to solve `f(p) = p - requested_amount - tax(p) = 0`. The bracket is `[requested_amount, requested_amount * 2]` with `xtol=0.01` (cent-level). `brentq` was chosen over `fsolve` because the objective function has a staircase shape (cent-level rounding in schedule/tax computation creates flat regions) which causes `fsolve`'s numerical Jacobian estimation to stall for certain parameter combinations. `brentq` only needs a sign change across the bracket and is immune to non-smooth functions.
 - The tax cache on `Loan` (`_tax_cache`) is set to `None` initially and computed on first access to `tax_amounts`. Since the original schedule is immutable (depends only on `principal`, `interest_rate`, `due_dates`, `disbursement_date`, and `scheduler`), the cache never needs invalidation.
 - When taxes are present, `generate_expected_cash_flow()` records the disbursement as the net amount (not the full principal) and adds a separate negative `"expected_tax"` item. This means the CET IRR calculation automatically accounts for the tax.
 - `GrossupResult.to_loan()` uses a lazy import of `Loan` to break the circular dependency `tax.grossup -> loan.loan -> tax.base`. This matches the existing pattern in `loan.py` for `present_value` and `irr`.
