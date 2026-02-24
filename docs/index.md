@@ -51,8 +51,9 @@ MoneyWarp provides comprehensive TVM functions powered by scipy:
 ### Internal Rate of Return
 - **IRR**: Rate where NPV equals zero (scipy-powered for reliability)
 - **Modified IRR (MIRR)**: IRR with different financing/reinvestment rates
+- **Day-count conventions**: `YearSize.commercial` (365) or `YearSize.banker` (360) for IRR and MIRR
 - **Automatic bracketing**: Robust root finding across complex cash flows
-- **Sugar syntax**: `loan.irr()` convenience methods
+- **Sugar syntax**: `loan.irr()` convenience methods (automatically uses the loan's `year_size`)
 
 ### Integration Features
 - **Time Machine compatibility**: All functions work with `Warp`

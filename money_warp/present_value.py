@@ -7,7 +7,7 @@ from typing import Callable, Optional, Tuple, Union
 from scipy.optimize import brentq, fsolve  # type: ignore[import]
 
 from .cash_flow import CashFlow
-from .interest_rate import InterestRate
+from .interest_rate import InterestRate, YearSize
 from .money import Money
 
 
@@ -211,7 +211,9 @@ def discount_factor(interest_rate: InterestRate, periods: Union[int, Decimal]) -
     return Decimal("1") / ((Decimal("1") + rate) ** Decimal(str(periods)))
 
 
-def _npv_function_factory(cash_flow: CashFlow, valuation_date: datetime) -> Callable[[float], float]:
+def _npv_function_factory(
+    cash_flow: CashFlow, valuation_date: datetime, year_size: YearSize = YearSize.commercial
+) -> Callable[[float], float]:
     """Create NPV function for IRR calculation."""
 
     def npv_function(rate_decimal: float) -> float:
@@ -225,7 +227,7 @@ def _npv_function_factory(cash_flow: CashFlow, valuation_date: datetime) -> Call
         # Convert decimal rate to InterestRate
         # Handle both scalar and array inputs from scipy
         rate_percentage = rate_decimal.item() * 100 if hasattr(rate_decimal, "item") else float(rate_decimal) * 100  # type: ignore[attr-defined]
-        test_rate = InterestRate(f"{rate_percentage:.10f}% annual")
+        test_rate = InterestRate(f"{rate_percentage:.10f}% annual", year_size=year_size)
         npv = present_value(cash_flow, test_rate, valuation_date)
         return float(npv.raw_amount)
 
@@ -262,7 +264,9 @@ def _find_irr_bracket(npv_function: Callable[[float], float]) -> Tuple[Optional[
     return None, False
 
 
-def internal_rate_of_return(cash_flow: CashFlow, guess: Optional[InterestRate] = None) -> InterestRate:
+def internal_rate_of_return(
+    cash_flow: CashFlow, guess: Optional[InterestRate] = None, year_size: YearSize = YearSize.commercial
+) -> InterestRate:
     """
     Calculate the Internal Rate of Return (IRR) of a cash flow stream.
 
@@ -278,6 +282,8 @@ def internal_rate_of_return(cash_flow: CashFlow, guess: Optional[InterestRate] =
     Args:
         cash_flow: The cash flow stream to analyze
         guess: Initial guess for IRR (defaults to 10% annual)
+        year_size: Day-count convention (YearSize.commercial for 365 days,
+                   YearSize.banker for 360 days)
 
     Returns:
         The internal rate of return as an InterestRate
@@ -318,7 +324,7 @@ def internal_rate_of_return(cash_flow: CashFlow, guess: Optional[InterestRate] =
     initial_guess = 0.10 if guess is None else float(guess.as_decimal)
 
     # Create NPV function
-    npv_function = _npv_function_factory(cash_flow, valuation_date)
+    npv_function = _npv_function_factory(cash_flow, valuation_date, year_size)
 
     # Try to find a bracket where the function changes sign
     irr_decimal, bracket_found = _find_irr_bracket(npv_function)
@@ -346,10 +352,12 @@ def internal_rate_of_return(cash_flow: CashFlow, guess: Optional[InterestRate] =
 
     # Convert back to InterestRate
     irr_percentage = irr_decimal * 100
-    return InterestRate(f"{irr_percentage:.8f}% annual")
+    return InterestRate(f"{irr_percentage:.8f}% annual", year_size=year_size)
 
 
-def irr(cash_flow: CashFlow, guess: Optional[InterestRate] = None) -> InterestRate:
+def irr(
+    cash_flow: CashFlow, guess: Optional[InterestRate] = None, year_size: YearSize = YearSize.commercial
+) -> InterestRate:
     """
     Calculate the Internal Rate of Return (IRR) of a cash flow stream.
 
@@ -363,6 +371,8 @@ def irr(cash_flow: CashFlow, guess: Optional[InterestRate] = None) -> InterestRa
     Args:
         cash_flow: The cash flow stream to analyze
         guess: Initial guess for IRR (defaults to 10% annual)
+        year_size: Day-count convention (YearSize.commercial for 365 days,
+                   YearSize.banker for 360 days)
 
     Returns:
         The internal rate of return as an InterestRate
@@ -383,7 +393,7 @@ def irr(cash_flow: CashFlow, guess: Optional[InterestRate] = None) -> InterestRa
         >>> investment_irr = irr(cf)
         >>> print(f"Investment IRR: {investment_irr}")
     """
-    return internal_rate_of_return(cash_flow, guess)
+    return internal_rate_of_return(cash_flow, guess, year_size)
 
 
 def _calculate_mirr_components(
@@ -392,10 +402,12 @@ def _calculate_mirr_components(
     reinvestment_rate: InterestRate,
     valuation_date: datetime,
     latest_date: datetime,
+    year_size: YearSize = YearSize.commercial,
 ) -> Tuple[Money, Money]:
     """Calculate FV of positive flows and PV of negative flows for MIRR."""
     positive_flows = []
     negative_flows = []
+    days_per_year = Decimal(str(year_size.value))
 
     for item in cash_flow.items():
         if item.amount.is_positive():
@@ -409,7 +421,7 @@ def _calculate_mirr_components(
     # Calculate Future Value of positive cash flows
     fv_positive = Money.zero()
     for item in positive_flows:
-        periods_to_end = (latest_date - item.datetime).days / Decimal("365.25")
+        periods_to_end = (latest_date - item.datetime).days / days_per_year
         if periods_to_end >= 0:
             annual_rate = reinvestment_rate.as_decimal
             compound_factor = (Decimal("1") + annual_rate) ** periods_to_end
@@ -420,7 +432,7 @@ def _calculate_mirr_components(
     # Calculate Present Value of negative cash flows
     pv_negative = Money.zero()
     for item in negative_flows:
-        periods_from_start = (item.datetime - valuation_date).days / Decimal("365.25")
+        periods_from_start = (item.datetime - valuation_date).days / days_per_year
         if periods_from_start >= 0:
             annual_rate = finance_rate.as_decimal
             discount_factor = (Decimal("1") + annual_rate) ** periods_from_start
@@ -432,7 +444,10 @@ def _calculate_mirr_components(
 
 
 def modified_internal_rate_of_return(
-    cash_flow: CashFlow, finance_rate: InterestRate, reinvestment_rate: InterestRate
+    cash_flow: CashFlow,
+    finance_rate: InterestRate,
+    reinvestment_rate: InterestRate,
+    year_size: YearSize = YearSize.commercial,
 ) -> InterestRate:
     """
     Calculate the Modified Internal Rate of Return (MIRR).
@@ -450,6 +465,8 @@ def modified_internal_rate_of_return(
         cash_flow: The cash flow stream to analyze
         finance_rate: Rate for financing negative cash flows
         reinvestment_rate: Rate for reinvesting positive cash flows
+        year_size: Day-count convention (YearSize.commercial for 365 days,
+                   YearSize.banker for 360 days)
 
     Returns:
         The modified internal rate of return as an InterestRate
@@ -487,14 +504,15 @@ def modified_internal_rate_of_return(
     if latest_date is None:
         raise ValueError("Cannot calculate MIRR: no cash flows")
 
-    total_periods_years = (latest_date - valuation_date).days / Decimal("365.25")
+    days_per_year = Decimal(str(year_size.value))
+    total_periods_years = (latest_date - valuation_date).days / days_per_year
 
     if total_periods_years <= 0:
         raise ValueError("MIRR requires cash flows spanning multiple periods")
 
     # Calculate FV of positive flows and PV of negative flows
     fv_positive, pv_negative = _calculate_mirr_components(
-        cash_flow, finance_rate, reinvestment_rate, valuation_date, latest_date
+        cash_flow, finance_rate, reinvestment_rate, valuation_date, latest_date, year_size
     )
 
     # Calculate MIRR: (FV_positive / |PV_negative|)^(1/n) - 1
@@ -510,4 +528,4 @@ def modified_internal_rate_of_return(
 
     # Convert to percentage and create InterestRate
     mirr_percentage = float(mirr_decimal * 100)
-    return InterestRate(f"{mirr_percentage:.6f}% annual")
+    return InterestRate(f"{mirr_percentage:.6f}% annual", year_size=year_size)

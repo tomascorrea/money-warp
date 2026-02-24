@@ -27,7 +27,7 @@ Closed-form PV of a stream of equal payments:
 
 ## IRR Functions
 
-### `internal_rate_of_return(cash_flow, guess=None) -> InterestRate`
+### `internal_rate_of_return(cash_flow, guess=None, year_size=YearSize.commercial) -> InterestRate`
 
 Finds the rate that makes the NPV of the cash flow equal to zero.
 
@@ -37,14 +37,18 @@ Finds the rate that makes the NPV of the cash flow equal to zero.
 3. Solve: `scipy.optimize.brentq` (primary), falls back to `scipy.optimize.fsolve` if bracketing fails
 4. Validate result: NPV at found rate must be within $500 tolerance; rate must be between -99% and 1000%
 
-`irr()` is a convenience alias.
+The `year_size` parameter controls the day-count convention used for daily rate conversions inside the NPV calculation. `YearSize.commercial` (365, default) or `YearSize.banker` (360). The returned `InterestRate` carries the same `year_size`.
 
-### `modified_internal_rate_of_return(cash_flow, finance_rate, reinvestment_rate) -> InterestRate`
+`irr()` is a convenience alias (also accepts `year_size`).
+
+### `modified_internal_rate_of_return(cash_flow, finance_rate, reinvestment_rate, year_size=YearSize.commercial) -> InterestRate`
 
 MIRR separates the cost of capital from the reinvestment rate:
 - Negative cash flows are discounted at `finance_rate` to get PV
 - Positive cash flows are compounded at `reinvestment_rate` to get FV
-- `MIRR = (FV / |PV|)^(1/n) - 1` where `n` is in annual periods (`days / 365.25`)
+- `MIRR = (FV / |PV|)^(1/n) - 1` where `n` is in annual periods (`days / year_size.value`)
+
+The `year_size` parameter controls the year-fraction denominator for period calculations. The returned `InterestRate` carries the same `year_size`.
 
 ## Scipy Integration
 
@@ -55,4 +59,4 @@ The library uses scipy rather than a hand-rolled Newton-Raphson because:
 
 ## Loan Sugar Syntax
 
-`loan.present_value()` and `loan.irr()` are convenience methods that generate the loan's expected cash flow and delegate to the module-level functions. Both default to the loan's own interest rate and `loan.now()`, making them time-aware inside a `Warp` context.
+`loan.present_value()` and `loan.irr()` are convenience methods that generate the loan's expected cash flow and delegate to the module-level functions. Both default to the loan's own interest rate and `loan.now()`, making them time-aware inside a `Warp` context. `loan.irr()` automatically passes the loan's `interest_rate.year_size` to `internal_rate_of_return`, so loans configured with `YearSize.banker` will compute IRR using 360-day years.

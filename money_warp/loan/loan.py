@@ -490,7 +490,7 @@ class Loan:
         expected_cf = self.generate_expected_cash_flow()
 
         # Calculate and return IRR
-        return internal_rate_of_return(expected_cf, guess)
+        return internal_rate_of_return(expected_cf, guess, year_size=self.interest_rate.year_size)
 
     def generate_expected_cash_flow(self) -> CashFlow:
         """

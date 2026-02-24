@@ -92,6 +92,24 @@ investment_irr = irr(cash_flow)
 print(f"IRR: {investment_irr}")  # Should be ~10%
 ```
 
+### IRR with Day-Count Convention
+
+By default IRR uses a 365-day (commercial) year. Pass `year_size` to switch to the 360-day banker's convention:
+
+```python
+from money_warp import YearSize
+
+# Commercial year (365 days) — the default
+commercial_irr = irr(cash_flow, year_size=YearSize.commercial)
+print(f"IRR (365-day year): {commercial_irr}")
+
+# Banker's year (360 days)
+banker_irr = irr(cash_flow, year_size=YearSize.banker)
+print(f"IRR (360-day year): {banker_irr}")  # Slightly different rate
+```
+
+The returned `InterestRate` carries the same `year_size`, so downstream conversions (e.g. `to_daily()`) stay consistent.
+
 ### IRR with Custom Initial Guess
 
 Provide a starting point for the numerical solver:
@@ -139,6 +157,15 @@ mirr = modified_internal_rate_of_return(
     reinvestment_rate=reinvestment_rate
 )
 print(f"MIRR: {mirr}")
+
+# MIRR also accepts year_size for day-count convention
+mirr_banker = modified_internal_rate_of_return(
+    cash_flow=complex_cf,
+    finance_rate=finance_rate,
+    reinvestment_rate=reinvestment_rate,
+    year_size=YearSize.banker
+)
+print(f"MIRR (360-day year): {mirr_banker}")
 ```
 
 ## Loan Analysis Sugar Syntax
@@ -169,7 +196,7 @@ print(f"PV at 8%: {pv_market_rate}")  # Negative from borrower's perspective
 
 ### Loan IRR
 
-Calculate loan's effective rate:
+Calculate loan's effective rate. The loan automatically passes its own `year_size` to the IRR calculation, so loans created with `YearSize.banker` compute IRR using a 360-day year:
 
 ```python
 # Loan IRR (should equal the loan's interest rate)
@@ -179,6 +206,16 @@ print(f"Loan IRR: {loan_irr}")  # Should be ~5%
 # IRR with custom guess
 loan_irr_guess = loan.irr(guess=InterestRate("3% annual"))
 print(f"Loan IRR with guess: {loan_irr_guess}")  # Same result
+
+# Loan with banker's year — IRR automatically uses 360-day convention
+banker_loan = Loan(
+    principal=Money("10000"),
+    interest_rate=InterestRate("5% annual", year_size=YearSize.banker),
+    due_dates=[datetime(2024, 6, 1), datetime(2024, 12, 1)],
+    disbursement_date=datetime(2024, 1, 1)
+)
+banker_loan_irr = banker_loan.irr()
+print(f"Banker Loan IRR: {banker_loan_irr}")  # Uses 360-day year
 ```
 
 ## Time Machine Integration
@@ -221,6 +258,7 @@ print(f"PV as of Feb 1: {past_pv}")
 - **Automatic bracketing**: Finds sign changes in NPV function automatically
 - **Fallback methods**: Uses `fsolve` if bracketing fails
 - **High precision**: Maintains decimal precision throughout
+- **Day-count conventions**: `YearSize.commercial` (365) or `YearSize.banker` (360) for IRR and MIRR
 
 ### Error Handling
 - **Clear messages**: Descriptive error messages for common issues

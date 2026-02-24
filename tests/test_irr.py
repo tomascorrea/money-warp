@@ -10,6 +10,7 @@ from money_warp import (
     CashFlowItem,
     InterestRate,
     Money,
+    YearSize,
     internal_rate_of_return,
     irr,
     modified_internal_rate_of_return,
@@ -335,3 +336,116 @@ def test_irr_result_string_representation():
     # Should be convertible to float
     rate_as_float = float(calculated_irr.as_decimal)
     assert 0.05 < rate_as_float < 0.20  # Between 5% and 20% is reasonable
+
+
+# Year size tests
+def test_irr_banker_year_differs_from_commercial():
+    items = [
+        CashFlowItem(Money("-1000"), datetime(2024, 1, 1), "Investment", "investment"),
+        CashFlowItem(Money("1100"), datetime(2024, 12, 31), "Return", "return"),
+    ]
+    cf = CashFlow(items)
+
+    irr_commercial = irr(cf, year_size=YearSize.commercial)
+    irr_banker = irr(cf, year_size=YearSize.banker)
+
+    assert irr_commercial.as_decimal != irr_banker.as_decimal
+
+
+def test_irr_banker_year_returns_banker_year_size():
+    items = [
+        CashFlowItem(Money("-1000"), datetime(2024, 1, 1), "Investment", "investment"),
+        CashFlowItem(Money("1100"), datetime(2024, 12, 31), "Return", "return"),
+    ]
+    cf = CashFlow(items)
+
+    calculated_irr = irr(cf, year_size=YearSize.banker)
+
+    assert calculated_irr.year_size == YearSize.banker
+
+
+def test_irr_commercial_year_returns_commercial_year_size():
+    items = [
+        CashFlowItem(Money("-1000"), datetime(2024, 1, 1), "Investment", "investment"),
+        CashFlowItem(Money("1100"), datetime(2024, 12, 31), "Return", "return"),
+    ]
+    cf = CashFlow(items)
+
+    calculated_irr = irr(cf, year_size=YearSize.commercial)
+
+    assert calculated_irr.year_size == YearSize.commercial
+
+
+def test_irr_default_year_size_is_commercial():
+    items = [
+        CashFlowItem(Money("-1000"), datetime(2024, 1, 1), "Investment", "investment"),
+        CashFlowItem(Money("1100"), datetime(2024, 12, 31), "Return", "return"),
+    ]
+    cf = CashFlow(items)
+
+    calculated_irr = irr(cf)
+
+    assert calculated_irr.year_size == YearSize.commercial
+
+
+def test_irr_banker_year_npv_at_irr_is_zero():
+    from money_warp import present_value
+
+    items = [
+        CashFlowItem(Money("-2000"), datetime(2024, 1, 1), "Investment", "investment"),
+        CashFlowItem(Money("1100"), datetime(2024, 6, 1), "Return 1", "return"),
+        CashFlowItem(Money("1200"), datetime(2024, 12, 31), "Return 2", "return"),
+    ]
+    cf = CashFlow(items)
+
+    calculated_irr = irr(cf, year_size=YearSize.banker)
+    npv_at_irr = present_value(cf, calculated_irr, datetime(2024, 1, 1))
+
+    assert abs(npv_at_irr.raw_amount) < Decimal("1.0")
+
+
+def test_internal_rate_of_return_with_banker_year():
+    items = [
+        CashFlowItem(Money("-1000"), datetime(2024, 1, 1), "Investment", "investment"),
+        CashFlowItem(Money("1100"), datetime(2024, 12, 31), "Return", "return"),
+    ]
+    cf = CashFlow(items)
+
+    calculated_irr = internal_rate_of_return(cf, year_size=YearSize.banker)
+
+    assert calculated_irr.year_size == YearSize.banker
+    assert calculated_irr.as_decimal > 0
+
+
+def test_mirr_banker_year_differs_from_commercial():
+    items = [
+        CashFlowItem(Money("-1000"), datetime(2024, 1, 1), "Investment", "investment"),
+        CashFlowItem(Money("300"), datetime(2024, 6, 1), "Return 1", "return"),
+        CashFlowItem(Money("400"), datetime(2024, 12, 1), "Return 2", "return"),
+        CashFlowItem(Money("500"), datetime(2025, 6, 1), "Return 3", "return"),
+    ]
+    cf = CashFlow(items)
+
+    finance_rate = InterestRate("8% annual")
+    reinvestment_rate = InterestRate("6% annual")
+
+    mirr_commercial = modified_internal_rate_of_return(cf, finance_rate, reinvestment_rate)
+    mirr_banker = modified_internal_rate_of_return(cf, finance_rate, reinvestment_rate, year_size=YearSize.banker)
+
+    assert mirr_commercial.as_decimal != mirr_banker.as_decimal
+
+
+def test_mirr_banker_year_returns_banker_year_size():
+    items = [
+        CashFlowItem(Money("-1000"), datetime(2024, 1, 1), "Investment", "investment"),
+        CashFlowItem(Money("300"), datetime(2024, 6, 1), "Return 1", "return"),
+        CashFlowItem(Money("400"), datetime(2024, 12, 1), "Return 2", "return"),
+        CashFlowItem(Money("500"), datetime(2025, 6, 1), "Return 3", "return"),
+    ]
+    cf = CashFlow(items)
+
+    mirr = modified_internal_rate_of_return(
+        cf, InterestRate("8% annual"), InterestRate("6% annual"), year_size=YearSize.banker
+    )
+
+    assert mirr.year_size == YearSize.banker

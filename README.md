@@ -266,6 +266,11 @@ print(f"Present Value at 8%: {pv}")
 investment_irr = irr(cash_flow)
 print(f"IRR: {investment_irr}")  # Should be ~9.7%
 
+# IRR with banker's year (360 days) for day-count convention
+from money_warp import YearSize
+banker_irr = irr(cash_flow, year_size=YearSize.banker)
+print(f"IRR (360-day year): {banker_irr}")
+
 # Calculate Modified IRR with different reinvestment assumptions
 finance_rate = InterestRate("10% annual")      # Cost of capital
 reinvestment_rate = InterestRate("6% annual")  # Reinvestment rate
@@ -274,7 +279,7 @@ print(f"MIRR: {mirr}")
 
 # Loan IRR (borrower's perspective)
 loan = Loan(Money("10000"), InterestRate("5% annual"), [datetime(2024, 12, 31)])
-loan_irr = loan.irr()  # Sugar syntax using loan's expected cash flow
+loan_irr = loan.irr()  # Sugar syntax — uses the loan's own year_size
 print(f"Loan IRR: {loan_irr}")  # Should be ~5% (loan's own rate)
 
 # Present Value of loan using different discount rate
@@ -288,6 +293,7 @@ print(f"Loan PV at 8%: {loan_pv}")  # Negative from borrower's perspective
 - 🕰️ **Time Machine integration**: Use `Warp` to calculate IRR from any date
 - 🍭 **Sugar syntax**: `loan.irr()` and `loan.present_value()` convenience methods
 - 💰 **High precision**: Maintains decimal precision throughout calculations
+- 📅 **Day-count conventions**: `YearSize.commercial` (365) or `YearSize.banker` (360) for IRR and MIRR
 ```
 
 ### Tax & Grossup (Brazilian IOF) 🇧🇷
@@ -389,8 +395,8 @@ Pluggable tax strategy with Brazilian IOF and grossup:
 ### Time Value of Money Functions
 - **Present Value (PV)**: Discount future cash flows to present value
 - **Net Present Value (NPV)**: Sum of discounted cash flows
-- **Internal Rate of Return (IRR)**: Rate where NPV equals zero
-- **Modified IRR (MIRR)**: IRR with different financing/reinvestment rates
+- **Internal Rate of Return (IRR)**: Rate where NPV equals zero, with configurable day-count convention
+- **Modified IRR (MIRR)**: IRR with different financing/reinvestment rates, with configurable day-count convention
 - **Present Value of Annuities**: Regular payment streams
 - **Present Value of Perpetuities**: Infinite payment streams
 - **Discount Factors**: Time value calculations
