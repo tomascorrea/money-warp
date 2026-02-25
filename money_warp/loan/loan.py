@@ -83,6 +83,7 @@ class Loan:
         mora_interest_rate: Optional[InterestRate] = None,
         mora_strategy: MoraStrategy = MoraStrategy.COMPOUND,
         taxes: Optional[List[BaseTax]] = None,
+        is_grossed_up: bool = False,
     ) -> None:
         """
         Create a loan with flexible payment schedule.
@@ -98,6 +99,9 @@ class Loan:
             mora_interest_rate: Interest rate for mora (late) interest (defaults to interest_rate)
             mora_strategy: How mora interest is computed (defaults to COMPOUND)
             taxes: Optional list of taxes applied to this loan (e.g., IOF)
+            is_grossed_up: Whether the principal was grossed up to absorb taxes.
+                When True, generate_expected_cash_flow() omits the separate tax entry
+                because the tax is already reflected in the higher principal.
 
         Examples:
             >>> # Basic loan with default 2% fine, no grace period
@@ -136,6 +140,7 @@ class Loan:
         self.fine_rate = fine_rate if fine_rate is not None else Decimal("0.02")
         self.grace_period_days = grace_period_days
         self.taxes: List[BaseTax] = taxes or []
+        self.is_grossed_up = is_grossed_up
 
         # State tracking
         self._all_payments: List[CashFlowItem] = []  # All payments ever made
@@ -500,8 +505,11 @@ class Loan:
         Fines are contingent events and are not included in the expected cash flow.
         Use get_actual_cash_flow() to see what actually happened, including fines.
 
-        When taxes are present, the disbursement reflects the net amount received
-        by the borrower, and the tax is recorded as a separate outflow at disbursement.
+        When taxes are present on a non-grossed-up loan, the full principal is
+        the disbursement entry and the tax appears as a separate outflow, so the
+        day-0 net equals net_disbursement.  For grossed-up loans the tax is
+        already absorbed into the higher principal, so only net_disbursement
+        (= requested amount) is emitted with no separate tax entry.
 
         Returns:
             CashFlow with loan disbursement and expected payment schedule
@@ -509,12 +517,21 @@ class Loan:
         items = []
 
         total_tax = self.total_tax
-        if total_tax.is_positive():
+        if total_tax.is_positive() and self.is_grossed_up:
             items.append(
                 CashFlowItem(
                     self.net_disbursement,
                     self.disbursement_date,
-                    "Loan disbursement (net of tax)",
+                    "Loan disbursement",
+                    "expected_disbursement",
+                )
+            )
+        elif total_tax.is_positive():
+            items.append(
+                CashFlowItem(
+                    self.principal,
+                    self.disbursement_date,
+                    "Loan disbursement",
                     "expected_disbursement",
                 )
             )

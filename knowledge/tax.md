@@ -47,9 +47,12 @@ The Loan class accepts an optional `taxes: List[BaseTax]` parameter. When presen
 - `loan.tax_amounts` returns per-tax `TaxResult` objects (lazily computed, cached)
 - `loan.total_tax` returns the sum of all taxes
 - `loan.net_disbursement` returns `principal - total_tax`
-- `generate_expected_cash_flow()` includes an `"expected_tax"` cash flow item at disbursement and shows the disbursement as the net amount
+- `generate_expected_cash_flow()` handles taxes differently based on `is_grossed_up`:
+  - **Not grossed-up**: disbursement entry is `+principal`, with a separate `-tax` entry. Day-0 net = `net_disbursement`.
+  - **Grossed-up**: disbursement entry is `+net_disbursement` only, no separate tax entry. The tax is already absorbed into the higher principal and reflected in higher installments.
+- `loan.is_grossed_up` (bool, default False) marks whether the principal was grossed up to absorb taxes. Set automatically by `GrossupResult.to_loan()`.
 
-This is important for CET (Custo Efetivo Total) calculation, which requires tax in the cash flow.
+This ensures correct IRR/CET calculation without double-counting the tax.
 
 ## API Surface
 
@@ -144,7 +147,7 @@ Returns a `GrossupResult` with `principal`, `requested_amount`, `total_tax`, and
 result.to_loan(**loan_kwargs) -> Loan
 ```
 
-Creates a Loan with the grossed-up principal and all schedule parameters forwarded automatically. Pass additional Loan keyword arguments (fine_rate, grace_period_days, mora_interest_rate, mora_strategy) as needed.
+Creates a Loan with the grossed-up principal, `is_grossed_up=True`, and all schedule parameters forwarded automatically. Pass additional Loan keyword arguments (fine_rate, grace_period_days, mora_interest_rate, mora_strategy) as needed.
 
 ### grossup_loan()
 
@@ -181,5 +184,5 @@ loan = grossup_loan(
 - The grossup uses `scipy.optimize.brentq` (bracketed bisection) to solve `f(p) = p - requested_amount - tax(p) = 0`. The bracket is `[requested_amount, requested_amount * 2]` with `xtol=1e-4`. `brentq` was chosen over `fsolve` because the objective function has a staircase shape (cent-level rounding in schedule/tax computation creates flat regions) which causes `fsolve`'s numerical Jacobian estimation to stall for certain parameter combinations. `brentq` only needs a sign change across the bracket and is immune to non-smooth functions.
 - After `brentq` converges, `_snap_to_cents` rounds the result to a proper cent-aligned principal. It searches a small window (8 cents) around the solver's answer and picks the smallest principal where `net >= requested`. In most cases this gives exact equality (`net == requested`). In gap cases where per-installment rounding causes multiple IOF amounts to flip simultaneously, the borrower receives slightly more than requested (never less). The principal stored in `GrossupResult` always has `raw_amount == real_amount` (clean 2-decimal Money).
 - The tax cache on `Loan` (`_tax_cache`) is set to `None` initially and computed on first access to `tax_amounts`. Since the original schedule is immutable (depends only on `principal`, `interest_rate`, `due_dates`, `disbursement_date`, and `scheduler`), the cache never needs invalidation.
-- When taxes are present, `generate_expected_cash_flow()` records the disbursement as the net amount (not the full principal) and adds a separate negative `"expected_tax"` item. This means the CET IRR calculation automatically accounts for the tax.
+- `generate_expected_cash_flow()` uses three-way logic for the day-0 entries: (1) no taxes: `+principal`; (2) taxes, not grossed-up: `+principal` and `-tax`; (3) taxes, grossed-up: `+net_disbursement` only. In all cases the day-0 net equals `net_disbursement`, which is what the borrower actually receives. An earlier version used `+net_disbursement` and `-tax` for all taxed loans, which double-counted the tax and inflated the IRR.
 - `GrossupResult.to_loan()` uses a lazy import of `Loan` to break the circular dependency `tax.grossup -> loan.loan -> tax.base`. This matches the existing pattern in `loan.py` for `present_value` and `irr`.

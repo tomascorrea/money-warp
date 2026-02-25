@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 
-from money_warp import IOF, InterestRate, Loan, Money, PriceScheduler, grossup
+from money_warp import IOF, CompoundingFrequency, InterestRate, Loan, Money, PriceScheduler, grossup, grossup_loan
 
 
 @pytest.fixture
@@ -90,10 +90,10 @@ def test_loan_cash_flow_tax_item_amount(loan_with_tax):
     assert tax_items[0].amount == -loan_with_tax.total_tax
 
 
-def test_loan_cash_flow_disbursement_is_net(loan_with_tax):
+def test_loan_cash_flow_disbursement_is_principal_when_not_grossed_up(loan_with_tax):
     cf = loan_with_tax.generate_expected_cash_flow()
     disbursement_items = [item for item in cf if item.category == "expected_disbursement"]
-    assert disbursement_items[0].amount == loan_with_tax.net_disbursement
+    assert disbursement_items[0].amount == loan_with_tax.principal
 
 
 def test_loan_without_tax_cash_flow_has_no_tax_item(loan_without_tax):
@@ -172,3 +172,63 @@ def test_loan_backward_compatible_existing_behavior(loan_without_tax):
     assert loan_without_tax.principal == Money("10000")
     assert loan_without_tax.taxes == []
     assert loan_without_tax.principal_balance == Money("10000")
+
+
+def test_loan_not_grossed_up_cash_flow_day0_net_equals_net_disbursement(loan_with_tax):
+    cf = loan_with_tax.generate_expected_cash_flow()
+    day0 = loan_with_tax.disbursement_date
+    day0_net = Money(sum(item.amount.raw_amount for item in cf if item.datetime == day0))
+    assert day0_net == loan_with_tax.net_disbursement
+
+
+def test_grossup_loan_is_grossed_up_flag():
+    loan = grossup_loan(
+        requested_amount=Money("1000"),
+        interest_rate=InterestRate(0.0399, CompoundingFrequency.MONTHLY),
+        due_dates=[datetime(2024, 9, 20), datetime(2024, 10, 20)],
+        disbursement_date=datetime(2024, 8, 28),
+        scheduler=PriceScheduler,
+        taxes=[IOF(daily_rate="0.0082%", additional_rate="0.38%")],
+    )
+    assert loan.is_grossed_up is True
+
+
+def test_grossup_loan_cash_flow_has_no_tax_item():
+    loan = grossup_loan(
+        requested_amount=Money("1000"),
+        interest_rate=InterestRate(0.0399, CompoundingFrequency.MONTHLY),
+        due_dates=[datetime(2024, 9, 20), datetime(2024, 10, 20)],
+        disbursement_date=datetime(2024, 8, 28),
+        scheduler=PriceScheduler,
+        taxes=[IOF(daily_rate="0.0082%", additional_rate="0.38%")],
+    )
+    cf = loan.generate_expected_cash_flow()
+    tax_items = [item for item in cf if item.category == "expected_tax"]
+    assert len(tax_items) == 0
+
+
+def test_grossup_loan_cash_flow_disbursement_equals_net_disbursement():
+    loan = grossup_loan(
+        requested_amount=Money("1000"),
+        interest_rate=InterestRate(0.0399, CompoundingFrequency.MONTHLY),
+        due_dates=[datetime(2024, 9, 20), datetime(2024, 10, 20)],
+        disbursement_date=datetime(2024, 8, 28),
+        scheduler=PriceScheduler,
+        taxes=[IOF(daily_rate="0.0082%", additional_rate="0.38%")],
+    )
+    cf = loan.generate_expected_cash_flow()
+    disbursement_items = [item for item in cf if item.category == "expected_disbursement"]
+    assert disbursement_items[0].amount == loan.net_disbursement
+
+
+def test_grossup_loan_irr_not_inflated_by_double_counted_tax():
+    loan = grossup_loan(
+        requested_amount=Money("1000"),
+        interest_rate=InterestRate(0.0399, CompoundingFrequency.MONTHLY),
+        due_dates=[datetime(2024, 9, 20), datetime(2024, 10, 20)],
+        disbursement_date=datetime(2024, 8, 28),
+        scheduler=PriceScheduler,
+        taxes=[IOF(daily_rate="0.0082%", additional_rate="0.38%")],
+    )
+    irr = loan.irr()
+    assert abs(irr.as_decimal - Decimal("0.710526")) < Decimal("0.01")

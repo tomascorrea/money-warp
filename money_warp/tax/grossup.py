@@ -73,6 +73,7 @@ class GrossupResult:
             disbursement_date=self._disbursement_date,
             scheduler=self._scheduler,
             taxes=self._taxes,
+            is_grossed_up=True,
             **loan_kwargs,
         )
 
