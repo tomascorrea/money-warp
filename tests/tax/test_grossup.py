@@ -284,7 +284,7 @@ def test_grossup_loan_converges_for_21_terms_with_iof():
     days_to_first=st.integers(min_value=1, max_value=30),
 )
 @settings(max_examples=200, deadline=None)
-def test_grossup_net_equals_requested_exact(amount, num_terms, monthly_rate, days_to_first):
+def test_grossup_principal_is_cent_aligned(amount, num_terms, monthly_rate, days_to_first):
     disbursement_date = datetime(2024, 1, 1)
     first_payment = disbursement_date + relativedelta(days=days_to_first)
     due_dates = [first_payment + relativedelta(months=i) for i in range(num_terms)]
@@ -300,7 +300,7 @@ def test_grossup_net_equals_requested_exact(amount, num_terms, monthly_rate, day
         taxes=taxes,
     )
 
-    assert result.principal - result.total_tax == Money(str(amount))
+    assert result.principal.raw_amount == result.principal.real_amount
 
 
 @given(
@@ -310,15 +310,16 @@ def test_grossup_net_equals_requested_exact(amount, num_terms, monthly_rate, day
     days_to_first=st.integers(min_value=1, max_value=30),
 )
 @settings(max_examples=200, deadline=None)
-def test_grossup_loan_net_disbursement_exact(amount, num_terms, monthly_rate, days_to_first):
+def test_grossup_loan_net_at_least_requested_within_one_cent(amount, num_terms, monthly_rate, days_to_first):
     disbursement_date = datetime(2024, 1, 1)
     first_payment = disbursement_date + relativedelta(days=days_to_first)
     due_dates = [first_payment + relativedelta(months=i) for i in range(num_terms)]
     rate = InterestRate(monthly_rate, CompoundingFrequency.MONTHLY)
     taxes = [IOF(daily_rate="0.0082%", additional_rate="0.38%")]
+    requested = Money(str(amount))
 
     loan = grossup_loan(
-        requested_amount=Money(str(amount)),
+        requested_amount=requested,
         interest_rate=rate,
         due_dates=due_dates,
         disbursement_date=disbursement_date,
@@ -326,4 +327,5 @@ def test_grossup_loan_net_disbursement_exact(amount, num_terms, monthly_rate, da
         taxes=taxes,
     )
 
-    assert loan.net_disbursement == Money(str(amount))
+    assert loan.net_disbursement >= requested
+    assert loan.net_disbursement - requested <= Money("0.01")

@@ -117,7 +117,7 @@ When taxes are present, `generate_expected_cash_flow()` includes an `"expected_t
 
 ## Grossup: Financed Tax
 
-When the tax is financed (incorporated into the principal), the borrower receives an exact "requested amount" after tax deduction. The `grossup()` function uses `scipy.optimize.brentq` (bracketed bisection) to find the principal where `principal - tax(principal) = requested_amount`. The bracketed solver is robust against the non-smooth objective that arises from cent-level rounding in schedule and tax computations.
+When the tax is financed (incorporated into the principal), the borrower receives at least the "requested amount" after tax deduction. The `grossup()` function uses `scipy.optimize.brentq` (bracketed bisection) to find the principal where `principal - tax(principal) >= requested_amount`, then snaps the result to a clean cent-aligned principal. In most cases the net equals the requested amount exactly; in rare rounding-boundary cases the borrower receives up to 1 cent more (never less).
 
 ```python
 from money_warp import grossup, Money, InterestRate, PriceScheduler, IndividualIOF

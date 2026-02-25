@@ -84,6 +84,48 @@ class GrossupResult:
         )
 
 
+def _snap_to_cents(
+    solved_p: float,
+    requested_amount: Money,
+    interest_rate: InterestRate,
+    due_dates: list[datetime],
+    disbursement_date: datetime,
+    scheduler: type[BaseScheduler],
+    taxes: list[BaseTax],
+) -> tuple[Money, Money]:
+    """Round the solver result to cents and find the tightest valid principal.
+
+    Tries the nearest cent first, then the adjacent cent. Picks the smallest
+    principal whose ``real_amount - tax.real_amount >= requested.real_amount``.
+
+    Returns:
+        (principal, total_tax) both as clean cent-aligned Money.
+    """
+    p_rounded = Decimal(str(round(solved_p, 2)))
+    candidates = [p_rounded, p_rounded + Decimal("0.01"), p_rounded - Decimal("0.01")]
+    tax_args = (interest_rate, due_dates, disbursement_date, scheduler, taxes)
+
+    for p_cents in candidates:
+        principal = Money(p_cents)
+        total_tax = _compute_total_tax(principal, *tax_args)
+        net = (principal - total_tax).real_amount
+        if net == requested_amount.real_amount:
+            return principal, total_tax
+
+    # All three candidates checked; pick the smallest that overshoots by at most 1 cent
+    for p_cents in candidates:
+        principal = Money(p_cents)
+        total_tax = _compute_total_tax(principal, *tax_args)
+        diff = (principal - total_tax).real_amount - requested_amount.real_amount
+        if Decimal("0") < diff <= Decimal("0.01"):
+            return principal, total_tax
+
+    # Should never reach here -- brentq guarantees a valid neighborhood
+    principal = Money(p_rounded)
+    total_tax = _compute_total_tax(principal, *tax_args)
+    return principal, total_tax
+
+
 def _compute_total_tax(
     principal: Money,
     interest_rate: InterestRate,
@@ -156,8 +198,15 @@ def grossup(
     except ValueError as exc:
         raise ValueError(f"Grossup solver did not converge: {exc}") from exc
 
-    solved_principal = Money(Decimal(str(solved_p)))
-    total_tax = _compute_total_tax(solved_principal, interest_rate, due_dates, disbursement_date, scheduler, taxes)
+    solved_principal, total_tax = _snap_to_cents(
+        solved_p,
+        requested_amount,
+        interest_rate,
+        due_dates,
+        disbursement_date,
+        scheduler,
+        taxes,
+    )
 
     return GrossupResult(
         principal=solved_principal,
