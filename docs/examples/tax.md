@@ -64,8 +64,10 @@ Both are subclasses of `IOF` and inherit all behavior. They work anywhere `IOF` 
 
 Different systems round IOF components differently. MoneyWarp supports two strategies via `IOFRounding`:
 
-- **`PRECISE`** (default): sums high-precision daily and additional components, rounds once per installment
-- **`PER_COMPONENT`**: rounds each component to 2 decimal places before summing — matches common Brazilian lending platforms
+- **`PRECISE`** (default): sums daily and additional components, then rounds the installment to 2 decimal places
+- **`PER_COMPONENT`**: rounds each component to 2 decimal places individually before summing — matches common Brazilian lending platforms
+
+Both modes produce proper 2-decimal money values for every installment.
 
 ```python
 from money_warp import IOF, IOFRounding

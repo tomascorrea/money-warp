@@ -109,9 +109,9 @@ class IOF(BaseTax):
             additional_iof = Money(principal_raw * self._additional_rate)
 
             if self._rounding == IOFRounding.PER_COMPONENT:
-                installment_tax = Money(daily_iof.real_amount) + Money(additional_iof.real_amount)
+                installment_tax = (Money(daily_iof.real_amount) + Money(additional_iof.real_amount)).to_real_money()
             else:
-                installment_tax = daily_iof + additional_iof
+                installment_tax = (daily_iof + additional_iof).to_real_money()
 
             details.append(
                 TaxInstallmentDetail(

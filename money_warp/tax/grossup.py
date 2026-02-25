@@ -95,33 +95,34 @@ def _snap_to_cents(
 ) -> tuple[Money, Money]:
     """Round the solver result to cents and find the tightest valid principal.
 
-    Tries the nearest cent first, then the adjacent cent. Picks the smallest
-    principal whose ``real_amount - tax.real_amount >= requested.real_amount``.
+    Searches a small window around the solver result (low to high) and picks
+    the smallest cent-aligned principal where net >= requested.  Returns an
+    exact match immediately when one exists.
 
     Returns:
         (principal, total_tax) both as clean cent-aligned Money.
     """
-    p_rounded = Decimal(str(round(solved_p, 2)))
-    candidates = [p_rounded, p_rounded + Decimal("0.01"), p_rounded - Decimal("0.01")]
+    one_cent = Decimal("0.01")
+    p_base = Decimal(str(round(solved_p, 2)))
     tax_args = (interest_rate, due_dates, disbursement_date, scheduler, taxes)
+    smallest_overshoot: tuple[Money, Money] | None = None
 
-    for p_cents in candidates:
+    for offset in range(-2, 6):
+        p_cents = p_base + one_cent * offset
         principal = Money(p_cents)
         total_tax = _compute_total_tax(principal, *tax_args)
         net = (principal - total_tax).real_amount
+
         if net == requested_amount.real_amount:
             return principal, total_tax
 
-    # All three candidates checked; pick the smallest that overshoots by at most 1 cent
-    for p_cents in candidates:
-        principal = Money(p_cents)
-        total_tax = _compute_total_tax(principal, *tax_args)
-        diff = (principal - total_tax).real_amount - requested_amount.real_amount
-        if Decimal("0") < diff <= Decimal("0.01"):
-            return principal, total_tax
+        if net > requested_amount.real_amount and smallest_overshoot is None:
+            smallest_overshoot = (principal, total_tax)
 
-    # Should never reach here -- brentq guarantees a valid neighborhood
-    principal = Money(p_rounded)
+    if smallest_overshoot is not None:
+        return smallest_overshoot
+
+    principal = Money(p_base)
     total_tax = _compute_total_tax(principal, *tax_args)
     return principal, total_tax
 

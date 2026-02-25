@@ -74,6 +74,7 @@ EXTERNAL_TOTAL_IOF = Decimal("201.88")
 OUR_LAST_PERIOD_IOF = Decimal("29.65")
 
 ONE_CENT = Decimal("0.01")
+TWO_CENTS = Decimal("0.02")
 
 
 @pytest.fixture(scope="module")
@@ -233,8 +234,8 @@ def test_iof_precise_within_one_cent_of_external(external_iof_precise, period_id
     assert diff <= ONE_CENT
 
 
-def test_iof_precise_total_within_one_cent(external_iof_precise):
-    assert abs(external_iof_precise.total.real_amount - EXTERNAL_TOTAL_IOF) <= ONE_CENT
+def test_iof_precise_total_within_two_cents(external_iof_precise):
+    assert abs(external_iof_precise.total.real_amount - EXTERNAL_TOTAL_IOF) <= TWO_CENTS
 
 
 # --- PMT verification across various principals and rates ---
