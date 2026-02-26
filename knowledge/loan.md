@@ -167,6 +167,42 @@ All categories are explicitly prefixed to distinguish expected schedule items fr
 | `"actual_fine"` | Actual | Fine paid |
 | `"fine_applied"` | Event | Fine applied to loan (increases amount owed) |
 
+## Installments and Settlements
+
+### Design Philosophy
+
+A loan is **not** a group of installments. Installments are a **consequence** of the loan terms plus a repayment strategy (scheduler). Settlements are a **consequence** of making a payment. Both are derived views computed from the cash flow, not stored state.
+
+### Installment (`loan.installments`)
+
+A frozen dataclass representing one period of the repayment plan. Built from the original schedule on demand. Warp-aware: `is_paid` reflects only payments made by `self.now()`.
+
+Fields: `number`, `due_date`, `days_in_period`, `expected_payment`, `expected_principal`, `expected_interest`, `is_paid`, `principal_paid`, `interest_paid`, `mora_paid`, `fine_paid`, `allocations: List[SettlementAllocation]`.
+
+- `expected_*` fields come from the original schedule (what the borrower should pay).
+- `*_paid` fields are aggregated totals from all settlement allocations attributed to this installment.
+- `allocations` is the reverse view of Settlement: all `SettlementAllocation`s that touched this installment.
+- `is_paid` is determined by comparing `principal_balance` against the original schedule's `ending_balance` milestones (same logic as `_covered_due_date_count`). Uses the Warp-aware `principal_balance` property.
+- Created via `Installment.from_schedule_entry(entry, is_paid, allocations)`.
+- `PaymentScheduleEntry` remains the internal scheduler data structure. `Installment` is the public-facing API.
+
+### Settlement (`loan.settlements`, returned by payment methods)
+
+A frozen dataclass capturing how a single payment was allocated. Reconstructed from the cash flow (`_all_payments` and `_actual_schedule_entries`) rather than stored as separate state.
+
+Fields: `payment_amount`, `payment_date`, `fine_paid`, `interest_paid`, `mora_paid`, `principal_paid`, `remaining_balance`, `allocations: List[SettlementAllocation]`.
+
+- `allocations` shows per-installment detail: which installments the payment covered and how much principal/interest/mora/fine went to each.
+- Interest, mora, and fines are attributed to the first installment touched. Principal is distributed across installments using milestone comparison against the original schedule.
+- All three payment methods (`record_payment`, `pay_installment`, `anticipate_payment`) return a `Settlement`.
+- The `settlements` property reconstructs all settlements by querying the cash flow. Warp-aware: only includes settlements with `payment_date <= self.now()`.
+
+### SettlementAllocation
+
+Fields: `installment_number`, `principal_allocated`, `interest_allocated`, `mora_allocated`, `fine_allocated`, `is_fully_covered`.
+
+Shared between Settlement (forward view: "this payment covered these installments") and Installment (reverse view: "these allocations covered me").
+
 ## TVM Sugar
 
 - `loan.present_value(discount_rate=None, valuation_date=None)` — defaults to the loan's own rate and `loan.now()`.

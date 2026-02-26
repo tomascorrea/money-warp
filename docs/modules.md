@@ -101,6 +101,29 @@ MoneyWarp provides a comprehensive set of classes for financial calculations and
       show_source: false
       heading_level: 4
 
+## Installment & Settlement
+
+### Installment
+::: money_warp.Installment
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### Settlement
+::: money_warp.Settlement
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### SettlementAllocation
+::: money_warp.SettlementAllocation
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
 ## Data Classes
 
 ### PaymentSchedule

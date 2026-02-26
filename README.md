@@ -12,7 +12,7 @@
 > MoneyWarp is currently in active development and should be considered **alpha/pre-release software**. While the core functionality is implemented and tested, the API may change between versions. Use in production environments at your own risk.
 >
 > - ✅ Core classes (`Money`, `InterestRate`, `CashFlow`, `Loan`) are stable
-> - ✅ Comprehensive test suite with 700+ tests
+> - ✅ Comprehensive test suite with 800+ tests
 > - ⚠️ API may evolve based on user feedback
 > - ✅ Published to PyPI
 > - 🚧 Additional features and schedulers in development
@@ -34,6 +34,7 @@ MoneyWarp is a Python library for working with the time value of money. It treat
 - 🧮 **Robust numerics** powered by scipy for IRR and financial calculations
 - ⚖️ **Fine engine** with fines, mora interest, and configurable grace periods
 - 🍭 **Sugar payment methods** — `pay_installment()` and `anticipate_payment()` for natural workflows
+- 📋 **Installments & Settlements** — first-class views of the repayment plan and payment allocation
 - 🇧🇷 **Tax module** — Brazilian IOF with pluggable tax strategy, grossup, and preset rates
 
 ## 📦 Installation
@@ -75,6 +76,42 @@ print(f"Total interest: {schedule.total_interest}")
 # Track actual payments
 loan.record_payment(Money("856.07"), datetime(2024, 2, 1))
 print(f"Remaining balance: {loan.current_balance}")
+```
+
+### Installments & Settlements
+
+```python
+from money_warp import Loan, Money, InterestRate, generate_monthly_dates
+from datetime import datetime
+
+loan = Loan(
+    Money("10000"),
+    InterestRate("6% a"),
+    generate_monthly_dates(datetime(2025, 2, 1), 3),
+    disbursement_date=datetime(2025, 1, 1),
+)
+
+# Installments are the repayment plan — a consequence of the loan
+for inst in loan.installments:
+    print(f"#{inst.number} due {inst.due_date.date()}: "
+          f"{inst.expected_payment} (principal: {inst.expected_principal}, "
+          f"interest: {inst.expected_interest}) — paid: {inst.is_paid}")
+
+# Payments return a Settlement showing how money was allocated
+schedule = loan.get_original_schedule()
+settlement = loan.record_payment(schedule[0].payment_amount, schedule[0].due_date)
+print(f"Principal paid: {settlement.principal_paid}")
+print(f"Interest paid: {settlement.interest_paid}")
+print(f"Remaining balance: {settlement.remaining_balance}")
+
+# Settlements show per-installment detail
+for alloc in settlement.allocations:
+    print(f"  Installment #{alloc.installment_number}: "
+          f"principal={alloc.principal_allocated}, covered={alloc.is_fully_covered}")
+
+# After payment, installments reflect what happened
+inst = loan.installments[0]
+print(f"Installment #1 paid: {inst.is_paid}, principal_paid: {inst.principal_paid}")
 ```
 
 ### Cash Flow Analysis
@@ -373,6 +410,8 @@ State machine for loan analysis with configurable schedulers:
 - **Payment allocation**: Fines → Interest → Principal priority
 - **Fine engine**: Automatic fines and mora interest for overdue payments
 - **Sugar methods**: `pay_installment()` and `anticipate_payment()` for natural workflows
+- **Installments**: Repayment plan as first-class objects derived from loan terms
+- **Settlements**: Payment allocation results with per-installment detail
 - **Flexible scheduling**: Any list of due dates, not just monthly
 - **Multiple schedulers**: PMT-based, fixed payment, custom algorithms
 
@@ -419,7 +458,7 @@ Pluggable tax strategy with Brazilian IOF and grossup:
 
 MoneyWarp includes comprehensive test coverage with validation against established financial libraries:
 
-- **700+ total tests** with 100% core functionality coverage
+- **800+ total tests** with 100% core functionality coverage
 - **Reference validation** against [cartaorobbin/loan-calculator](https://github.com/cartaorobbin/loan-calculator)
 - **External IOF validation** against a production Brazilian lending platform
 - **Edge case handling**: Zero interest, irregular schedules, high precision
@@ -452,6 +491,7 @@ MoneyWarp includes comprehensive test coverage with validation against establish
 - ✅ **Fine Engine**: Fines, mora interest, grace periods - *COMPLETED*
 - ✅ **Payment Sugar Methods**: `pay_installment()`, `anticipate_payment()` - *COMPLETED*
 - ✅ **Tax Module**: Brazilian IOF, grossup, pluggable tax strategy - *COMPLETED*
+- ✅ **Installments & Settlements**: First-class repayment plan and payment allocation views - *COMPLETED*
 - **Additional Schedulers**: Custom schedules, balloon payments
 - **Performance optimization**: Vectorized calculations for large datasets
 - **Advanced TVM**: Bond pricing, option valuation

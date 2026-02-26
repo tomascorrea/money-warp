@@ -2,6 +2,8 @@
 
 MoneyWarp models late payments realistically: overdue installments incur **fines** (a flat percentage of the missed amount) and **mora interest** (extra daily-compounded interest for the days beyond the due date). Payments are always allocated in strict priority: fines first, then interest, then principal.
 
+All payment methods return a **Settlement** object showing exactly how the payment was allocated (see [Installments & Settlements](#installments--settlements) below).
+
 ## Payment Methods
 
 MoneyWarp provides two sugar methods for recording payments, plus a low-level method for full control.
@@ -208,6 +210,71 @@ for item in mora:
 | `"actual_fine"` | Fine paid |
 | `"fine_applied"` | Fine applied to loan |
 
+## Installments & Settlements
+
+A loan is not a group of installments. Installments are **consequences** of the loan — they describe how the borrower repays. Settlements are **consequences** of making a payment — they describe how the money was allocated.
+
+### Installments
+
+Access the repayment plan via `loan.installments`. Each `Installment` shows expected amounts, actual paid amounts, and detailed per-payment allocations.
+
+```python
+from money_warp import Loan, Money, InterestRate, generate_monthly_dates
+from datetime import datetime
+
+loan = Loan(
+    Money("10000"),
+    InterestRate("6% a"),
+    generate_monthly_dates(datetime(2025, 2, 1), 3),
+    disbursement_date=datetime(2025, 1, 1),
+)
+
+# Before any payments: all unpaid
+for inst in loan.installments:
+    print(f"#{inst.number} due {inst.due_date.date()}: "
+          f"{inst.expected_payment} — paid: {inst.is_paid}")
+
+# After a payment: first installment is paid
+schedule = loan.get_original_schedule()
+loan.record_payment(schedule[0].payment_amount, schedule[0].due_date)
+
+inst = loan.installments[0]
+print(f"#{inst.number} is_paid={inst.is_paid}")
+print(f"  principal_paid={inst.principal_paid}, interest_paid={inst.interest_paid}")
+print(f"  allocations: {len(inst.allocations)}")
+```
+
+Installments are Warp-aware — inside a `Warp` context, `is_paid` reflects only payments made by the warped date.
+
+### Settlements
+
+Every call to `record_payment()`, `pay_installment()`, or `anticipate_payment()` returns a `Settlement`. You can also access all past settlements via `loan.settlements`.
+
+```python
+settlement = loan.record_payment(Money("5000"), datetime(2025, 3, 1))
+
+# Settlement-level totals
+print(f"Payment: {settlement.payment_amount}")
+print(f"Fine: {settlement.fine_paid}")
+print(f"Interest: {settlement.interest_paid}")
+print(f"Mora: {settlement.mora_paid}")
+print(f"Principal: {settlement.principal_paid}")
+print(f"Remaining: {settlement.remaining_balance}")
+
+# Per-installment detail
+for alloc in settlement.allocations:
+    print(f"  Installment #{alloc.installment_number}: "
+          f"principal={alloc.principal_allocated}, "
+          f"interest={alloc.interest_allocated}, "
+          f"covered={alloc.is_fully_covered}")
+
+# Access all settlements
+for s in loan.settlements:
+    print(f"{s.payment_date.date()}: {s.payment_amount}")
+```
+
+Settlements are not stored as separate state — they are reconstructed by querying the loan's cash flow data. This means `loan.settlements` is always consistent with the actual payment history.
+
 ## Key Properties
 
 | Property | Type | Meaning |
@@ -216,3 +283,5 @@ for item in mora:
 | `outstanding_fines` | `Money` | Unpaid fines (total minus what's been paid off) |
 | `fines_applied` | `Dict[datetime, Money]` | Fine amount applied per due date |
 | `is_paid_off` | `bool` | True only when principal **and** fines are zero |
+| `installments` | `List[Installment]` | Repayment plan with expected/actual amounts (Warp-aware) |
+| `settlements` | `List[Settlement]` | Payment allocation history (Warp-aware) |

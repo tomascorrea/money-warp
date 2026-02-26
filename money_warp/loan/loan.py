@@ -10,6 +10,8 @@ from ..interest_rate import InterestRate
 from ..money import Money
 from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
 from ..tax.base import BaseTax, TaxResult
+from .installment import Installment
+from .settlement import Settlement, SettlementAllocation
 
 
 class MoraStrategy(Enum):
@@ -706,7 +708,7 @@ class Loan:
         interest_date: Optional[datetime] = None,
         processing_date: Optional[datetime] = None,
         description: Optional[str] = None,
-    ) -> None:
+    ) -> Settlement:
         """
         Record an actual payment made on the loan with automatic allocation.
 
@@ -720,6 +722,9 @@ class Loan:
             processing_date: When the system recorded the event (audit trail).
                 Defaults to self.now().
             description: Optional description of the payment
+
+        Returns:
+            Settlement describing how the payment was allocated.
         """
         if amount.is_negative() or amount.is_zero():
             raise ValueError("Payment amount must be positive")
@@ -766,7 +771,9 @@ class Loan:
             )
         )
 
-    def pay_installment(self, amount: Money, description: Optional[str] = None) -> None:
+        return self._compute_settlement(payment_number - 1)
+
+    def pay_installment(self, amount: Money, description: Optional[str] = None) -> Settlement:
         """
         Pay the next installment.
 
@@ -781,18 +788,21 @@ class Loan:
         Args:
             amount: Total payment amount (positive value)
             description: Optional description of the payment
+
+        Returns:
+            Settlement describing how the payment was allocated.
         """
         payment_date = self.now()
         next_due = self._next_unpaid_due_date()
         interest_date = max(payment_date, next_due)
-        self.record_payment(
+        return self.record_payment(
             amount,
             payment_date=payment_date,
             interest_date=interest_date,
             description=description,
         )
 
-    def anticipate_payment(self, amount: Money, description: Optional[str] = None) -> None:
+    def anticipate_payment(self, amount: Money, description: Optional[str] = None) -> Settlement:
         """
         Make an early payment with interest discount. Interest is calculated only
         up to self.now(), so the borrower pays less interest for fewer elapsed days.
@@ -800,14 +810,197 @@ class Loan:
         Args:
             amount: Total payment amount (positive value)
             description: Optional description of the payment
+
+        Returns:
+            Settlement describing how the payment was allocated.
         """
         payment_date = self.now()
-        self.record_payment(
+        return self.record_payment(
             amount,
             payment_date=payment_date,
             interest_date=payment_date,
             description=description,
         )
+
+    def _extract_payment_items(self, entry_index: int) -> Dict[str, Money]:
+        """Extract fine/interest/mora/principal from _all_payments for a given payment event.
+
+        Items in _all_payments are appended sequentially by each record_payment
+        call. We walk through them in order, consuming groups that match each
+        _actual_schedule_entries entry by position.
+        """
+        categories = ("actual_fine", "actual_interest", "actual_mora_interest", "actual_principal")
+        result: Dict[str, Money] = {c: Money.zero() for c in categories}
+
+        idx = 0
+        for ei in range(entry_index + 1):
+            entry = self._actual_schedule_entries[ei]
+            group_start = idx
+            while idx < len(self._all_payments):
+                item = self._all_payments[idx]
+                if item.category not in categories:
+                    idx += 1
+                    continue
+                if item.datetime != entry.due_date and idx > group_start:
+                    break
+                if ei == entry_index:
+                    result[item.category] = result[item.category] + item.amount
+                idx += 1
+
+        return result
+
+    def _compute_settlement(self, entry_index: int) -> Settlement:
+        """Compute a Settlement for the payment event at entry_index by querying the cash flow."""
+        entry = self._actual_schedule_entries[entry_index]
+        items = self._extract_payment_items(entry_index)
+
+        fine_paid = items["actual_fine"]
+        interest_paid = items["actual_interest"]
+        mora_paid = items["actual_mora_interest"]
+        principal_paid = items["actual_principal"]
+        payment_amount = fine_paid + interest_paid + mora_paid + principal_paid
+
+        covered_before = self._covered_due_date_count_at(entry_index)
+        allocations = self._build_settlement_allocations(
+            covered_before,
+            entry.beginning_balance,
+            principal_paid,
+            interest_paid,
+            mora_paid,
+            fine_paid,
+            entry.ending_balance,
+        )
+
+        return Settlement(
+            payment_amount=payment_amount,
+            payment_date=entry.due_date,
+            fine_paid=fine_paid,
+            interest_paid=interest_paid,
+            mora_paid=mora_paid,
+            principal_paid=principal_paid,
+            remaining_balance=entry.ending_balance,
+            allocations=allocations,
+        )
+
+    def _covered_due_date_count_at(self, entry_index: int) -> int:
+        """How many due dates were covered just BEFORE the payment at entry_index."""
+        if entry_index == 0:
+            return 0
+        remaining = self._actual_schedule_entries[entry_index - 1].ending_balance
+        original = self.get_original_schedule()
+        covered = 0
+        for entry in original:
+            if remaining <= entry.ending_balance + self._COVERAGE_TOLERANCE:
+                covered += 1
+            else:
+                break
+        return covered
+
+    def _build_settlement_allocations(
+        self,
+        covered_before: int,
+        principal_before: Money,
+        principal_paid: Money,
+        interest_paid: Money,
+        mora_paid: Money,
+        fine_paid: Money,
+        ending_balance: Money,
+    ) -> List[SettlementAllocation]:
+        """Build per-installment allocations for a settlement.
+
+        Distributes principal across original schedule milestones.
+        Interest, mora, and fine are attributed to the first installment touched.
+        """
+        original = self.get_original_schedule()
+        if covered_before >= len(original):
+            return []
+
+        allocations: List[SettlementAllocation] = []
+        remaining_to_allocate = principal_paid
+        remaining_balance = principal_before
+
+        for i in range(covered_before, len(original)):
+            milestone = original[i].ending_balance
+            gap = remaining_balance - milestone
+            if gap.is_negative():
+                gap = Money.zero()
+
+            principal_for_this = Money(min(gap.raw_amount, remaining_to_allocate.raw_amount))
+            remaining_to_allocate = remaining_to_allocate - principal_for_this
+            remaining_balance = remaining_balance - principal_for_this
+            fully_covered = remaining_balance <= milestone + self._COVERAGE_TOLERANCE
+
+            is_first = i == covered_before
+            allocations.append(
+                SettlementAllocation(
+                    installment_number=i + 1,
+                    principal_allocated=principal_for_this,
+                    interest_allocated=interest_paid if is_first else Money.zero(),
+                    mora_allocated=mora_paid if is_first else Money.zero(),
+                    fine_allocated=fine_paid if is_first else Money.zero(),
+                    is_fully_covered=fully_covered,
+                )
+            )
+
+            if remaining_to_allocate.is_zero() or remaining_to_allocate.is_negative():
+                break
+
+        return allocations
+
+    @property
+    def settlements(self) -> List[Settlement]:
+        """All settlements made on this loan, reconstructed from the cash flow.
+
+        Warp-aware: only includes settlements whose payment_date is at or
+        before self.now().
+        """
+        current_time = self.now()
+        result: List[Settlement] = []
+        for i, entry in enumerate(self._actual_schedule_entries):
+            if entry.due_date > current_time:
+                break
+            result.append(self._compute_settlement(i))
+        return result
+
+    def _covered_count_for_balance(self, remaining: Money) -> int:
+        """How many due dates are covered given a remaining principal balance."""
+        original = self.get_original_schedule()
+        covered = 0
+        for entry in original:
+            if remaining <= entry.ending_balance + self._COVERAGE_TOLERANCE:
+                covered += 1
+            else:
+                break
+        return covered
+
+    @property
+    def installments(self) -> List[Installment]:
+        """The repayment plan as a list of Installments.
+
+        Built from the original schedule with actual payment allocations
+        gathered from settlements. Reflects the current time context
+        (Warp-aware): installments show as paid only if the corresponding
+        settlements have occurred by self.now().
+        """
+        original = self.get_original_schedule()
+        covered = self._covered_count_for_balance(self.principal_balance)
+
+        allocations_by_number: Dict[int, List[SettlementAllocation]] = {}
+        for settlement in self.settlements:
+            for allocation in settlement.allocations:
+                num = allocation.installment_number
+                if num not in allocations_by_number:
+                    allocations_by_number[num] = []
+                allocations_by_number[num].append(allocation)
+
+        result: List[Installment] = []
+        for i, entry in enumerate(original):
+            installment_num = i + 1
+            is_paid = i < covered
+            allocs = allocations_by_number.get(installment_num, [])
+            result.append(Installment.from_schedule_entry(entry, is_paid, allocs))
+
+        return result
 
     _COVERAGE_TOLERANCE = Money("0.01")
 
