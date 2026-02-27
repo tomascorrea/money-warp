@@ -1,6 +1,6 @@
 """Tests for the grossup function (financed tax calculation)."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -28,12 +28,16 @@ def standard_iof():
 
 @pytest.fixture
 def disbursement_date():
-    return datetime(2024, 1, 1)
+    return datetime(2024, 1, 1, tzinfo=timezone.utc)
 
 
 @pytest.fixture
 def three_due_dates():
-    return [datetime(2024, 2, 1), datetime(2024, 3, 1), datetime(2024, 4, 1)]
+    return [
+        datetime(2024, 2, 1, tzinfo=timezone.utc),
+        datetime(2024, 3, 1, tzinfo=timezone.utc),
+        datetime(2024, 4, 1, tzinfo=timezone.utc),
+    ]
 
 
 @pytest.fixture
@@ -107,7 +111,7 @@ def test_grossup_single_installment(standard_iof, interest_rate, disbursement_da
     result = grossup(
         requested_amount=Money("10000"),
         interest_rate=interest_rate,
-        due_dates=[datetime(2024, 2, 1)],
+        due_dates=[datetime(2024, 2, 1, tzinfo=timezone.utc)],
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
@@ -120,7 +124,7 @@ def test_grossup_small_amount(standard_iof, interest_rate, disbursement_date):
     result = grossup(
         requested_amount=Money("100"),
         interest_rate=interest_rate,
-        due_dates=[datetime(2024, 2, 1)],
+        due_dates=[datetime(2024, 2, 1, tzinfo=timezone.utc)],
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
@@ -133,7 +137,7 @@ def test_grossup_large_amount(standard_iof, interest_rate, disbursement_date):
     result = grossup(
         requested_amount=Money("1000000"),
         interest_rate=interest_rate,
-        due_dates=[datetime(2024, 2, 1), datetime(2024, 3, 1)],
+        due_dates=[datetime(2024, 2, 1, tzinfo=timezone.utc), datetime(2024, 3, 1, tzinfo=timezone.utc)],
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
@@ -147,7 +151,7 @@ def test_grossup_raises_on_zero_requested_amount(standard_iof, interest_rate, di
         grossup(
             requested_amount=Money("0"),
             interest_rate=interest_rate,
-            due_dates=[datetime(2024, 2, 1)],
+            due_dates=[datetime(2024, 2, 1, tzinfo=timezone.utc)],
             disbursement_date=disbursement_date,
             scheduler=PriceScheduler,
             taxes=[standard_iof],
@@ -159,7 +163,7 @@ def test_grossup_raises_on_negative_requested_amount(standard_iof, interest_rate
         grossup(
             requested_amount=Money("-1000"),
             interest_rate=interest_rate,
-            due_dates=[datetime(2024, 2, 1)],
+            due_dates=[datetime(2024, 2, 1, tzinfo=timezone.utc)],
             disbursement_date=disbursement_date,
             scheduler=PriceScheduler,
             taxes=[standard_iof],
@@ -171,7 +175,7 @@ def test_grossup_raises_on_empty_taxes(interest_rate, disbursement_date):
         grossup(
             requested_amount=Money("10000"),
             interest_rate=interest_rate,
-            due_dates=[datetime(2024, 2, 1)],
+            due_dates=[datetime(2024, 2, 1, tzinfo=timezone.utc)],
             disbursement_date=disbursement_date,
             scheduler=PriceScheduler,
             taxes=[],
@@ -261,8 +265,8 @@ def test_grossup_loan_forwards_grace_period(standard_iof, interest_rate, three_d
 
 
 def test_grossup_loan_converges_for_21_terms_with_iof():
-    disbursement_date = datetime(2124, 8, 8)
-    first_payment = datetime(2124, 8, 17)
+    disbursement_date = datetime(2124, 8, 8, tzinfo=timezone.utc)
+    first_payment = datetime(2124, 8, 17, tzinfo=timezone.utc)
     rate = InterestRate(0.0399, CompoundingFrequency.MONTHLY)
     taxes = [IOF(daily_rate="0.0082%", additional_rate="0.38%")]
     due_dates = [first_payment + relativedelta(months=i) for i in range(21)]
@@ -285,7 +289,7 @@ def test_grossup_loan_converges_for_21_terms_with_iof():
 )
 @settings(max_examples=200, deadline=None)
 def test_grossup_principal_is_cent_aligned(amount, num_terms, monthly_rate, days_to_first):
-    disbursement_date = datetime(2024, 1, 1)
+    disbursement_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
     first_payment = disbursement_date + relativedelta(days=days_to_first)
     due_dates = [first_payment + relativedelta(months=i) for i in range(num_terms)]
     rate = InterestRate(monthly_rate, CompoundingFrequency.MONTHLY)
@@ -311,7 +315,7 @@ def test_grossup_principal_is_cent_aligned(amount, num_terms, monthly_rate, days
 )
 @settings(max_examples=200, deadline=None)
 def test_grossup_loan_net_at_least_requested(amount, num_terms, monthly_rate, days_to_first):
-    disbursement_date = datetime(2024, 1, 1)
+    disbursement_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
     first_payment = disbursement_date + relativedelta(days=days_to_first)
     due_dates = [first_payment + relativedelta(months=i) for i in range(num_terms)]
     rate = InterestRate(monthly_rate, CompoundingFrequency.MONTHLY)

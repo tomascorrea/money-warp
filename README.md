@@ -12,7 +12,7 @@
 > MoneyWarp is currently in active development and should be considered **alpha/pre-release software**. While the core functionality is implemented and tested, the API may change between versions. Use in production environments at your own risk.
 >
 > - ✅ Core classes (`Money`, `InterestRate`, `CashFlow`, `Loan`) are stable
-> - ✅ Comprehensive test suite with 800+ tests
+> - ✅ Comprehensive test suite with 830+ tests
 > - ⚠️ API may evolve based on user feedback
 > - ✅ Published to PyPI
 > - 🚧 Additional features and schedulers in development
@@ -36,6 +36,7 @@ MoneyWarp is a Python library for working with the time value of money. It treat
 - 🍭 **Sugar payment methods** — `pay_installment()` and `anticipate_payment()` for natural workflows
 - 📋 **Installments & Settlements** — first-class views of the repayment plan and payment allocation
 - 🇧🇷 **Tax module** — Brazilian IOF with pluggable tax strategy, grossup, and preset rates
+- 🌐 **Timezone-aware** — all datetimes are UTC by default, configurable globally
 
 ## 📦 Installation
 
@@ -54,7 +55,7 @@ poetry add money-warp
 ### Basic Loan Analysis
 
 ```python
-from datetime import datetime
+from datetime import datetime, timezone
 from money_warp import Money, InterestRate, Loan, generate_monthly_dates
 
 # Create a $10,000 loan at 5% annual interest
@@ -62,7 +63,8 @@ principal = Money("10000.00")
 rate = InterestRate("5% a")  # 5% annually
 
 # Generate monthly payment dates easily
-start_date = datetime(2024, 1, 15)
+# Naive datetimes work too — they're silently coerced to the configured timezone (UTC)
+start_date = datetime(2024, 1, 15, tzinfo=timezone.utc)
 due_dates = generate_monthly_dates(start_date, 12)
 
 # Generate the loan
@@ -74,7 +76,7 @@ print(f"Monthly payment: {schedule[0].payment_amount}")
 print(f"Total interest: {schedule.total_interest}")
 
 # Track actual payments
-loan.record_payment(Money("856.07"), datetime(2024, 2, 1))
+loan.record_payment(Money("856.07"), datetime(2024, 2, 1, tzinfo=timezone.utc))
 print(f"Remaining balance: {loan.current_balance}")
 ```
 
@@ -276,6 +278,47 @@ loan = Loan(
 - 🔒 **Type-safe**: Full type annotations and validation
 ```
 
+### Timezone-Aware Datetimes 🌐
+
+All datetimes inside MoneyWarp are timezone-aware. By default, UTC is used. Naive datetimes passed to any API are silently treated as UTC (or whatever timezone you configure).
+
+```python
+from money_warp import get_tz, set_tz, now
+
+# Check the default
+print(get_tz())  # datetime.timezone.utc
+
+# Get the current time (always aware)
+print(now())  # e.g. 2024-06-15 14:30:00+00:00
+
+# Change the default timezone
+set_tz("America/Sao_Paulo")
+print(now())  # e.g. 2024-06-15 11:30:00-03:00
+
+# You can also use a tzinfo object
+from datetime import timezone, timedelta
+set_tz(timezone(timedelta(hours=-3)))
+
+# Reset back to UTC
+set_tz("UTC")
+```
+
+Naive datetimes are accepted everywhere for convenience — the library converts them automatically:
+
+```python
+from datetime import datetime
+from money_warp import Loan, Money, InterestRate
+
+# These naive datetimes are silently coerced to UTC
+loan = Loan(
+    Money("10000"),
+    InterestRate("5% a"),
+    [datetime(2024, 2, 1), datetime(2024, 3, 1)],
+    disbursement_date=datetime(2024, 1, 1),
+)
+print(loan.disbursement_date)  # 2024-01-01 00:00:00+00:00
+```
+
 ### Present Value and IRR Analysis 🧮
 
 **Powered by scipy for robust numerical calculations:**
@@ -382,7 +425,7 @@ print(f"Net to borrower: {grossed_loan.net_disbursement}")  # ~= 10,000
 
 ## 🏗️ Architecture
 
-MoneyWarp is built around five core concepts:
+MoneyWarp is built around six core concepts:
 
 ### 💰 Money
 High-precision monetary amounts using Python's `Decimal` for accuracy:
@@ -414,6 +457,13 @@ State machine for loan analysis with configurable schedulers:
 - **Settlements**: Payment allocation results with per-installment detail
 - **Flexible scheduling**: Any list of due dates, not just monthly
 - **Multiple schedulers**: PMT-based, fixed payment, custom algorithms
+
+### 🌐 Timezone (tz)
+Global timezone configuration with automatic coercion:
+- **UTC by default**: All datetimes are timezone-aware out of the box
+- **Configurable**: `set_tz("America/Sao_Paulo")` changes the default globally
+- **Silent coercion**: Naive datetimes passed to any API are automatically coerced
+- **`@tz_aware` decorator**: Applied to API boundaries — no manual conversion needed
 
 ### 🇧🇷 Tax
 Pluggable tax strategy with Brazilian IOF and grossup:
@@ -458,7 +508,7 @@ Pluggable tax strategy with Brazilian IOF and grossup:
 
 MoneyWarp includes comprehensive test coverage with validation against established financial libraries:
 
-- **800+ total tests** with 100% core functionality coverage
+- **830+ total tests** with 100% core functionality coverage
 - **Reference validation** against [cartaorobbin/loan-calculator](https://github.com/cartaorobbin/loan-calculator)
 - **External IOF validation** against a production Brazilian lending platform
 - **Edge case handling**: Zero interest, irregular schedules, high precision
@@ -492,6 +542,7 @@ MoneyWarp includes comprehensive test coverage with validation against establish
 - ✅ **Payment Sugar Methods**: `pay_installment()`, `anticipate_payment()` - *COMPLETED*
 - ✅ **Tax Module**: Brazilian IOF, grossup, pluggable tax strategy - *COMPLETED*
 - ✅ **Installments & Settlements**: First-class repayment plan and payment allocation views - *COMPLETED*
+- ✅ **Timezone-Aware Datetimes**: UTC by default with configurable global timezone - *COMPLETED*
 - **Additional Schedulers**: Custom schedules, balloon payments
 - **Performance optimization**: Vectorized calculations for large datasets
 - **Advanced TVM**: Bond pricing, option valuation

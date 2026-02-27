@@ -24,6 +24,7 @@ money_warp/
 │   ├── iof.py             # IOF (Brazilian financial operations tax)
 │   └── grossup.py         # grossup() function, GrossupResult
 ├── present_value.py       # PV, NPV, IRR, MIRR, discount_factor
+├── tz.py                  # Timezone config, ensure_aware, tz_aware decorator
 ├── warp.py                # Warp context manager + WarpedTime
 └── date_utils.py          # Date generation utilities
 ```
@@ -78,9 +79,20 @@ All payments allocate funds in strict priority: outstanding fines first, then ac
 
 All `CashFlowItem` categories use explicit prefixes: `expected_` for projected schedule items (`"expected_disbursement"`, `"expected_interest"`, `"expected_principal"`) and `actual_` for recorded payments (`"actual_interest"`, `"actual_mora_interest"`, `"actual_principal"`, `"actual_fine"`).
 
+### Timezone-Aware Datetimes
+
+All datetimes inside the library are timezone-aware. The `tz` module (`tz.py`) provides the configuration:
+
+- **`get_tz()` / `set_tz()`** — read or change the default timezone (UTC by default). `set_tz` accepts a string like `"America/Sao_Paulo"` or a `tzinfo` instance.
+- **`now()`** — returns `datetime.now(get_tz())`, always aware.
+- **`ensure_aware(dt)`** — attaches the configured timezone to naive datetimes; returns aware datetimes unchanged.
+- **`tz_aware` decorator** — applied to public methods and functions that accept datetime arguments. At call time it inspects all positional and keyword arguments: `datetime` values are passed through `ensure_aware`, and `list[datetime]` values are coerced element-wise. This eliminates manual `ensure_aware` calls at every input boundary.
+
+Uses `zoneinfo.ZoneInfo` from the standard library (no extra dependency).
+
 ### Time Awareness via Function Replacement
 
-The loan calls `self.now()` internally, which delegates to `self.datetime_func.now()`. Normally `datetime_func` is Python's `datetime` class. The `Warp` context manager deep-clones the loan and replaces `datetime_func` with a `WarpedTime` instance that returns a fixed date — every time-dependent method then sees the warped date without any code changes.
+The loan calls `self.now()` internally, which delegates to `self.datetime_func.now()`. By default `datetime_func` is a `_DefaultTimeSource` instance (from `tz.py`) whose `now()` returns a timezone-aware UTC datetime. The `Warp` context manager deep-clones the loan and replaces `datetime_func` with a `WarpedTime` instance that returns a fixed aware date — every time-dependent method then sees the warped date without any code changes.
 
 ## Component Relationships
 

@@ -10,6 +10,7 @@ from ..interest_rate import InterestRate
 from ..money import Money
 from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
 from ..tax.base import BaseTax, TaxResult
+from ..tz import default_time_source, tz_aware
 from .installment import Installment
 from .settlement import Settlement, SettlementAllocation
 
@@ -71,8 +72,9 @@ class Loan:
         >>> print(f"Outstanding fines: {loan.outstanding_fines}")
     """
 
-    datetime_func = datetime
+    datetime_func = default_time_source
 
+    @tz_aware
     def __init__(
         self,
         principal: Money,
@@ -134,7 +136,7 @@ class Loan:
         self.interest_rate = interest_rate
         self.mora_interest_rate = mora_interest_rate or interest_rate
         self.mora_strategy = mora_strategy
-        self.due_dates = sorted(due_dates)  # Ensure dates are sorted
+        self.due_dates = sorted(due_dates)
         self.disbursement_date = disbursement_date if disbursement_date is not None else self.datetime_func.now()
         if self.disbursement_date >= self.due_dates[0]:
             raise ValueError("disbursement_date must be before the first due date")
@@ -268,12 +270,14 @@ class Loan:
         """Get the current datetime. Can be overridden for time travel scenarios."""
         return self.datetime_func.now()
 
+    @tz_aware
     def days_since_last_payment(self, as_of_date: Optional[datetime] = None) -> int:
         """Get the number of days since the last payment as of a given date (defaults to current time)."""
         if as_of_date is None:
             as_of_date = self.now()
         return (as_of_date - self.last_payment_date).days
 
+    @tz_aware
     def get_expected_payment_amount(self, due_date: datetime) -> Money:
         """
         Get the expected payment amount for a specific due date from the original schedule.
@@ -301,6 +305,7 @@ class Loan:
 
         raise ValueError(f"Could not find payment amount for due date {due_date}")
 
+    @tz_aware
     def is_payment_late(self, due_date: datetime, as_of_date: Optional[datetime] = None) -> bool:
         """
         Check if a payment is late considering the grace period.
@@ -315,11 +320,11 @@ class Loan:
         if as_of_date is None:
             as_of_date = self.now()
 
-        # Calculate the effective due date including grace period
         effective_due_date = due_date + timedelta(days=self.grace_period_days)
 
         return as_of_date > effective_due_date
 
+    @tz_aware
     def calculate_late_fines(self, as_of_date: Optional[datetime] = None) -> Money:
         """
         Calculate and apply late payment fines for any new late payments.
@@ -407,6 +412,7 @@ class Loan:
         tolerance = Money("0.01")
         return total_paid_in_window >= (expected_payment - tolerance)
 
+    @tz_aware
     def present_value(
         self, discount_rate: Optional[InterestRate] = None, valuation_date: Optional[datetime] = None
     ) -> Money:
@@ -449,7 +455,6 @@ class Loan:
         # Generate expected cash flows
         expected_cf = self.generate_expected_cash_flow()
 
-        # Use current time as default valuation date
         if valuation_date is None:
             valuation_date = self.now()
 
@@ -701,6 +706,7 @@ class Loan:
 
         return fine_paid, interest_paid, mora_paid, principal_paid
 
+    @tz_aware
     def record_payment(
         self,
         amount: Money,

@@ -10,7 +10,7 @@
 
 ### WarpedTime
 
-`WarpedTime` is a simple class whose `now()` returns a fixed datetime. During a warp, the cloned loan's `datetime_func` attribute is swapped from Python's `datetime` class to a `WarpedTime` instance. Every loan method that calls `self.now()` then sees the warped date transparently.
+`WarpedTime` is a simple class whose `now()` returns a fixed timezone-aware datetime. During a warp, the cloned loan's `datetime_func` attribute is swapped from the default `_DefaultTimeSource` to a `WarpedTime` instance. Every loan method that calls `self.now()` then sees the warped date transparently.
 
 ### Nested Warp Prevention
 
@@ -28,11 +28,11 @@ with Warp(loan, "2030-06-15") as future_loan:
 
 The target date accepts `str`, `date`, or `datetime`:
 
-- **str**: parsed via `datetime.fromisoformat()` (handles `"Z"` suffix)
-- **date**: converted to `datetime` using `datetime.combine(d, datetime.min.time())`
-- **datetime**: used directly
+- **str**: parsed via `datetime.fromisoformat()` (handles `"Z"` suffix), then made aware via `ensure_aware`
+- **date**: converted to `datetime` using `datetime.combine(d, datetime.min.time())`, then made aware
+- **datetime**: passed through `ensure_aware` (naive datetimes get the configured default timezone)
 
-Invalid strings raise `InvalidDateError`.
+All parsed dates are guaranteed timezone-aware. Invalid strings raise `InvalidDateError`.
 
 ### What Happens on Enter
 

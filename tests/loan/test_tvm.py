@@ -1,6 +1,6 @@
 """Tests for Loan present value and IRR (time value of money) methods."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from money_warp import InterestRate, Loan, Money, Warp
 
@@ -9,8 +9,8 @@ def test_loan_present_value_with_own_rate():
     loan = Loan(
         Money("10000"),
         InterestRate("5% annual"),
-        [datetime(2024, 1, 15), datetime(2024, 2, 15)],
-        datetime(2023, 12, 16),
+        [datetime(2024, 1, 15, tzinfo=timezone.utc), datetime(2024, 2, 15, tzinfo=timezone.utc)],
+        datetime(2023, 12, 16, tzinfo=timezone.utc),
     )
 
     # Calculate PV using loan's own interest rate (default)
@@ -28,8 +28,8 @@ def test_loan_present_value_with_different_rate():
     loan = Loan(
         Money("10000"),
         InterestRate("5% annual"),
-        [datetime(2024, 1, 15), datetime(2024, 2, 15)],
-        datetime(2023, 12, 16),
+        [datetime(2024, 1, 15, tzinfo=timezone.utc), datetime(2024, 2, 15, tzinfo=timezone.utc)],
+        datetime(2023, 12, 16, tzinfo=timezone.utc),
     )
 
     # Calculate PV with 8% discount rate
@@ -44,10 +44,13 @@ def test_loan_present_value_with_different_rate():
 
 def test_loan_present_value_with_custom_valuation_date():
     loan = Loan(
-        Money("5000"), InterestRate("4% annual"), [datetime(2024, 6, 1), datetime(2024, 12, 1)], datetime(2024, 1, 1)
+        Money("5000"),
+        InterestRate("4% annual"),
+        [datetime(2024, 6, 1, tzinfo=timezone.utc), datetime(2024, 12, 1, tzinfo=timezone.utc)],
+        datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
-    valuation_date = datetime(2024, 2, 1)
+    valuation_date = datetime(2024, 2, 1, tzinfo=timezone.utc)
     # Test with loan's own rate and custom valuation date
     pv = loan.present_value(valuation_date=valuation_date)
 
@@ -57,7 +60,12 @@ def test_loan_present_value_with_custom_valuation_date():
 
 
 def test_loan_present_value_uses_current_time_by_default():
-    loan = Loan(Money("1000"), InterestRate("3% annual"), [datetime(2024, 12, 31)], datetime(2024, 1, 1))
+    loan = Loan(
+        Money("1000"),
+        InterestRate("3% annual"),
+        [datetime(2024, 12, 31, tzinfo=timezone.utc)],
+        datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
 
     # Should use loan's current time and loan's own rate by default
     pv = loan.present_value()
@@ -70,13 +78,16 @@ def test_loan_present_value_uses_current_time_by_default():
 
 def test_loan_present_value_with_time_machine():
     loan = Loan(
-        Money("2000"), InterestRate("4% annual"), [datetime(2024, 6, 1), datetime(2024, 12, 1)], datetime(2024, 1, 1)
+        Money("2000"),
+        InterestRate("4% annual"),
+        [datetime(2024, 6, 1, tzinfo=timezone.utc), datetime(2024, 12, 1, tzinfo=timezone.utc)],
+        datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
     # Calculate PV using loan's own rate from different time perspectives
     normal_pv = loan.present_value()
 
-    with Warp(loan, datetime(2024, 3, 1)) as warped_loan:
+    with Warp(loan, datetime(2024, 3, 1, tzinfo=timezone.utc)) as warped_loan:
         warped_pv = warped_loan.present_value()
 
     # Both should be valid Money objects
@@ -92,8 +103,12 @@ def test_loan_present_value_different_discount_rates():
     loan = Loan(
         Money("10000"),
         InterestRate("6% annual"),
-        [datetime(2024, 6, 1), datetime(2025, 6, 1), datetime(2026, 6, 1)],
-        datetime(2024, 1, 1),
+        [
+            datetime(2024, 6, 1, tzinfo=timezone.utc),
+            datetime(2025, 6, 1, tzinfo=timezone.utc),
+            datetime(2026, 6, 1, tzinfo=timezone.utc),
+        ],
+        datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
     low_rate_pv = loan.present_value(InterestRate("2% annual"))  # Very low discount
@@ -109,8 +124,8 @@ def test_loan_irr_basic():
     loan = Loan(
         Money("10000"),
         InterestRate("5% annual"),
-        [datetime(2024, 1, 15), datetime(2024, 2, 15)],
-        datetime(2023, 12, 16),
+        [datetime(2024, 1, 15, tzinfo=timezone.utc), datetime(2024, 2, 15, tzinfo=timezone.utc)],
+        datetime(2023, 12, 16, tzinfo=timezone.utc),
     )
 
     # Calculate IRR
@@ -127,11 +142,14 @@ def test_loan_irr_basic():
 def test_loan_irr_with_time_machine_for_valuation():
     # Use Time Machine instead of valuation_date parameter
     loan = Loan(
-        Money("5000"), InterestRate("4% annual"), [datetime(2024, 6, 1), datetime(2024, 12, 1)], datetime(2024, 1, 1)
+        Money("5000"),
+        InterestRate("4% annual"),
+        [datetime(2024, 6, 1, tzinfo=timezone.utc), datetime(2024, 12, 1, tzinfo=timezone.utc)],
+        datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
     # Calculate IRR from a specific date using Time Machine
-    with Warp(loan, datetime(2024, 2, 1)) as warped_loan:
+    with Warp(loan, datetime(2024, 2, 1, tzinfo=timezone.utc)) as warped_loan:
         loan_irr = warped_loan.irr()
 
     assert isinstance(loan_irr, InterestRate)
@@ -142,7 +160,10 @@ def test_loan_irr_with_time_machine_for_valuation():
 
 def test_loan_irr_with_custom_guess():
     loan = Loan(
-        Money("2000"), InterestRate("6% annual"), [datetime(2024, 6, 1), datetime(2024, 12, 1)], datetime(2024, 1, 1)
+        Money("2000"),
+        InterestRate("6% annual"),
+        [datetime(2024, 6, 1, tzinfo=timezone.utc), datetime(2024, 12, 1, tzinfo=timezone.utc)],
+        datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
     guess = InterestRate("10% annual")
@@ -156,13 +177,16 @@ def test_loan_irr_with_custom_guess():
 
 def test_loan_irr_with_time_machine():
     loan = Loan(
-        Money("3000"), InterestRate("7% annual"), [datetime(2024, 6, 1), datetime(2024, 12, 1)], datetime(2024, 1, 1)
+        Money("3000"),
+        InterestRate("7% annual"),
+        [datetime(2024, 6, 1, tzinfo=timezone.utc), datetime(2024, 12, 1, tzinfo=timezone.utc)],
+        datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
     # Calculate IRR from different time perspectives
     normal_irr = loan.irr()
 
-    with Warp(loan, datetime(2024, 3, 1)) as warped_loan:
+    with Warp(loan, datetime(2024, 3, 1, tzinfo=timezone.utc)) as warped_loan:
         warped_irr = warped_loan.irr()
 
     # Both should be valid InterestRates
@@ -180,7 +204,7 @@ def test_loan_irr_multiple_payments():
         Money("12000"),
         InterestRate("5.5% annual"),
         [datetime(2024, i, 1) for i in range(1, 7)],  # 6 monthly payments
-        datetime(2023, 12, 1),
+        datetime(2023, 12, 1, tzinfo=timezone.utc),
     )
 
     loan_irr = loan.irr()

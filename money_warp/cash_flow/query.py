@@ -1,8 +1,10 @@
 """CashFlowQuery class for SQLAlchemy-style filtering and querying."""
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Iterator, List, Optional
 
 from ..money import Money
+from ..tz import ensure_aware
 from .item import CashFlowItem
 
 if TYPE_CHECKING:
@@ -88,6 +90,8 @@ class CashFlowQuery:
 
     def _apply_datetime_filter(self, items: List[CashFlowItem], key: str, value: Any) -> List[CashFlowItem]:
         """Apply datetime-related filter."""
+        if isinstance(value, datetime):
+            value = ensure_aware(value)
         if key == "datetime":
             return [item for item in items if item.datetime == value]
         elif key == "datetime__gt":

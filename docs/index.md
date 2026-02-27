@@ -12,7 +12,7 @@
 > MoneyWarp is currently in active development and should be considered **alpha/pre-release software**. While the core functionality is implemented and tested, the API may change between versions. Use in production environments at your own risk.
 >
 > - ✅ Core classes (`Money`, `InterestRate`, `CashFlow`, `Loan`) are stable
-> - ✅ Comprehensive test suite with 800+ tests
+> - ✅ Comprehensive test suite with 830+ tests
 > - ✅ Time Machine, Present Value, and IRR functions complete
 > - ⚠️ API may evolve based on user feedback
 > - ⚠️ Not yet published to PyPI
@@ -37,6 +37,7 @@ MoneyWarp is a Python library for working with the time value of money. It treat
 - 🍭 **Sugar payment methods** — `pay_installment()` and `anticipate_payment()`
 - 📋 **Installments & Settlements** — first-class views of the repayment plan and payment allocation
 - 🇧🇷 **Tax module** — Brazilian IOF with pluggable tax strategy, grossup, and preset rates
+- 🌐 **Timezone-aware** — all datetimes are UTC by default, configurable globally
 
 ## 🧮 Time Value of Money Functions
 
@@ -75,6 +76,7 @@ Explore the comprehensive examples and API reference:
 - **[Cash Flow Analysis](examples/cash_flow.md)** - Work with cash flow streams
 - **[Fines & Payments](examples/fines.md)** - Fines, mora interest, installments, settlements, and payment methods
 - **[Tax & IOF](examples/tax.md)** - Brazilian IOF, grossup, and pluggable taxes
+- **[Timezone Handling](examples/timezone.md)** - UTC default, global configuration, silent coercion
 - **[API Reference](modules.md)** - Complete function documentation
 
 ## 🏗️ Architecture
@@ -87,11 +89,12 @@ MoneyWarp is built around core financial concepts:
 - **🏦 Loan**: State machines for loan analysis and tracking
 - **📋 Installment & Settlement**: Derived views of repayment plans and payment allocations
 - **🇧🇷 Tax**: Pluggable tax strategy with IOF, grossup, and presets
+- **🌐 tz**: Timezone configuration — UTC default, global `set_tz()`, silent coercion
 - **🕰️ Warp**: Time Machine for temporal financial analysis
 
 ## 🧪 Quality & Testing
 
-- **800+ comprehensive tests** with 100% core functionality coverage
+- **830+ comprehensive tests** with 100% core functionality coverage
 - **Type safety**: Full mypy compatibility with zero type errors
 - **Code quality**: Passes ruff linting and black formatting
 - **Robust numerics**: Scipy-powered calculations for reliability

@@ -1,6 +1,6 @@
 """Tests for sugar payment methods (pay_installment, anticipate_payment) and schedule rebuild."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -16,25 +16,25 @@ def test_pay_installment_uses_now_as_payment_date():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    with Warp(loan, datetime(2025, 1, 20)) as warped:
+    with Warp(loan, datetime(2025, 1, 20, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("5000.00"))
-        assert warped._all_payments[-1].datetime == datetime(2025, 1, 20)
+        assert warped._all_payments[-1].datetime == datetime(2025, 1, 20, tzinfo=timezone.utc)
 
 
 def test_pay_installment_charges_interest_to_due_date():
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
     # pay_installment on Jan 15 should charge interest for 31 days (to Feb 1 due date)
-    with Warp(loan, datetime(2025, 1, 15)) as warped:
+    with Warp(loan, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("5000.00"))
         interest_items = [p for p in warped._all_payments if p.category == "actual_interest"]
         assert len(interest_items) == 1
@@ -46,20 +46,20 @@ def test_pay_installment_charges_interest_to_due_date():
 
 def test_pay_installment_no_discount_vs_anticipate_discount():
     """pay_installment charges full-period interest; anticipate_payment only charges for elapsed days."""
-    due_dates = [datetime(2025, 2, 1)]
-    disbursement = datetime(2025, 1, 1)
+    due_dates = [datetime(2025, 2, 1, tzinfo=timezone.utc)]
+    disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
     principal = Money("10000.00")
     rate = InterestRate("6% a")
 
     # pay_installment: interest for 31 days (disbursement to due date)
     loan1 = Loan(principal, rate, due_dates, disbursement_date=disbursement)
-    with Warp(loan1, datetime(2025, 1, 15)) as warped1:
+    with Warp(loan1, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped1:
         warped1.pay_installment(Money("5000.00"))
         installment_interest = [p for p in warped1._all_payments if p.category == "actual_interest"]
 
     # anticipate_payment: interest for 14 days (disbursement to payment date)
     loan2 = Loan(principal, rate, due_dates, disbursement_date=disbursement)
-    with Warp(loan2, datetime(2025, 1, 15)) as warped2:
+    with Warp(loan2, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped2:
         warped2.anticipate_payment(Money("5000.00"))
         anticipate_interest = [p for p in warped2._all_payments if p.category == "actual_interest"]
 
@@ -68,19 +68,19 @@ def test_pay_installment_no_discount_vs_anticipate_discount():
 
 def test_pay_installment_more_principal_with_anticipate():
     """anticipate_payment allocates more to principal since interest is lower."""
-    due_dates = [datetime(2025, 2, 1)]
-    disbursement = datetime(2025, 1, 1)
+    due_dates = [datetime(2025, 2, 1, tzinfo=timezone.utc)]
+    disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
     principal = Money("10000.00")
     rate = InterestRate("6% a")
     payment = Money("5000.00")
 
     loan1 = Loan(principal, rate, due_dates, disbursement_date=disbursement)
-    with Warp(loan1, datetime(2025, 1, 15)) as warped1:
+    with Warp(loan1, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped1:
         warped1.pay_installment(payment)
         installment_principal = [p for p in warped1._all_payments if p.category == "actual_principal"]
 
     loan2 = Loan(principal, rate, due_dates, disbursement_date=disbursement)
-    with Warp(loan2, datetime(2025, 1, 15)) as warped2:
+    with Warp(loan2, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped2:
         warped2.anticipate_payment(payment)
         anticipate_principal = [p for p in warped2._all_payments if p.category == "actual_principal"]
 
@@ -94,24 +94,24 @@ def test_anticipate_payment_uses_now_as_payment_date():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    with Warp(loan, datetime(2025, 1, 20)) as warped:
+    with Warp(loan, datetime(2025, 1, 20, tzinfo=timezone.utc)) as warped:
         warped.anticipate_payment(Money("5000.00"))
-        assert warped._all_payments[-1].datetime == datetime(2025, 1, 20)
+        assert warped._all_payments[-1].datetime == datetime(2025, 1, 20, tzinfo=timezone.utc)
 
 
 def test_anticipate_payment_charges_interest_only_for_elapsed_days():
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
-        [datetime(2025, 2, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    with Warp(loan, datetime(2025, 1, 15)) as warped:
+    with Warp(loan, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
         warped.anticipate_payment(Money("5000.00"))
         interest_items = [p for p in warped._all_payments if p.category == "actual_interest"]
 
@@ -124,11 +124,11 @@ def test_anticipate_payment_negative_amount_raises_error():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    with Warp(loan, datetime(2025, 1, 15)) as warped, pytest.raises(
+    with Warp(loan, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped, pytest.raises(
         ValueError, match="Payment amount must be positive"
     ):
         warped.anticipate_payment(Money("-100.00"))
@@ -141,35 +141,35 @@ def test_next_unpaid_due_date_returns_first_due_date():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    assert loan._next_unpaid_due_date() == datetime(2025, 2, 1)
+    assert loan._next_unpaid_due_date() == datetime(2025, 2, 1, tzinfo=timezone.utc)
 
 
 def test_next_unpaid_due_date_advances_after_full_installment():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
     scheduled_pmt = loan.get_original_schedule()[0].payment_amount
-    loan.record_payment(scheduled_pmt, datetime(2025, 2, 1))
-    assert loan._next_unpaid_due_date() == datetime(2025, 3, 1)
+    loan.record_payment(scheduled_pmt, datetime(2025, 2, 1, tzinfo=timezone.utc))
+    assert loan._next_unpaid_due_date() == datetime(2025, 3, 1, tzinfo=timezone.utc)
 
 
 def test_next_unpaid_due_date_raises_when_all_paid():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    loan.record_payment(Money("15000.00"), datetime(2025, 2, 1))
+    loan.record_payment(Money("15000.00"), datetime(2025, 2, 1, tzinfo=timezone.utc))
 
     with pytest.raises(ValueError, match="All due dates have been paid"):
         loan._next_unpaid_due_date()
@@ -182,15 +182,15 @@ def test_record_payment_with_explicit_interest_date():
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
-        [datetime(2025, 2, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
     # Pay on Jan 15 but calculate interest up to Feb 1 (31 days)
     loan.record_payment(
         Money("5000.00"),
-        payment_date=datetime(2025, 1, 15),
-        interest_date=datetime(2025, 2, 1),
+        payment_date=datetime(2025, 1, 15, tzinfo=timezone.utc),
+        interest_date=datetime(2025, 2, 1, tzinfo=timezone.utc),
     )
 
     interest_items = [p for p in loan._all_payments if p.category == "actual_interest"]
@@ -203,11 +203,11 @@ def test_record_payment_interest_date_defaults_to_payment_date():
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
-        [datetime(2025, 2, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    loan.record_payment(Money("5000.00"), payment_date=datetime(2025, 1, 15))
+    loan.record_payment(Money("5000.00"), payment_date=datetime(2025, 1, 15, tzinfo=timezone.utc))
 
     interest_items = [p for p in loan._all_payments if p.category == "actual_interest"]
     daily_rate = InterestRate("6% a").to_daily().as_decimal
@@ -222,11 +222,15 @@ def test_schedule_rebuild_first_entry_reflects_actual_payment():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [
+            datetime(2025, 2, 1, tzinfo=timezone.utc),
+            datetime(2025, 3, 1, tzinfo=timezone.utc),
+            datetime(2025, 4, 1, tzinfo=timezone.utc),
+        ],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    loan.record_payment(Money("3500.00"), datetime(2025, 2, 1))
+    loan.record_payment(Money("3500.00"), datetime(2025, 2, 1, tzinfo=timezone.utc))
     schedule = loan.get_amortization_schedule()
 
     assert schedule[0].beginning_balance == Money("10000.00")
@@ -236,11 +240,15 @@ def test_schedule_rebuild_remaining_entries_are_projected():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [
+            datetime(2025, 2, 1, tzinfo=timezone.utc),
+            datetime(2025, 3, 1, tzinfo=timezone.utc),
+            datetime(2025, 4, 1, tzinfo=timezone.utc),
+        ],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    loan.record_payment(Money("3500.00"), datetime(2025, 2, 1))
+    loan.record_payment(Money("3500.00"), datetime(2025, 2, 1, tzinfo=timezone.utc))
     schedule = loan.get_amortization_schedule()
 
     assert schedule[1].payment_amount.is_positive()
@@ -248,15 +256,19 @@ def test_schedule_rebuild_remaining_entries_are_projected():
 
 
 def test_schedule_rebuild_total_entries_match_due_dates():
-    due_dates = [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)]
+    due_dates = [
+        datetime(2025, 2, 1, tzinfo=timezone.utc),
+        datetime(2025, 3, 1, tzinfo=timezone.utc),
+        datetime(2025, 4, 1, tzinfo=timezone.utc),
+    ]
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
         due_dates,
-        disbursement_date=datetime(2025, 1, 1),
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    loan.record_payment(Money("3500.00"), datetime(2025, 2, 1))
+    loan.record_payment(Money("3500.00"), datetime(2025, 2, 1, tzinfo=timezone.utc))
     schedule = loan.get_amortization_schedule()
 
     assert len(schedule) == len(due_dates)
@@ -264,18 +276,22 @@ def test_schedule_rebuild_total_entries_match_due_dates():
 
 def test_schedule_rebuild_projected_pmt_recalculated():
     """After a payment, the remaining PMT should be recalculated based on remaining principal."""
-    due_dates = [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)]
+    due_dates = [
+        datetime(2025, 2, 1, tzinfo=timezone.utc),
+        datetime(2025, 3, 1, tzinfo=timezone.utc),
+        datetime(2025, 4, 1, tzinfo=timezone.utc),
+    ]
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
         due_dates,
-        disbursement_date=datetime(2025, 1, 1),
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
     original_schedule = loan.get_original_schedule()
     original_schedule[1].payment_amount
 
-    loan.record_payment(original_schedule[0].payment_amount, datetime(2025, 2, 1))
+    loan.record_payment(original_schedule[0].payment_amount, datetime(2025, 2, 1, tzinfo=timezone.utc))
     rebuilt_schedule = loan.get_amortization_schedule()
 
     # The projected PMT for the 2nd installment should be different from the original
@@ -288,15 +304,19 @@ def test_schedule_rebuild_projected_pmt_recalculated():
 
 
 def test_schedule_rebuild_payment_numbers_are_sequential():
-    due_dates = [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)]
+    due_dates = [
+        datetime(2025, 2, 1, tzinfo=timezone.utc),
+        datetime(2025, 3, 1, tzinfo=timezone.utc),
+        datetime(2025, 4, 1, tzinfo=timezone.utc),
+    ]
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
         due_dates,
-        disbursement_date=datetime(2025, 1, 1),
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    loan.record_payment(Money("3500.00"), datetime(2025, 2, 1))
+    loan.record_payment(Money("3500.00"), datetime(2025, 2, 1, tzinfo=timezone.utc))
     schedule = loan.get_amortization_schedule()
 
     assert [entry.payment_number for entry in schedule] == [1, 2, 3]
@@ -306,8 +326,8 @@ def test_schedule_no_rebuild_without_payments():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
     schedule = loan.get_amortization_schedule()
@@ -322,8 +342,8 @@ def test_schedule_fully_paid_returns_only_actual():
     loan = Loan(
         Money("1000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
     schedule = loan.get_original_schedule()
@@ -339,12 +359,12 @@ def test_original_schedule_unchanged_after_payments():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
     before = loan.get_original_schedule()
-    loan.record_payment(Money("5000.00"), datetime(2025, 2, 1))
+    loan.record_payment(Money("5000.00"), datetime(2025, 2, 1, tzinfo=timezone.utc))
     after = loan.get_original_schedule()
 
     assert len(before) == len(after)
@@ -359,11 +379,11 @@ def test_actual_entry_beginning_balance_matches_principal():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    loan.record_payment(Money("5000.00"), datetime(2025, 2, 1))
+    loan.record_payment(Money("5000.00"), datetime(2025, 2, 1, tzinfo=timezone.utc))
     schedule = loan.get_amortization_schedule()
 
     assert schedule[0].beginning_balance == Money("10000.00")
@@ -373,11 +393,11 @@ def test_actual_entry_ending_balance_reflects_principal_paid():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    loan.record_payment(Money("5000.00"), datetime(2025, 2, 1))
+    loan.record_payment(Money("5000.00"), datetime(2025, 2, 1, tzinfo=timezone.utc))
     schedule = loan.get_amortization_schedule()
 
     actual_entry = schedule[0]
@@ -388,11 +408,15 @@ def test_projected_beginning_balance_matches_previous_ending():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [
+            datetime(2025, 2, 1, tzinfo=timezone.utc),
+            datetime(2025, 3, 1, tzinfo=timezone.utc),
+            datetime(2025, 4, 1, tzinfo=timezone.utc),
+        ],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    loan.record_payment(Money("3500.00"), datetime(2025, 2, 1))
+    loan.record_payment(Money("3500.00"), datetime(2025, 2, 1, tzinfo=timezone.utc))
     schedule = loan.get_amortization_schedule()
 
     assert schedule[1].beginning_balance == schedule[0].ending_balance
@@ -406,15 +430,19 @@ def test_two_partial_payments_same_installment_next_due_date_unchanged():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [
+            datetime(2025, 2, 1, tzinfo=timezone.utc),
+            datetime(2025, 3, 1, tzinfo=timezone.utc),
+            datetime(2025, 4, 1, tzinfo=timezone.utc),
+        ],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    loan.record_payment(Money("1000.00"), datetime(2025, 1, 20))
-    assert loan._next_unpaid_due_date() == datetime(2025, 2, 1)
+    loan.record_payment(Money("1000.00"), datetime(2025, 1, 20, tzinfo=timezone.utc))
+    assert loan._next_unpaid_due_date() == datetime(2025, 2, 1, tzinfo=timezone.utc)
 
-    loan.record_payment(Money("1000.00"), datetime(2025, 1, 25))
-    assert loan._next_unpaid_due_date() == datetime(2025, 2, 1)
+    loan.record_payment(Money("1000.00"), datetime(2025, 1, 25, tzinfo=timezone.utc))
+    assert loan._next_unpaid_due_date() == datetime(2025, 2, 1, tzinfo=timezone.utc)
 
 
 def test_two_partial_payments_covering_one_installment():
@@ -422,17 +450,21 @@ def test_two_partial_payments_covering_one_installment():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [
+            datetime(2025, 2, 1, tzinfo=timezone.utc),
+            datetime(2025, 3, 1, tzinfo=timezone.utc),
+            datetime(2025, 4, 1, tzinfo=timezone.utc),
+        ],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
     scheduled_pmt = loan.get_original_schedule()[0].payment_amount
 
-    loan.record_payment(Money("1000.00"), datetime(2025, 1, 20))
-    assert loan._next_unpaid_due_date() == datetime(2025, 2, 1)
+    loan.record_payment(Money("1000.00"), datetime(2025, 1, 20, tzinfo=timezone.utc))
+    assert loan._next_unpaid_due_date() == datetime(2025, 2, 1, tzinfo=timezone.utc)
 
-    loan.record_payment(scheduled_pmt, datetime(2025, 2, 1))
-    assert loan._next_unpaid_due_date() == datetime(2025, 3, 1)
+    loan.record_payment(scheduled_pmt, datetime(2025, 2, 1, tzinfo=timezone.utc))
+    assert loan._next_unpaid_due_date() == datetime(2025, 3, 1, tzinfo=timezone.utc)
 
 
 def test_large_payment_covers_two_installments():
@@ -440,16 +472,20 @@ def test_large_payment_covers_two_installments():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [
+            datetime(2025, 2, 1, tzinfo=timezone.utc),
+            datetime(2025, 3, 1, tzinfo=timezone.utc),
+            datetime(2025, 4, 1, tzinfo=timezone.utc),
+        ],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
     original = loan.get_original_schedule()
     two_installments = original[0].payment_amount + original[1].payment_amount
 
-    loan.record_payment(two_installments, datetime(2025, 2, 1))
+    loan.record_payment(two_installments, datetime(2025, 2, 1, tzinfo=timezone.utc))
     assert loan._covered_due_date_count() >= 2
-    assert loan._next_unpaid_due_date() == datetime(2025, 4, 1)
+    assert loan._next_unpaid_due_date() == datetime(2025, 4, 1, tzinfo=timezone.utc)
 
 
 def test_three_consecutive_anticipations():
@@ -457,14 +493,18 @@ def test_three_consecutive_anticipations():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [
+            datetime(2025, 2, 1, tzinfo=timezone.utc),
+            datetime(2025, 3, 1, tzinfo=timezone.utc),
+            datetime(2025, 4, 1, tzinfo=timezone.utc),
+        ],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
     original = loan.get_original_schedule()
 
     for i in range(3):
-        payment_date = datetime(2025, 1, 10 + i)
+        payment_date = datetime(2025, 1, 10 + i, tzinfo=timezone.utc)
         loan.record_payment(
             original[i].payment_amount,
             payment_date=payment_date,
@@ -482,14 +522,18 @@ def test_schedule_rebuild_after_partial_projects_from_correct_due_date():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [
+            datetime(2025, 2, 1, tzinfo=timezone.utc),
+            datetime(2025, 3, 1, tzinfo=timezone.utc),
+            datetime(2025, 4, 1, tzinfo=timezone.utc),
+        ],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    loan.record_payment(Money("1000.00"), datetime(2025, 1, 20))
+    loan.record_payment(Money("1000.00"), datetime(2025, 1, 20, tzinfo=timezone.utc))
     schedule = loan.get_amortization_schedule()
 
-    assert schedule[1].due_date == datetime(2025, 2, 1)
+    assert schedule[1].due_date == datetime(2025, 2, 1, tzinfo=timezone.utc)
 
 
 def test_schedule_rebuild_after_overpayment_skips_covered_dates():
@@ -497,18 +541,22 @@ def test_schedule_rebuild_after_overpayment_skips_covered_dates():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)],
-        disbursement_date=datetime(2025, 1, 1),
+        [
+            datetime(2025, 2, 1, tzinfo=timezone.utc),
+            datetime(2025, 3, 1, tzinfo=timezone.utc),
+            datetime(2025, 4, 1, tzinfo=timezone.utc),
+        ],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
     original = loan.get_original_schedule()
     two_installments = original[0].payment_amount + original[1].payment_amount
 
-    loan.record_payment(two_installments, datetime(2025, 2, 1))
+    loan.record_payment(two_installments, datetime(2025, 2, 1, tzinfo=timezone.utc))
     schedule = loan.get_amortization_schedule()
 
     assert len(schedule) == 2
-    assert schedule[1].due_date == datetime(2025, 4, 1)
+    assert schedule[1].due_date == datetime(2025, 4, 1, tzinfo=timezone.utc)
 
 
 # --- Schedule values: pay_installment vs anticipate_payment ---
@@ -520,18 +568,22 @@ def test_pay_installment_on_due_date_projected_schedule_matches_original():
     principal reduction matches the original plan exactly. The projected
     remaining schedule should have the same PMT as the original.
     """
-    due_dates = [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)]
+    due_dates = [
+        datetime(2025, 2, 1, tzinfo=timezone.utc),
+        datetime(2025, 3, 1, tzinfo=timezone.utc),
+        datetime(2025, 4, 1, tzinfo=timezone.utc),
+    ]
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
         due_dates,
-        disbursement_date=datetime(2025, 1, 1),
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
     original = loan.get_original_schedule()
     scheduled_pmt = original[0].payment_amount
 
-    with Warp(loan, datetime(2025, 2, 1)) as warped:
+    with Warp(loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(scheduled_pmt)
         rebuilt = warped.get_amortization_schedule()
 
@@ -551,18 +603,22 @@ def test_anticipate_payment_schedule_with_concrete_values():
       - Remaining balance: $6,658.57 (vs $6,681.37 in original)
       - New projected PMT: $3,356.31 (lower than original $3,360.16)
     """
-    due_dates = [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)]
+    due_dates = [
+        datetime(2025, 2, 1, tzinfo=timezone.utc),
+        datetime(2025, 3, 1, tzinfo=timezone.utc),
+        datetime(2025, 4, 1, tzinfo=timezone.utc),
+    ]
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
         due_dates,
-        disbursement_date=datetime(2025, 1, 1),
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
     original = loan.get_original_schedule()
     scheduled_pmt = original[0].payment_amount
 
-    with Warp(loan, datetime(2025, 1, 15)) as warped:
+    with Warp(loan, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
         warped.anticipate_payment(scheduled_pmt)
         rebuilt = warped.get_amortization_schedule()
 
@@ -584,7 +640,7 @@ def test_anticipate_payment_schedule_with_concrete_values():
 @settings(max_examples=50)
 def test_anticipate_payment_projected_pmt_lower_than_original(principal, annual_rate, num_payments, days_early):
     """anticipate_payment always results in a lower projected PMT than the original schedule."""
-    disbursement = datetime(2025, 1, 1)
+    disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
     due_dates = [disbursement + timedelta(days=30 * (i + 1)) for i in range(num_payments)]
     rate_str = f"{annual_rate}% a"
     loan = Loan(
@@ -611,8 +667,12 @@ def test_anticipate_vs_installment_ending_balance_comparison():
     After paying the same amount, anticipate_payment leaves a lower remaining
     principal than pay_installment because less went to interest.
     """
-    due_dates = [datetime(2025, 2, 1), datetime(2025, 3, 1), datetime(2025, 4, 1)]
-    disbursement = datetime(2025, 1, 1)
+    due_dates = [
+        datetime(2025, 2, 1, tzinfo=timezone.utc),
+        datetime(2025, 3, 1, tzinfo=timezone.utc),
+        datetime(2025, 4, 1, tzinfo=timezone.utc),
+    ]
+    disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
     principal = Money("10000.00")
     rate = InterestRate("5% a")
 
@@ -620,12 +680,12 @@ def test_anticipate_vs_installment_ending_balance_comparison():
     scheduled_pmt = original[0].payment_amount
 
     loan_installment = Loan(principal, rate, due_dates, disbursement_date=disbursement)
-    with Warp(loan_installment, datetime(2025, 1, 15)) as warped:
+    with Warp(loan_installment, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(scheduled_pmt)
         installment_remaining = warped._actual_schedule_entries[-1].ending_balance
 
     loan_anticipate = Loan(principal, rate, due_dates, disbursement_date=disbursement)
-    with Warp(loan_anticipate, datetime(2025, 1, 15)) as warped:
+    with Warp(loan_anticipate, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
         warped.anticipate_payment(scheduled_pmt)
         anticipate_remaining = warped._actual_schedule_entries[-1].ending_balance
 

@@ -1,6 +1,6 @@
 """Tests for Installment — the public-facing repayment plan view."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -14,11 +14,11 @@ def simple_loan():
     principal = Money("10000.00")
     rate = InterestRate("6% a")
     due_dates = [
-        datetime(2025, 2, 1),
-        datetime(2025, 3, 1),
-        datetime(2025, 4, 1),
+        datetime(2025, 2, 1, tzinfo=timezone.utc),
+        datetime(2025, 3, 1, tzinfo=timezone.utc),
+        datetime(2025, 4, 1, tzinfo=timezone.utc),
     ]
-    return Loan(principal, rate, due_dates, disbursement_date=datetime(2025, 1, 1))
+    return Loan(principal, rate, due_dates, disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc))
 
 
 def test_installments_count_matches_due_dates(simple_loan):
@@ -97,13 +97,13 @@ def test_all_installments_paid_after_full_repayment(simple_loan):
 
 
 def test_partial_payment_does_not_mark_installment_paid(simple_loan):
-    simple_loan.record_payment(Money("100.00"), datetime(2025, 2, 1))
+    simple_loan.record_payment(Money("100.00"), datetime(2025, 2, 1, tzinfo=timezone.utc))
 
     assert simple_loan.installments[0].is_paid is False
 
 
 def test_partial_payment_shows_principal_paid(simple_loan):
-    simple_loan.record_payment(Money("100.00"), datetime(2025, 2, 1))
+    simple_loan.record_payment(Money("100.00"), datetime(2025, 2, 1, tzinfo=timezone.utc))
 
     inst = simple_loan.installments[0]
     assert inst.principal_paid.is_positive() or inst.interest_paid.is_positive()
@@ -120,7 +120,7 @@ def test_from_schedule_entry_creates_correct_installment():
 
     entry = PaymentScheduleEntry(
         payment_number=1,
-        due_date=datetime(2025, 2, 1),
+        due_date=datetime(2025, 2, 1, tzinfo=timezone.utc),
         days_in_period=31,
         beginning_balance=Money("10000"),
         payment_amount=Money("3400"),
@@ -131,7 +131,7 @@ def test_from_schedule_entry_creates_correct_installment():
     inst = Installment.from_schedule_entry(entry, is_paid=False, allocations=[])
 
     assert inst.number == 1
-    assert inst.due_date == datetime(2025, 2, 1)
+    assert inst.due_date == datetime(2025, 2, 1, tzinfo=timezone.utc)
     assert inst.days_in_period == 31
     assert inst.expected_payment == Money("3400")
     assert inst.expected_principal == Money("3200")

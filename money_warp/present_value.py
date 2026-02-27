@@ -9,8 +9,10 @@ from scipy.optimize import brentq, fsolve  # type: ignore[import]
 from .cash_flow import CashFlow
 from .interest_rate import InterestRate, YearSize
 from .money import Money
+from .tz import tz_aware
 
 
+@tz_aware
 def present_value(cash_flow: CashFlow, discount_rate: InterestRate, valuation_date: Optional[datetime] = None) -> Money:
     """
     Calculate the Present Value (PV) of a cash flow stream.

@@ -1,6 +1,6 @@
 """Tests for present value calculations."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -21,9 +21,9 @@ from money_warp import (
 def simple_cash_flow():
     """Simple cash flow for testing."""
     items = [
-        CashFlowItem(Money("-1000"), datetime(2024, 1, 1), "Initial investment", "investment"),
-        CashFlowItem(Money("500"), datetime(2024, 6, 1), "Mid-year return", "return"),
-        CashFlowItem(Money("600"), datetime(2024, 12, 31), "Year-end return", "return"),
+        CashFlowItem(Money("-1000"), datetime(2024, 1, 1, tzinfo=timezone.utc), "Initial investment", "investment"),
+        CashFlowItem(Money("500"), datetime(2024, 6, 1, tzinfo=timezone.utc), "Mid-year return", "return"),
+        CashFlowItem(Money("600"), datetime(2024, 12, 31, tzinfo=timezone.utc), "Year-end return", "return"),
     ]
     return CashFlow(items)
 
@@ -36,11 +36,11 @@ def test_present_value_empty_cash_flow():
 
 
 def test_present_value_single_cash_flow():
-    items = [CashFlowItem(Money("1000"), datetime(2024, 12, 31), "Future payment", "payment")]
+    items = [CashFlowItem(Money("1000"), datetime(2024, 12, 31, tzinfo=timezone.utc), "Future payment", "payment")]
     cf = CashFlow(items)
 
     # PV of $1000 in 1 year at 10% should be about $909.09
-    pv = present_value(cf, InterestRate("10% annual"), datetime(2024, 1, 1))
+    pv = present_value(cf, InterestRate("10% annual"), datetime(2024, 1, 1, tzinfo=timezone.utc))
 
     # Allow for small rounding differences due to daily compounding
     expected = Money("909.09")
@@ -192,14 +192,14 @@ def test_discount_factor_decreases_with_time():
 def test_present_value_with_irregular_cash_flows():
     # Test with irregular timing and amounts
     items = [
-        CashFlowItem(Money("-5000"), datetime(2024, 1, 1), "Investment", "investment"),
-        CashFlowItem(Money("1500"), datetime(2024, 3, 15), "Q1 return", "return"),
-        CashFlowItem(Money("2000"), datetime(2024, 7, 10), "Mid-year bonus", "return"),
-        CashFlowItem(Money("1800"), datetime(2024, 11, 30), "Year-end return", "return"),
+        CashFlowItem(Money("-5000"), datetime(2024, 1, 1, tzinfo=timezone.utc), "Investment", "investment"),
+        CashFlowItem(Money("1500"), datetime(2024, 3, 15, tzinfo=timezone.utc), "Q1 return", "return"),
+        CashFlowItem(Money("2000"), datetime(2024, 7, 10, tzinfo=timezone.utc), "Mid-year bonus", "return"),
+        CashFlowItem(Money("1800"), datetime(2024, 11, 30, tzinfo=timezone.utc), "Year-end return", "return"),
     ]
     cf = CashFlow(items)
 
-    pv = present_value(cf, InterestRate("12% annual"), datetime(2024, 1, 1))
+    pv = present_value(cf, InterestRate("12% annual"), datetime(2024, 1, 1, tzinfo=timezone.utc))
 
     # At 12% discount rate, this particular cash flow might be negative
     # The important thing is that PV calculation works with irregular flows
@@ -209,13 +209,13 @@ def test_present_value_with_irregular_cash_flows():
 def test_present_value_past_cash_flows():
     # Test with some cash flows in the past relative to valuation date
     items = [
-        CashFlowItem(Money("1000"), datetime(2023, 6, 1), "Past cash flow", "past"),
-        CashFlowItem(Money("1000"), datetime(2024, 6, 1), "Future cash flow", "future"),
+        CashFlowItem(Money("1000"), datetime(2023, 6, 1, tzinfo=timezone.utc), "Past cash flow", "past"),
+        CashFlowItem(Money("1000"), datetime(2024, 6, 1, tzinfo=timezone.utc), "Future cash flow", "future"),
     ]
     cf = CashFlow(items)
 
     # Valuation date after first cash flow
-    pv = present_value(cf, InterestRate("5% annual"), datetime(2024, 1, 1))
+    pv = present_value(cf, InterestRate("5% annual"), datetime(2024, 1, 1, tzinfo=timezone.utc))
 
     # Past cash flows should not be discounted (treated as period 0)
     # Future cash flows should be discounted
@@ -233,8 +233,12 @@ def test_present_value_with_time_machine_philosophy():
     loan = Loan(
         Money("10000"),
         InterestRate("5% annual"),
-        [datetime(2024, 1, 15), datetime(2024, 2, 15), datetime(2024, 3, 15)],
-        datetime(2023, 12, 16),
+        [
+            datetime(2024, 1, 15, tzinfo=timezone.utc),
+            datetime(2024, 2, 15, tzinfo=timezone.utc),
+            datetime(2024, 3, 15, tzinfo=timezone.utc),
+        ],
+        datetime(2023, 12, 16, tzinfo=timezone.utc),
     )
 
     expected_cf = loan.generate_expected_cash_flow()
@@ -243,7 +247,7 @@ def test_present_value_with_time_machine_philosophy():
     pv = present_value(expected_cf, InterestRate("8% annual"))
 
     # Use Time Machine to see what the balance will be at a future date
-    with Warp(loan, datetime(2024, 2, 1)) as future_loan:
+    with Warp(loan, datetime(2024, 2, 1, tzinfo=timezone.utc)) as future_loan:
         future_balance = future_loan.current_balance
 
     # Both should provide valuable but different insights
@@ -263,11 +267,11 @@ def test_present_value_very_high_discount_rate(simple_cash_flow):
 
 def test_present_value_precision_with_daily_compounding():
     # Test that daily compounding gives precise results
-    items = [CashFlowItem(Money("1000"), datetime(2024, 7, 2), "180 days future", "payment")]
+    items = [CashFlowItem(Money("1000"), datetime(2024, 7, 2, tzinfo=timezone.utc), "180 days future", "payment")]
     cf = CashFlow(items)
 
     # 180 days at 5% annual
-    pv = present_value(cf, InterestRate("5% annual"), datetime(2024, 1, 4))
+    pv = present_value(cf, InterestRate("5% annual"), datetime(2024, 1, 4, tzinfo=timezone.utc))
 
     # Should be discounted but not too much for half a year
     assert pv < Money("1000")
@@ -277,9 +281,9 @@ def test_present_value_precision_with_daily_compounding():
 # String representation and debugging
 def test_present_value_functions_with_string_representations():
     """Test that all functions work with Money objects that have proper string representations."""
-    cf = CashFlow([CashFlowItem(Money("1234.56"), datetime(2024, 12, 31), "Test", "test")])
+    cf = CashFlow([CashFlowItem(Money("1234.56"), datetime(2024, 12, 31, tzinfo=timezone.utc), "Test", "test")])
 
-    pv = present_value(cf, InterestRate("7.5% annual"), datetime(2024, 1, 1))
+    pv = present_value(cf, InterestRate("7.5% annual"), datetime(2024, 1, 1, tzinfo=timezone.utc))
     annuity_pv = present_value_of_annuity(Money("500.25"), InterestRate("4.25% annual"), 24)
     perpetuity_pv = present_value_of_perpetuity(Money("100.50"), InterestRate("3.5% annual"))
 

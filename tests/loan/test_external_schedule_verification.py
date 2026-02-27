@@ -28,7 +28,7 @@ addition and rounds once per installment; it stays within 1 cent of every
 external value.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -154,21 +154,21 @@ def test_price_schedule_total_principal_equals_loan_amount(external_loan_schedul
     assert external_loan_schedule.total_principal == Decimal("10000.00")
 
 
-DISBURSEMENT_DATE = datetime(2026, 2, 22)
+DISBURSEMENT_DATE = datetime(2026, 2, 22, tzinfo=timezone.utc)
 
 DUE_DATES = [
-    datetime(2026, 3, 22),
-    datetime(2026, 4, 22),
-    datetime(2026, 5, 22),
-    datetime(2026, 6, 22),
-    datetime(2026, 7, 22),
-    datetime(2026, 8, 22),
-    datetime(2026, 9, 22),
-    datetime(2026, 10, 22),
-    datetime(2026, 11, 22),
-    datetime(2026, 12, 22),
-    datetime(2027, 1, 22),
-    datetime(2027, 2, 22),
+    datetime(2026, 3, 22, tzinfo=timezone.utc),
+    datetime(2026, 4, 22, tzinfo=timezone.utc),
+    datetime(2026, 5, 22, tzinfo=timezone.utc),
+    datetime(2026, 6, 22, tzinfo=timezone.utc),
+    datetime(2026, 7, 22, tzinfo=timezone.utc),
+    datetime(2026, 8, 22, tzinfo=timezone.utc),
+    datetime(2026, 9, 22, tzinfo=timezone.utc),
+    datetime(2026, 10, 22, tzinfo=timezone.utc),
+    datetime(2026, 11, 22, tzinfo=timezone.utc),
+    datetime(2026, 12, 22, tzinfo=timezone.utc),
+    datetime(2027, 1, 22, tzinfo=timezone.utc),
+    datetime(2027, 2, 22, tzinfo=timezone.utc),
 ]
 
 IOF_DAILY_RATE = Decimal("0.000082")

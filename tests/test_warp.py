@@ -1,6 +1,6 @@
 """Tests for Warp time machine context manager."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -14,11 +14,11 @@ def sample_loan():
     principal = Money("10000.00")
     interest_rate = InterestRate("5% annual")
     due_dates = [
-        datetime(2024, 1, 15),
-        datetime(2024, 2, 15),
-        datetime(2024, 3, 15),
+        datetime(2024, 1, 15, tzinfo=timezone.utc),
+        datetime(2024, 2, 15, tzinfo=timezone.utc),
+        datetime(2024, 3, 15, tzinfo=timezone.utc),
     ]
-    return Loan(principal, interest_rate, due_dates, disbursement_date=datetime(2024, 1, 1))
+    return Loan(principal, interest_rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
 
 
 # Date parsing tests
@@ -26,7 +26,7 @@ def sample_loan():
     "date_input,expected_year",
     [
         ("2030-01-15", 2030),
-        (datetime(2030, 1, 15), 2030),
+        (datetime(2030, 1, 15, tzinfo=timezone.utc), 2030),
         (date(2030, 1, 15), 2030),
     ],
 )
@@ -89,7 +89,7 @@ def test_warp_sequential_contexts_work(sample_loan):
 
 # Time-aware functionality tests
 def test_warp_overrides_current_datetime(sample_loan):
-    target_date = datetime(2030, 6, 15, 14, 30, 0)
+    target_date = datetime(2030, 6, 15, 14, 30, 0, tzinfo=timezone.utc)
 
     with Warp(sample_loan, target_date) as warped_loan:
         # The warped loan should return the target date as current time
@@ -98,12 +98,12 @@ def test_warp_overrides_current_datetime(sample_loan):
 
 def test_warp_filters_future_payments(sample_loan):
     # Add some payments to the loan
-    sample_loan.record_payment(Money("500"), datetime(2024, 1, 10), description="Early payment")
-    sample_loan.record_payment(Money("600"), datetime(2024, 2, 10), description="Regular payment")
-    sample_loan.record_payment(Money("700"), datetime(2024, 3, 10), description="Final payment")
+    sample_loan.record_payment(Money("500"), datetime(2024, 1, 10, tzinfo=timezone.utc), description="Early payment")
+    sample_loan.record_payment(Money("600"), datetime(2024, 2, 10, tzinfo=timezone.utc), description="Regular payment")
+    sample_loan.record_payment(Money("700"), datetime(2024, 3, 10, tzinfo=timezone.utc), description="Final payment")
 
     # Warp to a date between the first and second payment
-    target_date = datetime(2024, 1, 20)
+    target_date = datetime(2024, 1, 20, tzinfo=timezone.utc)
 
     with Warp(sample_loan, target_date) as warped_loan:
         # Should only have the first payment
@@ -116,12 +116,12 @@ def test_warp_filters_future_payments(sample_loan):
 
 def test_warp_recalculates_balance_from_filtered_payments(sample_loan):
     # Capture balance at a specific date for consistent comparison
-    target_date = datetime(2024, 1, 5)
+    target_date = datetime(2024, 1, 5, tzinfo=timezone.utc)
     with Warp(sample_loan, target_date) as warped_loan:
         original_balance = warped_loan.current_balance
 
     # Add a payment after the target date
-    sample_loan.record_payment(Money("1000"), datetime(2024, 1, 10), description="Payment")
+    sample_loan.record_payment(Money("1000"), datetime(2024, 1, 10, tzinfo=timezone.utc), description="Payment")
     balance_after_payment = sample_loan.current_balance
 
     # Warp back to before the payment was made
@@ -135,11 +135,11 @@ def test_warp_recalculates_balance_from_filtered_payments(sample_loan):
 
 def test_warp_days_since_last_payment_uses_warped_time(sample_loan):
     # Add a payment
-    payment_date = datetime(2024, 1, 15)
+    payment_date = datetime(2024, 1, 15, tzinfo=timezone.utc)
     sample_loan.record_payment(Money("500"), payment_date, description="Test payment")
 
     # Warp to 10 days after the payment
-    target_date = datetime(2024, 1, 25)
+    target_date = datetime(2024, 1, 25, tzinfo=timezone.utc)
 
     with Warp(sample_loan, target_date) as warped_loan:
         # Should calculate days from warped time, not real current time
@@ -152,23 +152,27 @@ def test_warp_to_past_ignores_future_payments():
     loan = Loan(
         Money("10000"),
         InterestRate("5% annual"),
-        [datetime(2024, 1, 15), datetime(2024, 2, 15), datetime(2024, 3, 15)],
-        disbursement_date=datetime(2024, 1, 1),
+        [
+            datetime(2024, 1, 15, tzinfo=timezone.utc),
+            datetime(2024, 2, 15, tzinfo=timezone.utc),
+            datetime(2024, 3, 15, tzinfo=timezone.utc),
+        ],
+        disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
     # Add payments
-    loan.record_payment(Money("500"), datetime(2024, 1, 10), description="Payment 1")
-    loan.record_payment(Money("600"), datetime(2024, 2, 10), description="Payment 2")
-    loan.record_payment(Money("700"), datetime(2024, 3, 10), description="Payment 3")
+    loan.record_payment(Money("500"), datetime(2024, 1, 10, tzinfo=timezone.utc), description="Payment 1")
+    loan.record_payment(Money("600"), datetime(2024, 2, 10, tzinfo=timezone.utc), description="Payment 2")
+    loan.record_payment(Money("700"), datetime(2024, 3, 10, tzinfo=timezone.utc), description="Payment 3")
 
     # Warp to middle date
-    with Warp(loan, datetime(2024, 2, 5)) as warped_loan:
+    with Warp(loan, datetime(2024, 2, 5, tzinfo=timezone.utc)) as warped_loan:
         # Should only have first payment (2 items: interest + principal)
         assert len(warped_loan._actual_payments) == 2
 
         # Check that it's the first payment
         payment_dates = [p.datetime for p in warped_loan._actual_payments]
-        assert all(d == datetime(2024, 1, 10) for d in payment_dates)
+        assert all(d == datetime(2024, 1, 10, tzinfo=timezone.utc) for d in payment_dates)
 
 
 def test_warp_to_future_keeps_all_past_payments():
@@ -178,23 +182,26 @@ def test_warp_to_future_keeps_all_past_payments():
     loan = Loan(
         Money("10000"),
         InterestRate("5% annual"),
-        [datetime(2024, 1, 15), datetime(2024, 2, 15)],
-        disbursement_date=datetime(2024, 1, 1),
+        [datetime(2024, 1, 15, tzinfo=timezone.utc), datetime(2024, 2, 15, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
         fine_rate=Decimal("0"),
     )
 
-    loan.record_payment(Money("500"), datetime(2024, 1, 10), description="Payment 1")
-    loan.record_payment(Money("600"), datetime(2024, 2, 10), description="Payment 2")
+    loan.record_payment(Money("500"), datetime(2024, 1, 10, tzinfo=timezone.utc), description="Payment 1")
+    loan.record_payment(Money("600"), datetime(2024, 2, 10, tzinfo=timezone.utc), description="Payment 2")
 
     # Warp to future date — both past payments must be visible (5 items: 2 + 3)
-    with Warp(loan, datetime(2025, 1, 1)) as warped_loan:
+    with Warp(loan, datetime(2025, 1, 1, tzinfo=timezone.utc)) as warped_loan:
         assert len(warped_loan._actual_payments) == 5
 
 
 # String representations
 def test_warp_string_representation():
     loan = Loan(
-        Money("1000"), InterestRate("5% annual"), [datetime(2024, 1, 1)], disbursement_date=datetime(2023, 12, 1)
+        Money("1000"),
+        InterestRate("5% annual"),
+        [datetime(2024, 1, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2023, 12, 1, tzinfo=timezone.utc),
     )
     warp = Warp(loan, "2030-01-15")
 
@@ -205,7 +212,10 @@ def test_warp_string_representation():
 
 def test_warp_repr_representation():
     loan = Loan(
-        Money("1000"), InterestRate("5% annual"), [datetime(2024, 1, 1)], disbursement_date=datetime(2023, 12, 1)
+        Money("1000"),
+        InterestRate("5% annual"),
+        [datetime(2024, 1, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2023, 12, 1, tzinfo=timezone.utc),
     )
     warp = Warp(loan, "2030-01-15")
 

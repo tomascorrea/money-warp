@@ -1,6 +1,6 @@
 """Tests for Loan payment recording, full/partial payment scenarios."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -10,10 +10,10 @@ from money_warp import InterestRate, Loan, Money, Warp
 def test_loan_record_payment_updates_balance():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1)]
+    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
 
-    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
-    loan.record_payment(Money("5000.00"), datetime(2024, 1, 15))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    loan.record_payment(Money("5000.00"), datetime(2024, 1, 15, tzinfo=timezone.utc))
 
     # Balance should be reduced by principal portion
     assert loan.current_balance < principal
@@ -22,11 +22,11 @@ def test_loan_record_payment_updates_balance():
 def test_loan_record_payment_creates_interest_and_principal_items():
     principal = Money("10000.00")
     rate = InterestRate("6% a")
-    due_dates = [datetime(2024, 2, 1)]
-    disbursement_date = datetime(2024, 1, 1)
+    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    disbursement_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
     loan = Loan(principal, rate, due_dates, disbursement_date)
-    loan.record_payment(Money("5000.00"), datetime(2024, 1, 15))
+    loan.record_payment(Money("5000.00"), datetime(2024, 1, 15, tzinfo=timezone.utc))
 
     # Should have created interest and principal payment items
     assert len(loan._actual_payments) == 2
@@ -40,11 +40,11 @@ def test_loan_record_payment_creates_interest_and_principal_items():
 def test_loan_record_payment_updates_last_payment_date():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1)]
-    disbursement_date = datetime(2024, 1, 1)
+    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    disbursement_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
     loan = Loan(principal, rate, due_dates, disbursement_date)
-    payment_date = datetime(2024, 1, 15)
+    payment_date = datetime(2024, 1, 15, tzinfo=timezone.utc)
 
     assert loan.last_payment_date == disbursement_date
 
@@ -55,11 +55,11 @@ def test_loan_record_payment_updates_last_payment_date():
 def test_loan_record_payment_multiple_payments():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1)]
+    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
 
-    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
-    loan.record_payment(Money("3000.00"), datetime(2024, 1, 15))
-    loan.record_payment(Money("2000.00"), datetime(2024, 1, 20))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    loan.record_payment(Money("3000.00"), datetime(2024, 1, 15, tzinfo=timezone.utc))
+    loan.record_payment(Money("2000.00"), datetime(2024, 1, 20, tzinfo=timezone.utc))
 
     assert loan.current_balance < principal
 
@@ -67,10 +67,10 @@ def test_loan_record_payment_multiple_payments():
 def test_loan_record_payment_overpayment_zeros_balance():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1)]
+    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
 
-    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
-    loan.record_payment(Money("15000.00"), datetime(2024, 1, 15))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    loan.record_payment(Money("15000.00"), datetime(2024, 1, 15, tzinfo=timezone.utc))
 
     assert loan.current_balance == Money.zero()
     assert loan.is_paid_off
@@ -79,23 +79,23 @@ def test_loan_record_payment_overpayment_zeros_balance():
 def test_loan_record_payment_negative_amount_raises_error():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1)]
+    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
 
-    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
 
     with pytest.raises(ValueError, match="Payment amount must be positive"):
-        loan.record_payment(Money("-1000.00"), datetime(2024, 1, 15))
+        loan.record_payment(Money("-1000.00"), datetime(2024, 1, 15, tzinfo=timezone.utc))
 
 
 def test_loan_record_payment_zero_amount_raises_error():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1)]
+    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
 
-    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
 
     with pytest.raises(ValueError, match="Payment amount must be positive"):
-        loan.record_payment(Money.zero(), datetime(2024, 1, 15))
+        loan.record_payment(Money.zero(), datetime(2024, 1, 15, tzinfo=timezone.utc))
 
 
 def test_loan_current_balance_zero_after_all_installments_paid(loan_with_all_installments_paid):
@@ -143,21 +143,21 @@ def test_loan_balance_zero_when_payments_recorded_beyond_real_time():
     principal = Money("1000.00")
     rate = InterestRate("5% a")
     due_dates = [
-        datetime(2025, 11, 1),
-        datetime(2025, 12, 1),
-        datetime(2026, 1, 1),
-        datetime(2026, 2, 1),
-        datetime(2026, 3, 1),
-        datetime(2026, 4, 1),
-        datetime(2026, 5, 1),
-        datetime(2026, 6, 1),
-        datetime(2026, 7, 1),
-        datetime(2026, 8, 1),
-        datetime(2026, 9, 1),
-        datetime(2026, 10, 1),
+        datetime(2025, 11, 1, tzinfo=timezone.utc),
+        datetime(2025, 12, 1, tzinfo=timezone.utc),
+        datetime(2026, 1, 1, tzinfo=timezone.utc),
+        datetime(2026, 2, 1, tzinfo=timezone.utc),
+        datetime(2026, 3, 1, tzinfo=timezone.utc),
+        datetime(2026, 4, 1, tzinfo=timezone.utc),
+        datetime(2026, 5, 1, tzinfo=timezone.utc),
+        datetime(2026, 6, 1, tzinfo=timezone.utc),
+        datetime(2026, 7, 1, tzinfo=timezone.utc),
+        datetime(2026, 8, 1, tzinfo=timezone.utc),
+        datetime(2026, 9, 1, tzinfo=timezone.utc),
+        datetime(2026, 10, 1, tzinfo=timezone.utc),
     ]
 
-    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2025, 10, 2))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2025, 10, 2, tzinfo=timezone.utc))
 
     schedule = loan.get_amortization_schedule()
     for entry in schedule:

@@ -313,6 +313,43 @@ MoneyWarp provides a comprehensive set of classes for financial calculations and
       show_source: false
       heading_level: 4
 
+## Timezone Functions
+
+### get_tz
+::: money_warp.get_tz
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### set_tz
+::: money_warp.set_tz
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### now
+::: money_warp.now
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### ensure_aware
+::: money_warp.ensure_aware
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
+### tz_aware
+::: money_warp.tz_aware
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
 ## Grossup Functions
 
 ### grossup

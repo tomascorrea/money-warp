@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Optional, Union
 
 from ..money import Money
+from ..tz import tz_aware
 
 
 class CashFlowItem:
@@ -15,6 +16,7 @@ class CashFlowItem:
     when it occurred, what it was for, and how to categorize it.
     """
 
+    @tz_aware
     def __init__(
         self,
         amount: Union[Money, Decimal, str, int, float],

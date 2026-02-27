@@ -1,6 +1,6 @@
 """Tests for Loan integration with taxes."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -15,12 +15,16 @@ def standard_iof():
 
 @pytest.fixture
 def disbursement_date():
-    return datetime(2024, 1, 1)
+    return datetime(2024, 1, 1, tzinfo=timezone.utc)
 
 
 @pytest.fixture
 def due_dates():
-    return [datetime(2024, 2, 1), datetime(2024, 3, 1), datetime(2024, 4, 1)]
+    return [
+        datetime(2024, 2, 1, tzinfo=timezone.utc),
+        datetime(2024, 3, 1, tzinfo=timezone.utc),
+        datetime(2024, 4, 1, tzinfo=timezone.utc),
+    ]
 
 
 @pytest.fixture
@@ -185,8 +189,8 @@ def test_grossup_loan_is_grossed_up_flag():
     loan = grossup_loan(
         requested_amount=Money("1000"),
         interest_rate=InterestRate(0.0399, CompoundingFrequency.MONTHLY),
-        due_dates=[datetime(2024, 9, 20), datetime(2024, 10, 20)],
-        disbursement_date=datetime(2024, 8, 28),
+        due_dates=[datetime(2024, 9, 20, tzinfo=timezone.utc), datetime(2024, 10, 20, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2024, 8, 28, tzinfo=timezone.utc),
         scheduler=PriceScheduler,
         taxes=[IOF(daily_rate="0.0082%", additional_rate="0.38%")],
     )
@@ -197,8 +201,8 @@ def test_grossup_loan_cash_flow_has_no_tax_item():
     loan = grossup_loan(
         requested_amount=Money("1000"),
         interest_rate=InterestRate(0.0399, CompoundingFrequency.MONTHLY),
-        due_dates=[datetime(2024, 9, 20), datetime(2024, 10, 20)],
-        disbursement_date=datetime(2024, 8, 28),
+        due_dates=[datetime(2024, 9, 20, tzinfo=timezone.utc), datetime(2024, 10, 20, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2024, 8, 28, tzinfo=timezone.utc),
         scheduler=PriceScheduler,
         taxes=[IOF(daily_rate="0.0082%", additional_rate="0.38%")],
     )
@@ -211,8 +215,8 @@ def test_grossup_loan_cash_flow_disbursement_equals_net_disbursement():
     loan = grossup_loan(
         requested_amount=Money("1000"),
         interest_rate=InterestRate(0.0399, CompoundingFrequency.MONTHLY),
-        due_dates=[datetime(2024, 9, 20), datetime(2024, 10, 20)],
-        disbursement_date=datetime(2024, 8, 28),
+        due_dates=[datetime(2024, 9, 20, tzinfo=timezone.utc), datetime(2024, 10, 20, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2024, 8, 28, tzinfo=timezone.utc),
         scheduler=PriceScheduler,
         taxes=[IOF(daily_rate="0.0082%", additional_rate="0.38%")],
     )
@@ -225,8 +229,8 @@ def test_grossup_loan_irr_not_inflated_by_double_counted_tax():
     loan = grossup_loan(
         requested_amount=Money("1000"),
         interest_rate=InterestRate(0.0399, CompoundingFrequency.MONTHLY),
-        due_dates=[datetime(2024, 9, 20), datetime(2024, 10, 20)],
-        disbursement_date=datetime(2024, 8, 28),
+        due_dates=[datetime(2024, 9, 20, tzinfo=timezone.utc), datetime(2024, 10, 20, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2024, 8, 28, tzinfo=timezone.utc),
         scheduler=PriceScheduler,
         taxes=[IOF(daily_rate="0.0082%", additional_rate="0.38%")],
     )

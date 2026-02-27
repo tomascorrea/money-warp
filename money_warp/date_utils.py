@@ -5,7 +5,10 @@ from typing import List
 
 from dateutil.relativedelta import relativedelta
 
+from .tz import tz_aware
 
+
+@tz_aware
 def generate_monthly_dates(start_date: datetime, num_payments: int) -> List[datetime]:
     """
     Generate a list of monthly payment due dates.
@@ -28,6 +31,7 @@ def generate_monthly_dates(start_date: datetime, num_payments: int) -> List[date
     return [start_date + relativedelta(months=i) for i in range(num_payments)]
 
 
+@tz_aware
 def generate_biweekly_dates(start_date: datetime, num_payments: int) -> List[datetime]:
     """
     Generate a list of bi-weekly (every 14 days) payment due dates.
@@ -57,6 +61,7 @@ def generate_biweekly_dates(start_date: datetime, num_payments: int) -> List[dat
     return dates
 
 
+@tz_aware
 def generate_weekly_dates(start_date: datetime, num_payments: int) -> List[datetime]:
     """
     Generate a list of weekly payment due dates.
@@ -86,6 +91,7 @@ def generate_weekly_dates(start_date: datetime, num_payments: int) -> List[datet
     return dates
 
 
+@tz_aware
 def generate_quarterly_dates(start_date: datetime, num_payments: int) -> List[datetime]:
     """
     Generate a list of quarterly payment due dates.
@@ -108,6 +114,7 @@ def generate_quarterly_dates(start_date: datetime, num_payments: int) -> List[da
     return [start_date + relativedelta(months=3 * i) for i in range(num_payments)]
 
 
+@tz_aware
 def generate_annual_dates(start_date: datetime, num_payments: int) -> List[datetime]:
     """
     Generate a list of annual payment due dates.
@@ -130,6 +137,7 @@ def generate_annual_dates(start_date: datetime, num_payments: int) -> List[datet
     return [start_date + relativedelta(years=i) for i in range(num_payments)]
 
 
+@tz_aware
 def generate_custom_interval_dates(start_date: datetime, num_payments: int, interval_days: int) -> List[datetime]:
     """
     Generate a list of payment due dates with custom day intervals.

@@ -1,6 +1,6 @@
 """Tests for Loan expected and actual cash flow generation."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from money_warp import InterestRate, Loan, Money
@@ -9,9 +9,9 @@ from money_warp import InterestRate, Loan, Money
 def test_loan_generate_expected_cash_flow_includes_disbursement():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1)]
+    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
 
-    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     cash_flow = loan.generate_expected_cash_flow()
 
     disbursement_items = cash_flow.query.filter_by(category="expected_disbursement").all()
@@ -22,9 +22,9 @@ def test_loan_generate_expected_cash_flow_includes_disbursement():
 def test_loan_generate_expected_cash_flow_has_payment_breakdown():
     principal = Money("10000.00")
     rate = InterestRate("6% a")
-    due_dates = [datetime(2024, 2, 1)]
+    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
 
-    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     cash_flow = loan.generate_expected_cash_flow()
 
     interest_items = cash_flow.query.filter_by(category="expected_interest").all()
@@ -37,9 +37,13 @@ def test_loan_generate_expected_cash_flow_has_payment_breakdown():
 def test_loan_generate_expected_cash_flow_multiple_payments():
     principal = Money("10000.00")
     rate = InterestRate("6% a")
-    due_dates = [datetime(2024, 2, 1), datetime(2024, 3, 1), datetime(2024, 4, 1)]
+    due_dates = [
+        datetime(2024, 2, 1, tzinfo=timezone.utc),
+        datetime(2024, 3, 1, tzinfo=timezone.utc),
+        datetime(2024, 4, 1, tzinfo=timezone.utc),
+    ]
 
-    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     cash_flow = loan.generate_expected_cash_flow()
 
     # Should have 1 disbursement + 3 interest + 3 principal = 7 items
@@ -54,9 +58,9 @@ def test_loan_generate_expected_cash_flow_multiple_payments():
 def test_loan_generate_expected_cash_flow_net_zero():
     principal = Money("10000.00")
     rate = InterestRate("0% a")  # Zero interest for simplicity
-    due_dates = [datetime(2024, 2, 1), datetime(2024, 3, 1)]
+    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc), datetime(2024, 3, 1, tzinfo=timezone.utc)]
 
-    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     cash_flow = loan.generate_expected_cash_flow()
 
     # Net should be close to zero (disbursement + payments)
@@ -67,9 +71,9 @@ def test_loan_generate_expected_cash_flow_net_zero():
 def test_loan_get_actual_cash_flow_empty_initially():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1)]
+    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
 
-    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     actual_cf = loan.get_actual_cash_flow()
 
     # Should have disbursement + expected payments, but no actual payments yet
@@ -83,10 +87,10 @@ def test_loan_get_actual_cash_flow_empty_initially():
 def test_loan_get_actual_cash_flow_includes_payments():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1)]
+    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
 
-    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1))
-    loan.record_payment(Money("5000.00"), datetime(2024, 1, 15), description="First payment")
+    loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
+    loan.record_payment(Money("5000.00"), datetime(2024, 1, 15, tzinfo=timezone.utc), description="First payment")
 
     actual_cf = loan.get_actual_cash_flow()
 
@@ -101,20 +105,20 @@ def test_loan_get_actual_cash_flow_includes_payments():
 def test_loan_get_actual_cash_flow_includes_fines():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1)]
+    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
 
     loan = Loan(
         principal,
         rate,
         due_dates,
-        disbursement_date=datetime(2024, 1, 1),
+        disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
         fine_rate=Decimal("0.02"),
         grace_period_days=3,
     )
 
     # Apply fines and make payment
-    loan.calculate_late_fines(datetime(2024, 2, 10))
-    loan.record_payment(Money("500"), datetime(2024, 2, 11))
+    loan.calculate_late_fines(datetime(2024, 2, 10, tzinfo=timezone.utc))
+    loan.record_payment(Money("500"), datetime(2024, 2, 11, tzinfo=timezone.utc))
 
     actual_cf = loan.get_actual_cash_flow()
 

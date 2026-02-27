@@ -5,6 +5,7 @@ from datetime import date, datetime
 from typing import Optional, Type, Union
 
 from .loan import Loan
+from .tz import ensure_aware
 
 
 class WarpedTime:
@@ -97,12 +98,11 @@ class Warp:
         """
         try:
             if isinstance(target_date, datetime):
-                return target_date
+                return ensure_aware(target_date)
             elif isinstance(target_date, date):
-                return datetime.combine(target_date, datetime.min.time())
+                return ensure_aware(datetime.combine(target_date, datetime.min.time()))
             elif isinstance(target_date, str):
-                # Try to parse ISO format string
-                return datetime.fromisoformat(target_date.replace("Z", "+00:00"))
+                return ensure_aware(datetime.fromisoformat(target_date.replace("Z", "+00:00")))
             else:
                 raise InvalidDateError(f"Unsupported date type: {type(target_date)}")
         except (ValueError, TypeError) as e:

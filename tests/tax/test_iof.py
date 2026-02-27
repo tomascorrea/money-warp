@@ -1,6 +1,6 @@
 """Tests for IOF (Imposto sobre Operações Financeiras) tax calculation."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -23,7 +23,7 @@ def standard_iof():
 
 @pytest.fixture
 def disbursement_date():
-    return datetime(2024, 1, 1)
+    return datetime(2024, 1, 1, tzinfo=timezone.utc)
 
 
 @pytest.fixture
@@ -31,7 +31,7 @@ def single_installment_schedule(disbursement_date):
     return PriceScheduler.generate_schedule(
         Money("10000"),
         InterestRate("2% monthly"),
-        [datetime(2024, 2, 1)],
+        [datetime(2024, 2, 1, tzinfo=timezone.utc)],
         disbursement_date,
     )
 
@@ -41,7 +41,11 @@ def three_installment_schedule(disbursement_date):
     return PriceScheduler.generate_schedule(
         Money("10000"),
         InterestRate("2% monthly"),
-        [datetime(2024, 2, 1), datetime(2024, 3, 1), datetime(2024, 4, 1)],
+        [
+            datetime(2024, 2, 1, tzinfo=timezone.utc),
+            datetime(2024, 3, 1, tzinfo=timezone.utc),
+            datetime(2024, 4, 1, tzinfo=timezone.utc),
+        ],
         disbursement_date,
     )
 
@@ -99,7 +103,7 @@ def test_iof_single_installment_manual_calculation(disbursement_date):
     schedule = PriceScheduler.generate_schedule(
         Money("10000"),
         InterestRate("2% monthly"),
-        [datetime(2024, 2, 1)],
+        [datetime(2024, 2, 1, tzinfo=timezone.utc)],
         disbursement_date,
     )
     result = iof.calculate(schedule, disbursement_date)
@@ -125,7 +129,11 @@ def test_iof_later_installments_have_higher_daily_component(disbursement_date):
     schedule = PriceScheduler.generate_schedule(
         Money("10000"),
         InterestRate("2% monthly"),
-        [datetime(2024, 2, 1), datetime(2024, 3, 1), datetime(2024, 4, 1)],
+        [
+            datetime(2024, 2, 1, tzinfo=timezone.utc),
+            datetime(2024, 3, 1, tzinfo=timezone.utc),
+            datetime(2024, 4, 1, tzinfo=timezone.utc),
+        ],
         disbursement_date,
     )
     result = iof.calculate(schedule, disbursement_date)
@@ -139,7 +147,7 @@ def test_iof_max_daily_days_caps_days(disbursement_date):
     schedule = PriceScheduler.generate_schedule(
         Money("10000"),
         InterestRate("2% monthly"),
-        [datetime(2024, 2, 1)],
+        [datetime(2024, 2, 1, tzinfo=timezone.utc)],
         disbursement_date,
     )
     result_capped = iof_capped.calculate(schedule, disbursement_date)
@@ -151,7 +159,11 @@ def test_iof_with_inverted_price_scheduler(standard_iof, disbursement_date):
     schedule = InvertedPriceScheduler.generate_schedule(
         Money("10000"),
         InterestRate("2% monthly"),
-        [datetime(2024, 2, 1), datetime(2024, 3, 1), datetime(2024, 4, 1)],
+        [
+            datetime(2024, 2, 1, tzinfo=timezone.utc),
+            datetime(2024, 3, 1, tzinfo=timezone.utc),
+            datetime(2024, 4, 1, tzinfo=timezone.utc),
+        ],
         disbursement_date,
     )
     result = standard_iof.calculate(schedule, disbursement_date)
@@ -164,7 +176,11 @@ def test_iof_with_inverted_price_has_equal_principal_payments(disbursement_date)
     schedule = InvertedPriceScheduler.generate_schedule(
         Money("9000"),
         InterestRate("2% monthly"),
-        [datetime(2024, 2, 1), datetime(2024, 3, 1), datetime(2024, 4, 1)],
+        [
+            datetime(2024, 2, 1, tzinfo=timezone.utc),
+            datetime(2024, 3, 1, tzinfo=timezone.utc),
+            datetime(2024, 4, 1, tzinfo=timezone.utc),
+        ],
         disbursement_date,
     )
     result = iof.calculate(schedule, disbursement_date)
@@ -201,7 +217,7 @@ def test_iof_zero_rates_produce_zero_tax(daily_rate, additional_rate, disburseme
     schedule = PriceScheduler.generate_schedule(
         Money("10000"),
         InterestRate("2% monthly"),
-        [datetime(2024, 2, 1)],
+        [datetime(2024, 2, 1, tzinfo=timezone.utc)],
         disbursement_date,
     )
     result = iof.calculate(schedule, disbursement_date)
@@ -240,7 +256,7 @@ def test_individual_iof_calculate_produces_positive_result(disbursement_date):
     schedule = PriceScheduler.generate_schedule(
         Money("10000"),
         InterestRate("2% monthly"),
-        [datetime(2024, 2, 1)],
+        [datetime(2024, 2, 1, tzinfo=timezone.utc)],
         disbursement_date,
     )
     result = iof.calculate(schedule, disbursement_date)
@@ -279,7 +295,7 @@ def test_corporate_iof_calculate_produces_positive_result(disbursement_date):
     schedule = PriceScheduler.generate_schedule(
         Money("10000"),
         InterestRate("2% monthly"),
-        [datetime(2024, 2, 1)],
+        [datetime(2024, 2, 1, tzinfo=timezone.utc)],
         disbursement_date,
     )
     result = iof.calculate(schedule, disbursement_date)
@@ -290,7 +306,7 @@ def test_corporate_iof_lower_daily_than_individual(disbursement_date):
     schedule = PriceScheduler.generate_schedule(
         Money("10000"),
         InterestRate("2% monthly"),
-        [datetime(2024, 2, 1)],
+        [datetime(2024, 2, 1, tzinfo=timezone.utc)],
         disbursement_date,
     )
     individual_result = IndividualIOF().calculate(schedule, disbursement_date)
