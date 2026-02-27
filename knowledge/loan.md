@@ -255,3 +255,13 @@ Sugar methods (`pay_installment`, `anticipate_payment`) use `self.now()` for the
 **Fix:** Changed to `interest_date = max(self.now(), self._next_unpaid_due_date())`. Early/on-time payments still accrue interest up to the due date (unchanged). Late payments now accrue interest up to `self.now()` (extra days charged).
 
 **Lesson:** A late payment incurs two costs: fines (flat percentage of missed payment) and mora interest (extra daily-compounded interest beyond the due date). Both must be accounted for. The `max()` pattern ensures one method handles all three timing scenarios correctly.
+
+### Same-time payments misattributed (fixed 2026-02-27)
+
+**Symptom:** When two payments were recorded at the exact same datetime, the second settlement had all-zero amounts (`principal_paid = 0`, `interest_paid = 0`, etc.).
+
+**Root cause:** `_extract_payment_items` grouped `CashFlowItem`s from `_all_payments` by matching `item.datetime == entry.due_date`. When two entries shared the same `due_date`, the break condition (`item.datetime != entry.due_date and idx > group_start`) was never true, so the first entry consumed all items, leaving nothing for the second.
+
+**Fix:** Replaced datetime-based grouping with positional offset tracking. `record_payment` now records `len(self._all_payments)` into `_payment_item_offsets` before calling `_allocate_payment`. `_extract_payment_items` slices `_all_payments` by `[offsets[i]:offsets[i+1]]` instead of walking by datetime. This is simpler, faster (O(items-in-this-payment) vs O(all-items-up-to-this-payment)), and correct regardless of datetime values.
+
+**Lesson:** Don't use a value that can be non-unique (datetime) as a grouping boundary when a positional invariant (sequential append order) already provides an unambiguous one.

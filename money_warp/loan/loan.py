@@ -148,6 +148,7 @@ class Loan:
 
         # State tracking
         self._all_payments: List[CashFlowItem] = []  # All payments ever made
+        self._payment_item_offsets: List[int] = []  # Start index in _all_payments for each payment
         self._actual_schedule_entries: List[PaymentScheduleEntry] = []  # Actual payment history as schedule entries
         self.fines_applied: Dict[datetime, Money] = {}  # Track fines applied per due date
         self._tax_cache: Optional[Dict[str, TaxResult]] = None
@@ -749,6 +750,8 @@ class Loan:
         except ValueError:
             next_due = None
 
+        self._payment_item_offsets.append(len(self._all_payments))
+
         fine_paid, interest_paid, mora_paid, principal_paid = self._allocate_payment(
             amount,
             payment_date,
@@ -831,27 +834,24 @@ class Loan:
     def _extract_payment_items(self, entry_index: int) -> Dict[str, Money]:
         """Extract fine/interest/mora/principal from _all_payments for a given payment event.
 
-        Items in _all_payments are appended sequentially by each record_payment
-        call. We walk through them in order, consuming groups that match each
-        _actual_schedule_entries entry by position.
+        Each record_payment call records its starting offset in
+        _payment_item_offsets, so we slice _all_payments directly by position
+        rather than relying on datetime boundaries.
         """
         categories = ("actual_fine", "actual_interest", "actual_mora_interest", "actual_principal")
         result: Dict[str, Money] = {c: Money.zero() for c in categories}
 
-        idx = 0
-        for ei in range(entry_index + 1):
-            entry = self._actual_schedule_entries[ei]
-            group_start = idx
-            while idx < len(self._all_payments):
-                item = self._all_payments[idx]
-                if item.category not in categories:
-                    idx += 1
-                    continue
-                if item.datetime != entry.due_date and idx > group_start:
-                    break
-                if ei == entry_index:
-                    result[item.category] = result[item.category] + item.amount
-                idx += 1
+        start = self._payment_item_offsets[entry_index]
+        end = (
+            self._payment_item_offsets[entry_index + 1]
+            if entry_index + 1 < len(self._payment_item_offsets)
+            else len(self._all_payments)
+        )
+
+        for idx in range(start, end):
+            item = self._all_payments[idx]
+            if item.category in categories:
+                result[item.category] = result[item.category] + item.amount
 
         return result
 
