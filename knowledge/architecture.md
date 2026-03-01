@@ -9,9 +9,11 @@ money_warp/
 ├── __init__.py            # Public API exports
 ├── money.py               # Money (high-precision currency)
 ├── interest_rate.py       # InterestRate + CompoundingFrequency
+├── time_context.py        # TimeContext (shared Warp-compatible time source)
 ├── cash_flow/
-│   ├── item.py            # CashFlowItem (single transaction)
-│   ├── flow.py            # CashFlow (collection of items)
+│   ├── entry.py           # CashFlowEntry (frozen data object)
+│   ├── item.py            # CashFlowItem (temporal container with timeline)
+│   ├── flow.py            # CashFlow (collection, resolves items)
 │   └── query.py           # CashFlowQuery (SQLAlchemy-style filtering)
 ├── loan/
 │   └── loan.py            # Loan state machine
@@ -51,9 +53,15 @@ The `YearSize` enum controls how many days constitute one year for daily rate co
 
 Monthly, quarterly, semi-annual, and annual conversions are unaffected by year size (they always use 12, 4, 2, and 1 periods per year respectively). The `year_size` propagates through all conversion methods (`to_daily`, `to_monthly`, `to_annual`) and is shown in `__repr__` only when non-default.
 
-### CashFlow as a Query-able Container
+### Temporal CashFlow Model (CashFlowEntry / CashFlowItem / CashFlow)
 
-`CashFlow` holds a list of `CashFlowItem` objects (amount + datetime + optional description/category). The `query` property returns a `CashFlowQuery` builder that supports `filter_by()`, `order_by()`, `limit()`, `offset()`, and terminal methods like `all()`, `first()`, `sum_amounts()`, and `to_cash_flow()`. This lets calling code express complex filters without manual loops.
+Cash-flow data is separated from time-awareness:
+
+- **`CashFlowEntry`** (`cash_flow/entry.py`) — frozen dataclass holding `amount`, `datetime`, `description`, `category`. Pure data, no temporal behaviour.
+- **`CashFlowItem`** (`cash_flow/item.py`) — temporal container wrapping a timeline of `CashFlowEntry` snapshots (or `None` for deletion). Key methods: `resolve()` (active entry at the current time), `update(effective_date, new_entry)`, `delete(effective_date)`. Each item holds a reference to a shared `TimeContext` so Warp compatibility comes for free.
+- **`CashFlow`** (`cash_flow/flow.py`) — collection of `CashFlowItem` objects. Public iteration (`__iter__`, `__len__`, `__getitem__`, `items()`) resolves each item and filters out deleted entries, yielding `CashFlowEntry` objects. `raw_items()` exposes the underlying `CashFlowItem` containers for when callers need `update()`/`delete()`. The `query` property returns a `CashFlowQuery` builder that supports `filter_by()`, `order_by()`, `limit()`, `offset()`, and terminal methods.
+
+Equality between `CashFlowItem` and `CashFlowEntry` uses Python's reflected-equality protocol — `CashFlowItem.__eq__` resolves and compares against the entry, so both `entry == item` and `item == entry` work transparently.
 
 ### Loan as State Machine
 
@@ -90,30 +98,35 @@ All datetimes inside the library are timezone-aware. The `tz` module (`tz.py`) p
 
 Uses `zoneinfo.ZoneInfo` from the standard library (no extra dependency).
 
-### Time Awareness via Function Replacement
+### Time Awareness via TimeContext
 
-The loan calls `self.now()` internally, which delegates to `self.datetime_func.now()`. By default `datetime_func` is a `_DefaultTimeSource` instance (from `tz.py`) whose `now()` returns a timezone-aware UTC datetime. The `Warp` context manager deep-clones the loan and replaces `datetime_func` with a `WarpedTime` instance that returns a fixed aware date — every time-dependent method then sees the warped date without any code changes.
+`TimeContext` (`time_context.py`) is a shared, overridable time source. The `Loan` creates one at construction and passes the same instance to every `CashFlowItem` it creates. `deepcopy` preserves the shared reference within the clone, so `Warp` only needs to call `_time_ctx.override(WarpedTime(target))` on the cloned loan — every item in the clone immediately sees the warped time.
+
+The `Loan` calls `self.now()` internally, which delegates to `self._time_ctx.now()`. By default `_time_ctx` wraps a `_DefaultTimeSource` instance (from `tz.py`) whose `now()` returns a timezone-aware UTC datetime. The `Warp` context manager deep-clones the loan and overrides the shared `TimeContext` with a `WarpedTime` instance that returns a fixed aware date.
 
 ## Component Relationships
 
 ```
-Money ──────────► CashFlowItem ──────────► CashFlow
-                                              │
-InterestRate ─────────────────────────────► Loan
-                                           │   │
-                                Scheduler ◄─┘   └──► Warp
-                                   │              (clones + time-warps)
-                                   ▼
-                              BaseTax (IOF)
-                                   │
-                              grossup()
+Money ─► CashFlowEntry ─► CashFlowItem ─► CashFlow
+                            ▲                  │
+                  TimeContext                   │
+                    ▲                           │
+InterestRate ──────────────────────────────► Loan
+                                            │   │
+                                 Scheduler ◄─┘   └──► Warp
+                                    │          (clones + overrides TimeContext)
+                                    ▼
+                               BaseTax (IOF)
+                                    │
+                               grossup()
 ```
 
-- `CashFlowItem.amount` is a `Money`
-- `CashFlow` aggregation methods return `Money`
-- `Loan` uses `InterestRate` for compounding, `Money` for amounts, and generates `CashFlow` objects
+- `CashFlowEntry` is a frozen data record (`amount: Money`, `datetime`, etc.)
+- `CashFlowItem` wraps a timeline of `CashFlowEntry` snapshots; `resolve()` returns the active entry
+- `CashFlow` holds `CashFlowItem` containers; public iteration yields active `CashFlowEntry` objects
+- `Loan` creates a shared `TimeContext` passed to all its `CashFlowItem` instances
 - `Loan` delegates schedule generation to a `BaseScheduler` subclass
 - `Loan` optionally stores `BaseTax` instances for tax reporting in cash flows
 - `BaseTax` implementations (e.g. `IOF`) compute taxes from a `PaymentSchedule`
 - `grossup()` uses a scheduler and taxes to compute a grossed-up principal
-- `Warp` deep-clones a `Loan` and replaces its time source
+- `Warp` deep-clones a `Loan` and overrides the shared `TimeContext`
