@@ -152,11 +152,11 @@ EOF
 - Share the PR URL with the user
 - The feature workflow is complete unless the user requests a release
 
-## Phase 6: Release (optional, on user request)
+## Phase 6: Release
 
 **Goal**: Publish a new version to PyPI by creating a GitHub Release.
 
-This phase is **only triggered when the user explicitly asks** to create a release. It can happen immediately after a PR merge or at any later point.
+After a PR is merged, ask the user if they'd like to create a new release. It can also happen at any later point if the user requests it.
 
 ### Prerequisites
 
