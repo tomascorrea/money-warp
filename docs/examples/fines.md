@@ -232,19 +232,19 @@ loan = Loan(
 # Before any payments: all unpaid
 for inst in loan.installments:
     print(f"#{inst.number} due {inst.due_date.date()}: "
-          f"{inst.expected_payment} — paid: {inst.is_paid}")
+          f"{inst.expected_payment} — paid: {inst.is_fully_paid}")
 
 # After a payment: first installment is paid
 schedule = loan.get_original_schedule()
 loan.record_payment(schedule[0].payment_amount, schedule[0].due_date)
 
 inst = loan.installments[0]
-print(f"#{inst.number} is_paid={inst.is_paid}")
+print(f"#{inst.number} is_fully_paid={inst.is_fully_paid}")
 print(f"  principal_paid={inst.principal_paid}, interest_paid={inst.interest_paid}")
 print(f"  allocations: {len(inst.allocations)}")
 ```
 
-Installments are Warp-aware — inside a `Warp` context, `is_paid` reflects only payments made by the warped date.
+Installments are Warp-aware — inside a `Warp` context, `is_fully_paid` reflects only payments made by the warped date.
 
 ### Settlements
 

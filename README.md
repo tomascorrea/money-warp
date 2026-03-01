@@ -97,7 +97,7 @@ loan = Loan(
 for inst in loan.installments:
     print(f"#{inst.number} due {inst.due_date.date()}: "
           f"{inst.expected_payment} (principal: {inst.expected_principal}, "
-          f"interest: {inst.expected_interest}) — paid: {inst.is_paid}")
+          f"interest: {inst.expected_interest}) — paid: {inst.is_fully_paid}")
 
 # Payments return a Settlement showing how money was allocated
 schedule = loan.get_original_schedule()
@@ -113,7 +113,7 @@ for alloc in settlement.allocations:
 
 # After payment, installments reflect what happened
 inst = loan.installments[0]
-print(f"Installment #1 paid: {inst.is_paid}, principal_paid: {inst.principal_paid}")
+print(f"Installment #1 paid: {inst.is_fully_paid}, principal_paid: {inst.principal_paid}")
 ```
 
 ### Cash Flow Analysis

@@ -27,26 +27,42 @@ class Installment:
     expected_payment: Money
     expected_principal: Money
     expected_interest: Money
-    is_paid: bool
+    expected_mora: Money
+    expected_fine: Money
     principal_paid: Money
     interest_paid: Money
     mora_paid: Money
     fine_paid: Money
     allocations: List[SettlementAllocation]
 
+    @property
+    def balance(self) -> Money:
+        """The amount still owed to fully settle this installment."""
+        total_expected = self.expected_principal + self.expected_interest + self.expected_mora + self.expected_fine
+        total_paid = self.principal_paid + self.interest_paid + self.mora_paid + self.fine_paid
+        remaining = total_expected - total_paid
+        return remaining if remaining.is_positive() else Money.zero()
+
+    @property
+    def is_fully_paid(self) -> bool:
+        """Whether this installment has been fully settled."""
+        return self.balance.is_zero()
+
     @classmethod
     def from_schedule_entry(
         cls,
         entry: PaymentScheduleEntry,
-        is_paid: bool,
         allocations: List[SettlementAllocation],
+        expected_mora: Money,
+        expected_fine: Money,
     ) -> "Installment":
         """Build an Installment from a scheduler's PaymentScheduleEntry.
 
         Args:
             entry: The schedule entry from the scheduler.
-            is_paid: Whether this installment has been fully paid.
             allocations: SettlementAllocations attributed to this installment.
+            expected_mora: Mora interest owed for this installment.
+            expected_fine: Fine amount owed for this installment.
         """
         principal_paid = Money(sum(a.principal_allocated.raw_amount for a in allocations))
         interest_paid = Money(sum(a.interest_allocated.raw_amount for a in allocations))
@@ -60,7 +76,8 @@ class Installment:
             expected_payment=entry.payment_amount,
             expected_principal=entry.principal_payment,
             expected_interest=entry.interest_payment,
-            is_paid=is_paid,
+            expected_mora=expected_mora,
+            expected_fine=expected_fine,
             principal_paid=principal_paid,
             interest_paid=interest_paid,
             mora_paid=mora_paid,

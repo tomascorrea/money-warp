@@ -987,9 +987,13 @@ class Loan:
         gathered from settlements. Reflects the current time context
         (Warp-aware): installments show as paid only if the corresponding
         settlements have occurred by self.now().
+
+        Each installment carries expected_mora and expected_fine so its
+        balance (and derived is_fully_paid) are self-contained.
         """
         original = self.get_original_schedule()
         covered = self._covered_count_for_balance(self.principal_balance)
+        now = self.now()
 
         allocations_by_number: Dict[int, List[SettlementAllocation]] = {}
         for settlement in self.settlements:
@@ -1002,9 +1006,24 @@ class Loan:
         result: List[Installment] = []
         for i, entry in enumerate(original):
             installment_num = i + 1
-            is_paid = i < covered
             allocs = allocations_by_number.get(installment_num, [])
-            result.append(Installment.from_schedule_entry(entry, is_paid, allocs))
+
+            expected_fine = self.fines_applied.get(entry.due_date, Money.zero())
+
+            if i < covered:
+                expected_mora = Money(sum(a.mora_allocated.raw_amount for a in allocs))
+            elif i == covered and entry.due_date < now:
+                days_overdue = (now - entry.due_date).days
+                _, expected_mora = self._compute_accrued_interest(
+                    days_overdue,
+                    self.principal_balance,
+                    entry.due_date,
+                    entry.due_date,
+                )
+            else:
+                expected_mora = Money.zero()
+
+            result.append(Installment.from_schedule_entry(entry, allocs, expected_mora, expected_fine))
 
         return result
 

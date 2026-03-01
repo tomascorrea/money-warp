@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 
-from money_warp import Installment, InterestRate, Loan, Money
+from money_warp import Installment, InterestRate, Loan, Money, Warp
 
 
 @pytest.fixture
@@ -46,7 +46,7 @@ def test_installment_expected_principal_plus_interest_equals_payment(simple_loan
 
 
 def test_installments_all_unpaid_before_any_payment(simple_loan):
-    assert all(not inst.is_paid for inst in simple_loan.installments)
+    assert all(not inst.is_fully_paid for inst in simple_loan.installments)
 
 
 def test_installments_paid_amounts_zero_before_any_payment(simple_loan):
@@ -62,12 +62,12 @@ def test_installments_allocations_empty_before_any_payment(simple_loan):
         assert inst.allocations == []
 
 
-def test_first_installment_is_paid_after_covering_payment(simple_loan):
+def test_first_installment_is_fully_paid_after_covering_payment(simple_loan):
     schedule = simple_loan.get_original_schedule()
     simple_loan.record_payment(schedule[0].payment_amount, schedule[0].due_date)
 
-    assert simple_loan.installments[0].is_paid is True
-    assert simple_loan.installments[1].is_paid is False
+    assert simple_loan.installments[0].is_fully_paid is True
+    assert simple_loan.installments[1].is_fully_paid is False
 
 
 def test_first_installment_has_allocations_after_payment(simple_loan):
@@ -93,13 +93,13 @@ def test_all_installments_paid_after_full_repayment(simple_loan):
     for entry in schedule:
         simple_loan.record_payment(entry.payment_amount, entry.due_date)
 
-    assert all(inst.is_paid for inst in simple_loan.installments)
+    assert all(inst.is_fully_paid for inst in simple_loan.installments)
 
 
 def test_partial_payment_does_not_mark_installment_paid(simple_loan):
     simple_loan.record_payment(Money("100.00"), datetime(2025, 2, 1, tzinfo=timezone.utc))
 
-    assert simple_loan.installments[0].is_paid is False
+    assert simple_loan.installments[0].is_fully_paid is False
 
 
 def test_partial_payment_shows_principal_paid(simple_loan):
@@ -128,7 +128,12 @@ def test_from_schedule_entry_creates_correct_installment():
         interest_payment=Money("200"),
         ending_balance=Money("6800"),
     )
-    inst = Installment.from_schedule_entry(entry, is_paid=False, allocations=[])
+    inst = Installment.from_schedule_entry(
+        entry,
+        allocations=[],
+        expected_mora=Money.zero(),
+        expected_fine=Money.zero(),
+    )
 
     assert inst.number == 1
     assert inst.due_date == datetime(2025, 2, 1, tzinfo=timezone.utc)
@@ -136,5 +141,145 @@ def test_from_schedule_entry_creates_correct_installment():
     assert inst.expected_payment == Money("3400")
     assert inst.expected_principal == Money("3200")
     assert inst.expected_interest == Money("200")
-    assert inst.is_paid is False
+    assert inst.is_fully_paid is False
     assert inst.allocations == []
+
+
+# --- balance tests ---
+
+
+def test_balance_equals_expected_payment_before_any_payment(simple_loan):
+    with Warp(simple_loan, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
+        inst = warped.installments[0]
+
+    assert inst.balance == inst.expected_payment
+
+
+def test_balance_is_zero_after_full_payment(simple_loan):
+    schedule = simple_loan.get_original_schedule()
+    simple_loan.record_payment(schedule[0].payment_amount, schedule[0].due_date)
+
+    with Warp(simple_loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        assert warped.installments[0].balance.is_zero()
+
+
+def test_balance_decreases_after_partial_payment(simple_loan):
+    with Warp(simple_loan, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
+        balance_before = warped.installments[0].balance
+
+    simple_loan.record_payment(Money("100.00"), datetime(2025, 2, 1, tzinfo=timezone.utc))
+
+    with Warp(simple_loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as warped:
+        balance_after = warped.installments[0].balance
+
+    assert balance_after < balance_before
+
+
+def test_is_fully_paid_true_when_balance_is_zero(simple_loan):
+    schedule = simple_loan.get_original_schedule()
+    simple_loan.record_payment(schedule[0].payment_amount, schedule[0].due_date)
+
+    with Warp(simple_loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        assert warped.installments[0].balance.is_zero()
+        assert warped.installments[0].is_fully_paid is True
+
+
+def test_is_fully_paid_false_when_balance_positive(simple_loan):
+    with Warp(simple_loan, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
+        assert warped.installments[0].balance.is_positive()
+        assert warped.installments[0].is_fully_paid is False
+
+
+# --- expected_mora tests ---
+
+
+def test_expected_mora_zero_before_due_date(simple_loan):
+    with Warp(simple_loan, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
+        assert all(inst.expected_mora.is_zero() for inst in warped.installments)
+
+
+def test_expected_mora_positive_when_overdue():
+    loan = Loan(
+        Money("10000.00"),
+        InterestRate("6% a"),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+    with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        assert warped.installments[0].expected_mora.is_positive()
+
+
+def test_expected_mora_equals_mora_paid_after_late_settlement():
+    loan = Loan(
+        Money("10000.00"),
+        InterestRate("6% a"),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+    with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        warped.pay_installment(Money("11000.00"))
+        inst = warped.installments[0]
+
+    assert inst.expected_mora == inst.mora_paid
+
+
+def test_expected_mora_only_on_first_uncovered_installment():
+    loan = Loan(
+        Money("10000.00"),
+        InterestRate("6% a"),
+        [
+            datetime(2025, 2, 1, tzinfo=timezone.utc),
+            datetime(2025, 3, 1, tzinfo=timezone.utc),
+        ],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+    with Warp(loan, datetime(2025, 3, 15, tzinfo=timezone.utc)) as warped:
+        assert warped.installments[0].expected_mora.is_positive()
+        assert warped.installments[1].expected_mora.is_zero()
+
+
+# --- expected_fine tests ---
+
+
+def test_expected_fine_zero_when_no_fines(simple_loan):
+    with Warp(simple_loan, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
+        assert all(inst.expected_fine.is_zero() for inst in warped.installments)
+
+
+def test_expected_fine_reflects_applied_fine():
+    loan = Loan(
+        Money("10000.00"),
+        InterestRate("6% a"),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+    with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        inst = warped.installments[0]
+
+    assert inst.expected_fine.is_positive()
+
+
+def test_balance_includes_fine():
+    loan = Loan(
+        Money("10000.00"),
+        InterestRate("6% a"),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+    with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        inst = warped.installments[0]
+
+    assert inst.balance > inst.expected_payment
+
+
+def test_balance_includes_mora():
+    loan = Loan(
+        Money("10000.00"),
+        InterestRate("6% a"),
+        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+    with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        inst = warped.installments[0]
+
+    assert inst.balance > inst.expected_payment

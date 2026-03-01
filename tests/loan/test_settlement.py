@@ -271,14 +271,14 @@ def test_settlements_respect_warp_time(simple_loan):
         assert len(warped.settlements) == 2
 
 
-def test_installments_is_paid_respects_warp(simple_loan):
+def test_installments_is_fully_paid_respects_warp(simple_loan):
     schedule = simple_loan.get_original_schedule()
     for entry in schedule:
         simple_loan.record_payment(entry.payment_amount, entry.due_date)
 
     with Warp(simple_loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
-        assert warped.installments[0].is_paid is True
-        assert warped.installments[1].is_paid is False
+        assert warped.installments[0].is_fully_paid is True
+        assert warped.installments[1].is_fully_paid is False
 
     with Warp(simple_loan, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
-        assert all(not inst.is_paid for inst in warped.installments)
+        assert all(not inst.is_fully_paid for inst in warped.installments)

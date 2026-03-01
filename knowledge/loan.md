@@ -175,15 +175,21 @@ A loan is **not** a group of installments. Installments are a **consequence** of
 
 ### Installment (`loan.installments`)
 
-A frozen dataclass representing one period of the repayment plan. Built from the original schedule on demand. Warp-aware: `is_paid` reflects only payments made by `self.now()`.
+A frozen dataclass representing one period of the repayment plan. Built from the original schedule on demand. Warp-aware: all fields reflect the state at `self.now()`.
 
-Fields: `number`, `due_date`, `days_in_period`, `expected_payment`, `expected_principal`, `expected_interest`, `is_paid`, `principal_paid`, `interest_paid`, `mora_paid`, `fine_paid`, `allocations: List[SettlementAllocation]`.
+Fields: `number`, `due_date`, `days_in_period`, `expected_payment`, `expected_principal`, `expected_interest`, `expected_mora`, `expected_fine`, `principal_paid`, `interest_paid`, `mora_paid`, `fine_paid`, `allocations: List[SettlementAllocation]`.
 
-- `expected_*` fields come from the original schedule (what the borrower should pay).
+Computed properties:
+- `balance: Money` — the amount still owed to fully settle this installment: `(expected_principal + expected_interest + expected_mora + expected_fine) - (principal_paid + interest_paid + mora_paid + fine_paid)`. Clamped to zero.
+- `is_fully_paid: bool` — `True` when `balance` is zero. Single source of truth for payment status.
+
+Field semantics:
+- `expected_payment`, `expected_principal`, `expected_interest` come from the original schedule.
+- `expected_fine` comes from `Loan.fines_applied` for the installment's due date.
+- `expected_mora` is computed by the Loan: for covered installments it equals `mora_paid`; for the first uncovered overdue installment it is the accrued mora from the due date to `self.now()` using `_compute_accrued_interest`; for all other installments it is zero.
 - `*_paid` fields are aggregated totals from all settlement allocations attributed to this installment.
 - `allocations` is the reverse view of Settlement: all `SettlementAllocation`s that touched this installment.
-- `is_paid` is determined by comparing `principal_balance` against the original schedule's `ending_balance` milestones (same logic as `_covered_due_date_count`). Uses the Warp-aware `principal_balance` property.
-- Created via `Installment.from_schedule_entry(entry, is_paid, allocations)`.
+- Created via `Installment.from_schedule_entry(entry, allocations, expected_mora, expected_fine)`.
 - `PaymentScheduleEntry` remains the internal scheduler data structure. `Installment` is the public-facing API.
 
 ### Settlement (`loan.settlements`, returned by payment methods)
