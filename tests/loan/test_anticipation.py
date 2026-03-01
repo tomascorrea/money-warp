@@ -3,6 +3,8 @@
 from datetime import datetime, timezone
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from money_warp import InterestRate, Loan, Money, Warp
 from money_warp.loan.settlement import AnticipationResult
@@ -231,3 +233,52 @@ def test_removing_more_installments_increases_anticipation_amount(six_installmen
         result_two = loan.calculate_anticipation([5, 6])
 
     assert result_two.amount > result_one.amount
+
+
+# -- Property: kept installments are unchanged regardless of anticipation --
+
+
+@given(
+    anticipated=st.lists(
+        st.integers(min_value=1, max_value=6),
+        min_size=1,
+        max_size=6,
+        unique=True,
+    ),
+    day_offset=st.integers(min_value=2, max_value=30),
+)
+@settings(max_examples=50)
+def test_kept_installments_unchanged_regardless_of_anticipation(anticipated, day_offset):
+    """No matter which subset of installments is anticipated, and no matter
+    when the anticipation happens, the kept installments must have the same
+    expected_principal and expected_interest as in the original schedule.
+    """
+    loan = Loan(
+        Money("60000"),
+        InterestRate("12% annual"),
+        [
+            datetime(2024, 2, 1, tzinfo=timezone.utc),
+            datetime(2024, 3, 1, tzinfo=timezone.utc),
+            datetime(2024, 4, 1, tzinfo=timezone.utc),
+            datetime(2024, 5, 1, tzinfo=timezone.utc),
+            datetime(2024, 6, 1, tzinfo=timezone.utc),
+            datetime(2024, 7, 1, tzinfo=timezone.utc),
+        ],
+        disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+
+    original_schedule = loan.get_original_schedule()
+    original_by_number = {e.payment_number: e for e in original_schedule.entries}
+    removed_set = set(anticipated)
+    warp_date = datetime(2024, 1, day_offset, tzinfo=timezone.utc)
+
+    with Warp(loan, warp_date) as warped:
+        result = warped.calculate_anticipation(anticipated)
+        warped.anticipate_payment(result.amount, installments=anticipated)
+
+        for inst in warped.installments:
+            if inst.number in removed_set:
+                continue
+            orig = original_by_number[inst.number]
+            assert inst.expected_principal == orig.principal_payment
+            assert inst.expected_interest == orig.interest_payment
