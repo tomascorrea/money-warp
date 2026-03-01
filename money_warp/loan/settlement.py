@@ -2,9 +2,12 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List
+from typing import TYPE_CHECKING, List
 
 from ..money import Money
+
+if TYPE_CHECKING:
+    from .installment import Installment
 
 
 @dataclass(frozen=True)
@@ -40,3 +43,15 @@ class Settlement:
     principal_paid: Money
     remaining_balance: Money
     allocations: List[SettlementAllocation]
+
+
+@dataclass(frozen=True)
+class AnticipationResult:
+    """Result of an anticipation calculation.
+
+    Returned by :meth:`Loan.calculate_anticipation`. Contains the amount
+    the borrower should pay today and the installments being removed.
+    """
+
+    amount: Money
+    installments: List["Installment"]
