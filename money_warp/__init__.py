@@ -1,6 +1,6 @@
 """MoneyWarp - Bend time. Model cash."""
 
-from money_warp.cash_flow import CashFlow, CashFlowItem, CashFlowQuery
+from money_warp.cash_flow import CashFlow, CashFlowEntry, CashFlowItem, CashFlowQuery
 from money_warp.date_utils import (
     generate_annual_dates,
     generate_biweekly_dates,
@@ -40,6 +40,7 @@ from money_warp.tax import (
     grossup,
     grossup_loan,
 )
+from money_warp.time_context import TimeContext
 from money_warp.tz import ensure_aware, get_tz, now, set_tz, tz_aware
 from money_warp.warp import InvalidDateError, NestedWarpError, Warp, WarpError
 
@@ -49,6 +50,7 @@ __all__ = [
     "CompoundingFrequency",
     "YearSize",
     "CashFlow",
+    "CashFlowEntry",
     "CashFlowItem",
     "CashFlowQuery",
     "Loan",
@@ -71,6 +73,7 @@ __all__ = [
     "grossup",
     "grossup_loan",
     "GrossupResult",
+    "TimeContext",
     "Warp",
     "WarpError",
     "NestedWarpError",

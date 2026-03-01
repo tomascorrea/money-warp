@@ -139,9 +139,11 @@ class CashFlowItem:
         )
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, CashFlowItem):
-            return False
-        return self.resolve() == other.resolve()
+        if isinstance(other, CashFlowEntry):
+            return self.resolve() == other
+        if isinstance(other, CashFlowItem):
+            return self.resolve() == other.resolve()
+        return NotImplemented
 
     # ------------------------------------------------------------------
     # Internal helpers
