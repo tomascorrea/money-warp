@@ -127,19 +127,17 @@ class Warp:
         return self.warped_loan
 
     def _apply_time_warp(self) -> None:
-        """
-        Apply time warp logic to the cloned loan.
+        """Apply time warp to the cloned loan.
 
-        Override the datetime_func to return the warped time and automatically
-        calculate any late payment fines up to the target date.
+        Overrides the shared TimeContext so every CashFlowItem in the
+        clone sees the warped time.  Then calculates late fines up to
+        the target date.
         """
         if self.warped_loan is None:
             return
 
-        # Override the datetime_func to return warped time
-        self.warped_loan.datetime_func = WarpedTime(self.target_date)  # type: ignore[assignment]
+        self.warped_loan._time_ctx.override(WarpedTime(self.target_date))
 
-        # Automatically calculate late payment fines up to the target date
         self.warped_loan.calculate_late_fines(self.target_date)
 
     def __exit__(
