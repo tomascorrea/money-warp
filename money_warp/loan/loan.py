@@ -13,7 +13,7 @@ from ..tax.base import BaseTax, TaxResult
 from ..time_context import TimeContext
 from ..tz import tz_aware
 from .installment import Installment
-from .settlement import Settlement, SettlementAllocation
+from .settlement import AnticipationResult, Settlement, SettlementAllocation
 
 
 class MoraStrategy(Enum):
@@ -842,25 +842,135 @@ class Loan:
             description=description,
         )
 
-    def anticipate_payment(self, amount: Money, description: Optional[str] = None) -> Settlement:
-        """
-        Make an early payment with interest discount. Interest is calculated only
-        up to self.now(), so the borrower pays less interest for fewer elapsed days.
+    def anticipate_payment(
+        self,
+        amount: Money,
+        installments: Optional[List[int]] = None,
+        description: Optional[str] = None,
+    ) -> Settlement:
+        """Make an early payment with interest discount.
+
+        Interest is calculated only up to ``self.now()``, so the borrower
+        pays less interest for fewer elapsed days.
+
+        When *installments* is provided (1-based installment numbers),
+        the corresponding expected cash-flow items are temporally
+        deleted so that ``due_dates`` and future schedules no longer
+        include them.
 
         Args:
-            amount: Total payment amount (positive value)
-            description: Optional description of the payment
+            amount: Total payment amount (positive value).
+            installments: Optional 1-based installment numbers to remove.
+            description: Optional description of the payment.
 
         Returns:
             Settlement describing how the payment was allocated.
         """
         payment_date = self.now()
+
+        if installments is not None:
+            self._delete_expected_items_for(installments, payment_date)
+
         return self.record_payment(
             amount,
             payment_date=payment_date,
             interest_date=payment_date,
             description=description,
         )
+
+    def calculate_anticipation(self, installments: List[int]) -> AnticipationResult:
+        """Calculate the amount to pay today to eliminate specific installments.
+
+        Pure calculation — no side effects on the loan.
+
+        The maths:
+            sustainable_balance = PV(kept payments at kept dates)
+            anticipation_amount = current_balance - sustainable_balance
+
+        Args:
+            installments: 1-based installment numbers to anticipate.
+
+        Returns:
+            :class:`AnticipationResult` with the amount and the
+            installment objects being removed.
+
+        Raises:
+            ValueError: If any number is invalid or already paid.
+        """
+        from ..present_value import present_value
+
+        original = self.get_original_schedule()
+        covered = self._covered_due_date_count()
+        total_installments = len(original)
+
+        removed_set = set(installments)
+        for num in removed_set:
+            if num < 1 or num > total_installments:
+                raise ValueError(f"Installment {num} is out of range (1..{total_installments})")
+            if num <= covered:
+                raise ValueError(f"Installment {num} is already paid")
+
+        kept_items: List[CashFlowItem] = []
+        anticipated_installments: List[Installment] = []
+        all_installments = self.installments
+
+        for entry in original:
+            if entry.payment_number in removed_set:
+                anticipated_installments.append(all_installments[entry.payment_number - 1])
+                continue
+            if entry.payment_number <= covered:
+                continue
+            kept_items.append(
+                CashFlowItem(
+                    Money(-entry.payment_amount.raw_amount),
+                    entry.due_date,
+                    f"Kept payment {entry.payment_number}",
+                    "kept_payment",
+                )
+            )
+
+        if not kept_items:
+            return AnticipationResult(
+                amount=self.current_balance,
+                installments=anticipated_installments,
+            )
+
+        kept_cf = CashFlow(kept_items)
+        valuation_date = self.now()
+        sustainable_balance = present_value(kept_cf, self.interest_rate, valuation_date)
+        sustainable_balance = Money(-sustainable_balance.raw_amount)
+
+        anticipation_amount = self.current_balance - sustainable_balance
+        if anticipation_amount.is_negative():
+            anticipation_amount = Money.zero()
+
+        return AnticipationResult(
+            amount=anticipation_amount,
+            installments=anticipated_installments,
+        )
+
+    def _delete_expected_items_for(self, installments: List[int], effective_date: datetime) -> None:
+        """Temporally delete expected cash-flow items for the given installments.
+
+        Scans the expected cash flow for ``expected_interest`` and
+        ``expected_principal`` items whose payment number matches one of
+        the requested installments and calls ``delete(effective_date)``
+        on their underlying :class:`CashFlowItem` containers.
+        """
+        expected_cf = self.generate_expected_cash_flow()
+        removed_set = set(installments)
+
+        for item in expected_cf.raw_items():
+            entry = item.resolve()
+            if entry is None:
+                continue
+            if entry.category not in ("expected_interest", "expected_principal"):
+                continue
+            desc = entry.description or ""
+            for num in removed_set:
+                if desc.endswith(f" {num}"):
+                    item.delete(effective_date)
+                    break
 
     def _extract_payment_items(self, entry_index: int) -> Dict[str, Money]:
         """Extract fine/interest/mora/principal from _all_payments for a given payment event.
