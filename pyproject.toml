@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "money_warp"
-version = "0.1.0"
+version = "0.3.0"
 description = "MoneyWarp – Bend time. Model cash."
 license = "MIT"
 authors = ["Tomas Correa <tomas.correa@gmail.com>"]
