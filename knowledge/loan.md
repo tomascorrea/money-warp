@@ -36,7 +36,9 @@ Neither method takes a date parameter — they use `self.now()` (which respects 
 
 - **`pay_installment(amount, description=None)`** — the common case. Records payment at `self.now()` and calculates interest up to `max(self.now(), next_due_date)`. Early or on-time payments accrue interest up to the due date (no discount). Late payments accrue interest up to `self.now()`, so the borrower pays extra interest for the additional days beyond the due date. Late fines are also applied automatically. A large late payment naturally covers the missed installment **and** eats into future installments — the allocation (fines → interest → principal) and `_covered_due_date_count()` handle this without special-casing.
 
-- **`anticipate_payment(amount, description=None)`** — early payment with discount. Records payment at `self.now()` and calculates interest only up to `self.now()` (fewer days = less interest charged).
+- **`anticipate_payment(amount, installments=None, description=None)`** — early payment with discount. Records payment at `self.now()` and calculates interest only up to `self.now()` (fewer days = less interest charged). When `installments` is provided (1-based numbers), the corresponding expected cash-flow items are temporally deleted via `CashFlowItem.delete()`.
+
+- **`calculate_anticipation(installments)`** — pure calculation (no side effects). Returns an `AnticipationResult(amount, installments)` with the PV-based amount the borrower must pay today to eliminate specific installments. The formula: `amount = current_balance - PV(kept payments at kept dates)`. When all remaining installments are anticipated, `amount = current_balance` (full early payoff). Validates that all requested installment numbers are unpaid and in range.
 
 ### Explicit-Date Method
 
@@ -202,6 +204,12 @@ Fields: `payment_amount`, `payment_date`, `fine_paid`, `interest_paid`, `mora_pa
 - Interest, mora, and fines are attributed to the first installment touched. Principal is distributed across installments using milestone comparison against the original schedule.
 - All three payment methods (`record_payment`, `pay_installment`, `anticipate_payment`) return a `Settlement`.
 - The `settlements` property reconstructs all settlements by querying the cash flow. Warp-aware: only includes settlements with `payment_date <= self.now()`.
+
+### AnticipationResult
+
+Returned by `calculate_anticipation()`. Frozen dataclass with:
+- `amount: Money` — the total amount to pay today to eliminate the specified installments.
+- `installments: List[Installment]` — the installments being anticipated (removed).
 
 ### SettlementAllocation
 

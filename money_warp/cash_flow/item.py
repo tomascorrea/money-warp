@@ -1,74 +1,161 @@
-"""CashFlowItem class for individual financial transactions."""
+"""CashFlowItem — time-aware container for CashFlowEntry versions."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Optional, Union
+from typing import List, Optional, Tuple, Union
 
 from ..money import Money
-from ..tz import tz_aware
+from ..time_context import TimeContext
+from ..tz import default_time_source, tz_aware
+from .entry import CashFlowEntry
+
+EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+_SENTINEL = object()
 
 
 class CashFlowItem:
-    """
-    Represents a single financial transaction at a specific point in time.
+    """Temporal container that wraps a timeline of :class:`CashFlowEntry` snapshots.
 
-    A CashFlowItem is an individual monetary movement with metadata about
-    when it occurred, what it was for, and how to categorize it.
+    At any point in time exactly one entry (or ``None``, meaning deleted)
+    is *active*.  :meth:`resolve` returns that entry for
+    ``self.now()``.
+
+    The constructor accepts the same positional/keyword arguments as the
+    old ``CashFlowItem`` so that existing call-sites continue to work
+    without changes during the migration.
     """
 
     @tz_aware
     def __init__(
         self,
-        amount: Union[Money, Decimal, str, int, float],
-        datetime: datetime,
+        amount: Union[Money, Decimal, str, int, float, CashFlowEntry] = _SENTINEL,
+        datetime: Optional["datetime"] = None,
         description: Optional[str] = None,
         category: Optional[str] = None,
+        *,
+        entry: Optional[CashFlowEntry] = None,
+        time_context: Optional[TimeContext] = None,
     ) -> None:
-        """
-        Create a cash flow item.
+        if entry is not None:
+            initial = entry
+        elif isinstance(amount, CashFlowEntry):
+            initial = amount
+        elif amount is not _SENTINEL and datetime is not None:
+            money = amount if isinstance(amount, Money) else Money(amount)
+            initial = CashFlowEntry(
+                amount=money,
+                datetime=datetime,
+                description=description,
+                category=category,
+            )
+        else:
+            raise TypeError(
+                "CashFlowItem requires either an 'entry' keyword argument or positional (amount, datetime) arguments."
+            )
 
-        Args:
-            amount: The monetary amount (positive for inflows, negative for outflows)
-            datetime: When this transaction occurs
-            description: Optional description of the transaction
-            category: Optional category for grouping (e.g., "interest", "principal", "fee")
-        """
-        self.amount = amount if isinstance(amount, Money) else Money(amount)
-        self.datetime = datetime
-        self.description = description
-        self.category = category
+        self._timeline: List[Tuple["datetime", Optional[CashFlowEntry]]] = [(EPOCH, initial)]
+        self._time_ctx = time_context
 
-    def __str__(self) -> str:
-        """String representation showing amount, datetime, and description."""
-        desc = f" - {self.description}" if self.description else ""
-        return f"{self.amount} on {self.datetime}{desc}"
+    # ------------------------------------------------------------------
+    # Temporal API
+    # ------------------------------------------------------------------
 
-    def __repr__(self) -> str:
-        """Detailed representation for debugging."""
-        return (
-            f"CashFlowItem(amount={self.amount!r}, datetime={self.datetime!r}, "
-            f"description={self.description!r}, category={self.category!r})"
-        )
+    def resolve(self) -> Optional[CashFlowEntry]:
+        """Return the active entry at ``self.now()``, or ``None`` if deleted."""
+        current = self._now()
+        active: Optional[CashFlowEntry] = None
+        for effective_date, entry in self._timeline:
+            if effective_date <= current:
+                active = entry
+            else:
+                break
+        return active
 
-    def __eq__(self, other: object) -> bool:
-        """Two cash flow items are equal if all fields match."""
-        if not isinstance(other, CashFlowItem):
-            return False
-        return (
-            self.amount == other.amount
-            and self.datetime == other.datetime
-            and self.description == other.description
-            and self.category == other.category
-        )
+    def update(self, effective_date: "datetime", new_entry: CashFlowEntry) -> None:
+        """From *effective_date* onward this item resolves to *new_entry*."""
+        self._timeline.append((effective_date, new_entry))
+        self._timeline.sort(key=lambda t: t[0])
+
+    def delete(self, effective_date: "datetime") -> None:
+        """From *effective_date* onward this item resolves to ``None``."""
+        self._timeline.append((effective_date, None))
+        self._timeline.sort(key=lambda t: t[0])
+
+    # ------------------------------------------------------------------
+    # Convenience properties (access current entry fields directly)
+    # ------------------------------------------------------------------
+
+    @property
+    def amount(self) -> Money:
+        entry = self._require_resolved()
+        return entry.amount
+
+    @property
+    def datetime(self) -> "datetime":
+        entry = self._require_resolved()
+        return entry.datetime
+
+    @property
+    def description(self) -> Optional[str]:
+        entry = self._require_resolved()
+        return entry.description
+
+    @property
+    def category(self) -> Optional[str]:
+        entry = self._require_resolved()
+        return entry.category
+
+    # ------------------------------------------------------------------
+    # Delegated helpers
+    # ------------------------------------------------------------------
 
     def is_inflow(self) -> bool:
-        """Check if this is a positive cash flow (money coming in)."""
         return self.amount.is_positive()
 
     def is_outflow(self) -> bool:
-        """Check if this is a negative cash flow (money going out)."""
         return self.amount.is_negative()
 
     def is_zero(self) -> bool:
-        """Check if this is a zero cash flow."""
         return self.amount.is_zero()
+
+    # ------------------------------------------------------------------
+    # Dunder methods
+    # ------------------------------------------------------------------
+
+    def __str__(self) -> str:
+        entry = self.resolve()
+        if entry is None:
+            return "CashFlowItem(deleted)"
+        return str(entry)
+
+    def __repr__(self) -> str:
+        entry = self.resolve()
+        if entry is None:
+            return "CashFlowItem(deleted)"
+        return (
+            f"CashFlowItem(amount={entry.amount!r}, datetime={entry.datetime!r}, "
+            f"description={entry.description!r}, category={entry.category!r})"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, CashFlowEntry):
+            return self.resolve() == other
+        if isinstance(other, CashFlowItem):
+            return self.resolve() == other.resolve()
+        return NotImplemented
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _now(self) -> "datetime":
+        if self._time_ctx is not None:
+            return self._time_ctx.now()
+        return default_time_source.now()
+
+    def _require_resolved(self) -> CashFlowEntry:
+        entry = self.resolve()
+        if entry is None:
+            raise ValueError("CashFlowItem has been deleted at the current time.")
+        return entry

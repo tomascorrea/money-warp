@@ -171,8 +171,8 @@ def test_cash_flow_iteration():
         CashFlowItem(Money("-50.00"), datetime(2024, 2, 15, 10, 0, tzinfo=timezone.utc)),
     ]
     cf = CashFlow(items)
-    iterated_items = list(cf)
-    assert iterated_items == items
+    iterated_entries = list(cf)
+    assert iterated_entries == items
 
 
 def test_cash_flow_indexing():

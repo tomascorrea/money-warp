@@ -10,9 +10,10 @@ from ..interest_rate import InterestRate
 from ..money import Money
 from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
 from ..tax.base import BaseTax, TaxResult
-from ..tz import default_time_source, tz_aware
+from ..time_context import TimeContext
+from ..tz import tz_aware
 from .installment import Installment
-from .settlement import Settlement, SettlementAllocation
+from .settlement import AnticipationResult, Settlement, SettlementAllocation
 
 
 class MoraStrategy(Enum):
@@ -72,8 +73,6 @@ class Loan:
         >>> print(f"Outstanding fines: {loan.outstanding_fines}")
     """
 
-    datetime_func = default_time_source
-
     @tz_aware
     def __init__(
         self,
@@ -132,12 +131,14 @@ class Loan:
         if grace_period_days < 0:
             raise ValueError("Grace period days must be non-negative")
 
+        self._time_ctx = TimeContext()
+
         self.principal = principal
         self.interest_rate = interest_rate
         self.mora_interest_rate = mora_interest_rate or interest_rate
         self.mora_strategy = mora_strategy
         self.due_dates = sorted(due_dates)
-        self.disbursement_date = disbursement_date if disbursement_date is not None else self.datetime_func.now()
+        self.disbursement_date = disbursement_date if disbursement_date is not None else self._time_ctx.now()
         if self.disbursement_date >= self.due_dates[0]:
             raise ValueError("disbursement_date must be before the first due date")
         self.scheduler = scheduler or PriceScheduler
@@ -264,12 +265,12 @@ class Loan:
         return self.principal - self.total_tax
 
     def now(self) -> datetime:
-        """Get the current datetime. Can be overridden for time travel scenarios."""
-        return self.datetime_func.now()
+        """Current datetime (Warp-aware via shared TimeContext)."""
+        return self._time_ctx.now()
 
     def date(self) -> datetime:
-        """Get the current datetime. Can be overridden for time travel scenarios."""
-        return self.datetime_func.now()
+        """Current datetime (Warp-aware via shared TimeContext)."""
+        return self._time_ctx.now()
 
     @tz_aware
     def days_since_last_payment(self, as_of_date: Optional[datetime] = None) -> int:
@@ -523,6 +524,7 @@ class Loan:
             CashFlow with loan disbursement and expected payment schedule
         """
         items = []
+        ctx = self._time_ctx
 
         total_tax = self.total_tax
         if total_tax.is_positive() and self.is_grossed_up:
@@ -532,6 +534,7 @@ class Loan:
                     self.disbursement_date,
                     "Loan disbursement",
                     "expected_disbursement",
+                    time_context=ctx,
                 )
             )
         elif total_tax.is_positive():
@@ -541,6 +544,7 @@ class Loan:
                     self.disbursement_date,
                     "Loan disbursement",
                     "expected_disbursement",
+                    time_context=ctx,
                 )
             )
             items.append(
@@ -549,34 +553,39 @@ class Loan:
                     self.disbursement_date,
                     "Tax deducted at disbursement",
                     "expected_tax",
+                    time_context=ctx,
                 )
             )
         else:
             items.append(
-                CashFlowItem(self.principal, self.disbursement_date, "Loan disbursement", "expected_disbursement")
+                CashFlowItem(
+                    self.principal,
+                    self.disbursement_date,
+                    "Loan disbursement",
+                    "expected_disbursement",
+                    time_context=ctx,
+                )
             )
 
-        # Use the original schedule for expected cash flow
         schedule = self.get_original_schedule()
 
-        # Convert schedule entries to CashFlow items
         for entry in schedule:
-            # Add payment breakdown items (negative amounts for outflows)
             items.append(
                 CashFlowItem(
                     Money(-entry.interest_payment.raw_amount),
                     entry.due_date,
                     f"Interest payment {entry.payment_number}",
                     "expected_interest",
+                    time_context=ctx,
                 )
             )
-
             items.append(
                 CashFlowItem(
                     Money(-entry.principal_payment.raw_amount),
                     entry.due_date,
                     f"Principal payment {entry.payment_number}",
                     "expected_principal",
+                    time_context=ctx,
                 )
             )
 
@@ -662,7 +671,11 @@ class Loan:
         outstanding_fines = self.outstanding_fines
         if outstanding_fines.is_positive() and remaining.is_positive():
             fine_paid = Money(min(outstanding_fines.raw_amount, remaining.raw_amount))
-            self._all_payments.append(CashFlowItem(fine_paid, payment_date, f"Fine payment - {label}", "actual_fine"))
+            self._all_payments.append(
+                CashFlowItem(
+                    fine_paid, payment_date, f"Fine payment - {label}", "actual_fine", time_context=self._time_ctx
+                )
+            )
             remaining = remaining - fine_paid
 
         interest_paid = Money.zero()
@@ -686,13 +699,25 @@ class Loan:
 
                 if regular_amount.is_positive():
                     self._all_payments.append(
-                        CashFlowItem(regular_amount, payment_date, f"Interest portion - {label}", "actual_interest")
+                        CashFlowItem(
+                            regular_amount,
+                            payment_date,
+                            f"Interest portion - {label}",
+                            "actual_interest",
+                            time_context=self._time_ctx,
+                        )
                     )
                     interest_paid = regular_amount
 
                 if mora_amount.is_positive():
                     self._all_payments.append(
-                        CashFlowItem(mora_amount, payment_date, f"Mora interest - {label}", "actual_mora_interest")
+                        CashFlowItem(
+                            mora_amount,
+                            payment_date,
+                            f"Mora interest - {label}",
+                            "actual_mora_interest",
+                            time_context=self._time_ctx,
+                        )
                     )
                     mora_paid = mora_amount
 
@@ -702,7 +727,13 @@ class Loan:
         if remaining.is_positive():
             principal_paid = remaining
             self._all_payments.append(
-                CashFlowItem(principal_paid, payment_date, f"Principal portion - {label}", "actual_principal")
+                CashFlowItem(
+                    principal_paid,
+                    payment_date,
+                    f"Principal portion - {label}",
+                    "actual_principal",
+                    time_context=self._time_ctx,
+                )
             )
 
         return fine_paid, interest_paid, mora_paid, principal_paid
@@ -811,25 +842,135 @@ class Loan:
             description=description,
         )
 
-    def anticipate_payment(self, amount: Money, description: Optional[str] = None) -> Settlement:
-        """
-        Make an early payment with interest discount. Interest is calculated only
-        up to self.now(), so the borrower pays less interest for fewer elapsed days.
+    def anticipate_payment(
+        self,
+        amount: Money,
+        installments: Optional[List[int]] = None,
+        description: Optional[str] = None,
+    ) -> Settlement:
+        """Make an early payment with interest discount.
+
+        Interest is calculated only up to ``self.now()``, so the borrower
+        pays less interest for fewer elapsed days.
+
+        When *installments* is provided (1-based installment numbers),
+        the corresponding expected cash-flow items are temporally
+        deleted so that ``due_dates`` and future schedules no longer
+        include them.
 
         Args:
-            amount: Total payment amount (positive value)
-            description: Optional description of the payment
+            amount: Total payment amount (positive value).
+            installments: Optional 1-based installment numbers to remove.
+            description: Optional description of the payment.
 
         Returns:
             Settlement describing how the payment was allocated.
         """
         payment_date = self.now()
+
+        if installments is not None:
+            self._delete_expected_items_for(installments, payment_date)
+
         return self.record_payment(
             amount,
             payment_date=payment_date,
             interest_date=payment_date,
             description=description,
         )
+
+    def calculate_anticipation(self, installments: List[int]) -> AnticipationResult:
+        """Calculate the amount to pay today to eliminate specific installments.
+
+        Pure calculation — no side effects on the loan.
+
+        The maths:
+            sustainable_balance = PV(kept payments at kept dates)
+            anticipation_amount = current_balance - sustainable_balance
+
+        Args:
+            installments: 1-based installment numbers to anticipate.
+
+        Returns:
+            :class:`AnticipationResult` with the amount and the
+            installment objects being removed.
+
+        Raises:
+            ValueError: If any number is invalid or already paid.
+        """
+        from ..present_value import present_value
+
+        original = self.get_original_schedule()
+        covered = self._covered_due_date_count()
+        total_installments = len(original)
+
+        removed_set = set(installments)
+        for num in removed_set:
+            if num < 1 or num > total_installments:
+                raise ValueError(f"Installment {num} is out of range (1..{total_installments})")
+            if num <= covered:
+                raise ValueError(f"Installment {num} is already paid")
+
+        kept_items: List[CashFlowItem] = []
+        anticipated_installments: List[Installment] = []
+        all_installments = self.installments
+
+        for entry in original:
+            if entry.payment_number in removed_set:
+                anticipated_installments.append(all_installments[entry.payment_number - 1])
+                continue
+            if entry.payment_number <= covered:
+                continue
+            kept_items.append(
+                CashFlowItem(
+                    Money(-entry.payment_amount.raw_amount),
+                    entry.due_date,
+                    f"Kept payment {entry.payment_number}",
+                    "kept_payment",
+                )
+            )
+
+        if not kept_items:
+            return AnticipationResult(
+                amount=self.current_balance,
+                installments=anticipated_installments,
+            )
+
+        kept_cf = CashFlow(kept_items)
+        valuation_date = self.now()
+        sustainable_balance = present_value(kept_cf, self.interest_rate, valuation_date)
+        sustainable_balance = Money(-sustainable_balance.raw_amount)
+
+        anticipation_amount = self.current_balance - sustainable_balance
+        if anticipation_amount.is_negative():
+            anticipation_amount = Money.zero()
+
+        return AnticipationResult(
+            amount=anticipation_amount,
+            installments=anticipated_installments,
+        )
+
+    def _delete_expected_items_for(self, installments: List[int], effective_date: datetime) -> None:
+        """Temporally delete expected cash-flow items for the given installments.
+
+        Scans the expected cash flow for ``expected_interest`` and
+        ``expected_principal`` items whose payment number matches one of
+        the requested installments and calls ``delete(effective_date)``
+        on their underlying :class:`CashFlowItem` containers.
+        """
+        expected_cf = self.generate_expected_cash_flow()
+        removed_set = set(installments)
+
+        for item in expected_cf.raw_items():
+            entry = item.resolve()
+            if entry is None:
+                continue
+            if entry.category not in ("expected_interest", "expected_principal"):
+                continue
+            desc = entry.description or ""
+            for num in removed_set:
+                if desc.endswith(f" {num}"):
+                    item.delete(effective_date)
+                    break
 
     def _extract_payment_items(self, entry_index: int) -> Dict[str, Money]:
         """Extract fine/interest/mora/principal from _all_payments for a given payment event.
@@ -1077,29 +1218,28 @@ class Loan:
         This shows both what was expected and what actually happened for comparison.
         Includes fine applications and fine payments.
         """
-        # Start with expected cash flow
         expected_cf = self.generate_expected_cash_flow()
-        items = list(expected_cf.items())
+        items = list(expected_cf.raw_items())
 
-        # Add fine application events (these are like additional loan amounts)
         for due_date, fine_amount in self.fines_applied.items():
             items.append(
                 CashFlowItem(
-                    fine_amount,  # Positive amount (increases what borrower owes)
-                    due_date + timedelta(days=self.grace_period_days + 1),  # Applied after grace period
+                    fine_amount,
+                    due_date + timedelta(days=self.grace_period_days + 1),
                     f"Late payment fine applied for {due_date.date()}",
                     "fine_applied",
+                    time_context=self._time_ctx,
                 )
             )
 
-        # Add actual payments made
         for payment in self._actual_payments:
             items.append(
                 CashFlowItem(
-                    -payment.amount,  # Convert to outflow
+                    -payment.amount,
                     payment.datetime,
                     payment.description or f"Actual payment on {payment.datetime.date()}",
-                    payment.category,  # Keep original category (actual_interest, actual_principal, actual_fine)
+                    payment.category,
+                    time_context=self._time_ctx,
                 )
             )
 

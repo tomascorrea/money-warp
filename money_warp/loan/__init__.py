@@ -2,6 +2,13 @@
 
 from .installment import Installment
 from .loan import Loan, MoraStrategy
-from .settlement import Settlement, SettlementAllocation
+from .settlement import AnticipationResult, Settlement, SettlementAllocation
 
-__all__ = ["Loan", "MoraStrategy", "Installment", "Settlement", "SettlementAllocation"]
+__all__ = [
+    "AnticipationResult",
+    "Installment",
+    "Loan",
+    "MoraStrategy",
+    "Settlement",
+    "SettlementAllocation",
+]
