@@ -35,3 +35,25 @@ def card_with_purchases(card):
     card.purchase(Money("500.00"), datetime(2024, 1, 10, tzinfo=timezone.utc), "Electronics")
     card.purchase(Money("200.00"), datetime(2024, 1, 20, tzinfo=timezone.utc), "Groceries")
     return card
+
+
+@pytest.fixture
+def five_cycle_card():
+    """Card with purchases in all 5 cycles and a late payment in cycle 2.
+
+    Closing day 28, due 15 days later, 24% annual interest.
+    The $200 payment on Feb 17 arrives 5 days past the cycle-1 due date
+    (Feb 12), so every subsequent cycle accrues a fine.
+    """
+    card = CreditCard(
+        interest_rate=InterestRate("24% a"),
+        billing_cycle=MonthlyBillingCycle(closing_day=28, payment_due_days=15),
+        opening_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+    card.purchase(Money("500.00"), datetime(2024, 1, 10, tzinfo=timezone.utc))
+    card.purchase(Money("300.00"), datetime(2024, 2, 5, tzinfo=timezone.utc))
+    card.purchase(Money("200.00"), datetime(2024, 3, 10, tzinfo=timezone.utc))
+    card.purchase(Money("150.00"), datetime(2024, 4, 15, tzinfo=timezone.utc))
+    card.purchase(Money("100.00"), datetime(2024, 5, 10, tzinfo=timezone.utc))
+    card.pay(Money("200.00"), datetime(2024, 2, 17, tzinfo=timezone.utc))
+    return card

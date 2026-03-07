@@ -3,6 +3,8 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 
+import pytest
+
 from money_warp import CreditCard, InterestRate, Money, Warp
 from money_warp.billing_cycle import MonthlyBillingCycle
 
@@ -116,3 +118,45 @@ def test_statement_with_payment_in_period():
         assert stmt.purchases_total == Money("500.00")
         assert stmt.payments_total == Money("200.00")
         assert stmt.closing_balance == Money("300.00")
+
+
+# ------------------------------------------------------------------
+# Five-cycle scenario: purchases every cycle, single late payment
+# ------------------------------------------------------------------
+
+AFTER_CYCLE_5 = datetime(2024, 5, 29, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize(
+    "period, expected_closing",
+    [
+        (1, Money("500.00")),
+        (2, Money("607.03")),
+        (3, Money("819.32")),
+        (4, Money("986.88")),
+        (5, Money("1107.44")),
+    ],
+)
+def test_five_cycle_closing_balance(five_cycle_card, period, expected_closing):
+    with Warp(five_cycle_card, AFTER_CYCLE_5) as w:
+        assert w.statements[period - 1].closing_balance == expected_closing
+
+
+def test_five_cycle_period_two_interest_on_carried_balance(five_cycle_card):
+    with Warp(five_cycle_card, AFTER_CYCLE_5) as w:
+        assert w.statements[1].interest_charged == Money("5.53")
+
+
+def test_five_cycle_period_two_fine_for_missed_minimum(five_cycle_card):
+    with Warp(five_cycle_card, AFTER_CYCLE_5) as w:
+        assert w.statements[1].fine_charged == Money("1.50")
+
+
+def test_five_cycle_period_two_records_late_payment(five_cycle_card):
+    with Warp(five_cycle_card, AFTER_CYCLE_5) as w:
+        assert w.statements[1].payments_total == Money("200.00")
+
+
+def test_five_cycle_period_three_carries_previous_balance(five_cycle_card):
+    with Warp(five_cycle_card, AFTER_CYCLE_5) as w:
+        assert w.statements[2].previous_balance == Money("607.03")
