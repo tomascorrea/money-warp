@@ -151,6 +151,20 @@ pip install package_name
 - **Mock external dependencies**: Use `unittest.mock` or `pytest-mock`
 - **Test data**: Use fixtures for reusable test data
 
+### Prefer Fixtures Over Helper Functions ⭐
+**When test setup logic is reused across multiple tests, express it as a pytest fixture — not a plain helper function.**
+
+- **Bad**: `def _build_thing(): ...` called directly in each test
+- **Good**: `@pytest.fixture def thing(): ...` injected by pytest
+- **Rationale**: Fixtures are composable, cacheable (via `scope`), and visible to pytest's introspection. Helper functions hide dependencies, bypass fixture teardown, and tempt callers into building setup-within-setup patterns.
+
+### Assert Exact Values When Available ⭐
+**When the expected value is known precisely, assert equality — never settle for vague comparisons like `>`, `<`, or `!=`.**
+
+- **Bad**: `assert balance_at(date) > other_balance` when both sides have a known exact value
+- **Good**: `assert balance_at(date) == expected_remaining_balance`
+- **Rationale**: Relational comparisons hide regressions. A test that only checks `a > b` will pass even if `a` drifts to a wrong value, as long as it stays above `b`. Asserting the precise expected value catches any deviation immediately.
+
 ## Git Workflow
 
 ### Branch Strategy

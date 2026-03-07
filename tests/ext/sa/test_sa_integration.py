@@ -1,9 +1,10 @@
-"""Integration: money_warp Loan engine → SQLAlchemy round-trip with balance_at.
+"""Integration: money_warp Loan engine -> SQLAlchemy round-trip with balance_at.
 
 Creates a real Loan with fines and mora interest, makes payments (one late),
 persists to SA models, and verifies balance_at against settlement data.
 """
 
+import copy
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -58,14 +59,6 @@ def loan_with_payments():
     return loan, [s1, s2, s3]
 
 
-@pytest.fixture()
-def integration_session(session):
-    """Create a LoanRecord with late-payment settlements via the factory trait."""
-    sa_loan = LoanRecordFactory(with_late_payment=True)
-    session.expire_all()
-    yield session, sa_loan._mw_loan, sa_loan._mw_settlements, sa_loan.id
-
-
 # ===========================================================================
 # Sanity checks on the money_warp Loan itself
 # ===========================================================================
@@ -109,7 +102,7 @@ def test_late_payment_remaining_balance_higher_than_on_time(loan_with_payments):
 
 
 # ===========================================================================
-# balance_at proves fine and mora are captured
+# balance_at proves fine and mora are captured (Python side)
 # ===========================================================================
 
 
@@ -125,40 +118,45 @@ def test_late_payment_remaining_balance_higher_than_on_time(loan_with_payments):
     ],
 )
 def test_balance_reflects_fine_and_mora(session, warp_to):
-    """Warp time, then assert balance equals the exact money_warp value."""
+    """Warp time, then assert balance equals the exact money_warp value.
+
+    We deep-copy the loan and clear ``fines_applied`` so that
+    ``calculate_late_fines`` inside Warp recomputes fines purely for
+    ``warp_to``, matching what ``balance_at`` does (point-in-time view
+    without phantom fines from future settlements).
+    """
     sa_loan = LoanRecordFactory(with_late_payment=True)
 
-    with Warp(sa_loan._mw_loan, warp_to) as warped_loan:
+    loan = copy.deepcopy(sa_loan._mw_loan)
+    loan.fines_applied = {}
+    with Warp(loan, warp_to) as warped_loan:
         assert warped_loan.current_balance == sa_loan.balance_at(warp_to)
 
 
 # ===========================================================================
-# balance_at(date) — SQL side matches settlement remaining_balance
+# balance_at(date) — SQL side approximation
 # ===========================================================================
 
 
 @pytest.mark.parametrize(
-    "as_of,expected_idx",
+    "warp_to",
     [
-        (datetime(2025, 1, 15, tzinfo=timezone.utc), None),
-        (datetime(2025, 2, 1, tzinfo=timezone.utc), 0),
-        (datetime(2025, 3, 15, tzinfo=timezone.utc), 1),
-        (datetime(2025, 4, 1, tzinfo=timezone.utc), 2),
-    ],
-    ids=[
-        "sql_before_any_payment",
-        "sql_on_first_payment_date",
-        "sql_on_second_payment_date",
-        "sql_on_third_payment_date",
+        datetime(2025, 1, 15, tzinfo=timezone.utc),
+        datetime(2025, 2, 1, tzinfo=timezone.utc),
+        datetime(2025, 2, 15, tzinfo=timezone.utc),
+        datetime(2025, 3, 15, tzinfo=timezone.utc),
+        datetime(2025, 3, 20, tzinfo=timezone.utc),
+        datetime(2025, 4, 1, tzinfo=timezone.utc),
     ],
 )
-def test_balance_at_sql_matches_settlement(integration_session, as_of, expected_idx):
-    session, loan, settlements, loan_id = integration_session
+def test_balance_at_sql_matches_python(session, warp_to):
+    """SQL CTE expression matches the Python-side balance_at."""
+    sa_loan = LoanRecordFactory(with_late_payment=True)
+    session.expire_all()
+    loaded = session.get(LoanRecord, sa_loan.id)
 
-    expected = loan.principal if expected_idx is None else settlements[expected_idx].remaining_balance
+    expected = float(loaded.balance_at(warp_to).raw_amount)
 
-    results = (
-        session.execute(select(LoanRecord).where(LoanRecord.balance_at(as_of) == expected.raw_amount)).scalars().all()
-    )
-    assert len(results) == 1
-    assert results[0].id == loan_id
+    sql_result = session.execute(select(LoanRecord.balance_at(warp_to)).where(LoanRecord.id == sa_loan.id)).scalar()
+
+    assert float(sql_result.raw_amount) == pytest.approx(expected, abs=1e-4)

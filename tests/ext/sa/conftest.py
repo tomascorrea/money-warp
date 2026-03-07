@@ -80,6 +80,8 @@ class SettlementRecord(Base):
     amount = Column(MoneyType())
     payment_date = Column(DateTime)
     remaining_balance = Column(MoneyType())
+    interest_date = Column(DateTime, nullable=True)
+    processing_date = Column(DateTime, nullable=True)
 
 
 @loan_bridge()
@@ -164,12 +166,14 @@ def _build_late_payment_settlements(obj, create, extracted, **kwargs):
     )
 
     settlements = [s1, s2, s3]
-    for s in settlements:
+    interest_dates = [None, datetime(2025, 3, 15, tzinfo=timezone.utc), None]
+    for s, idate in zip(settlements, interest_dates):
         SettlementRecordFactory(
             loan_id=obj.id,
             amount=s.payment_amount,
             payment_date=s.payment_date,
             remaining_balance=s.remaining_balance,
+            interest_date=idate,
         )
 
     obj._mw_loan = loan
@@ -182,9 +186,9 @@ class LoanRecordFactory(factory.alchemy.SQLAlchemyModelFactory):
         sqlalchemy_session_persistence = "flush"
 
     principal = factory.LazyFunction(lambda: Money("10000"))
-    interest_rate = None
-    disbursement_date = None
-    due_dates = None
+    interest_rate = factory.LazyFunction(lambda: InterestRate("10% a"))
+    disbursement_date = factory.LazyFunction(lambda: datetime(2024, 1, 1, tzinfo=timezone.utc))
+    due_dates = factory.LazyFunction(lambda: ["2024-02-01T00:00:00+00:00", "2024-03-01T00:00:00+00:00"])
     fine_rate = None
     grace_period_days = None
     mora_interest_rate = None
@@ -212,3 +216,5 @@ class SettlementRecordFactory(factory.alchemy.SQLAlchemyModelFactory):
     amount = factory.LazyFunction(lambda: Money("3000"))
     payment_date = factory.LazyFunction(lambda: datetime(2024, 2, 1, tzinfo=timezone.utc))
     remaining_balance = factory.LazyFunction(lambda: Money("7000"))
+    interest_date = None
+    processing_date = None

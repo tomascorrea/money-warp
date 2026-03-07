@@ -56,10 +56,11 @@ class Warp:
         with Warp(loan, '2030-01-15') as warped_loan:
             balance = warped_loan.current_balance
 
-    Note: Nested Warp contexts are not allowed for safety.
+    Warping different Loan objects concurrently is allowed, but nested
+    warps on the **same** Loan are not.
     """
 
-    _active_warp: Optional["Warp"] = None
+    _active_loans: set = set()
 
     def __init__(self, loan: Loan, target_date: Union[str, date, datetime]) -> None:
         """
@@ -70,13 +71,13 @@ class Warp:
             target_date: The date to warp to (accepts strings, date, or datetime objects)
 
         Raises:
-            NestedWarpError: If another Warp context is already active
+            NestedWarpError: If the same loan is already being warped
             InvalidDateError: If the target_date cannot be parsed
         """
-        # Check for nested warps
-        if Warp._active_warp is not None:
+        if id(loan) in Warp._active_loans:
             raise NestedWarpError(
-                "Nested Warp contexts are not allowed. Playing with time is dangerous enough with one level."
+                "Nested Warp contexts on the same Loan are not allowed. "
+                "Playing with time is dangerous enough with one level."
             )
 
         self.original_loan = loan
@@ -115,8 +116,7 @@ class Warp:
         Returns:
             A cloned loan with its state modified to reflect the target date
         """
-        # Mark this warp as active
-        Warp._active_warp = self
+        Warp._active_loans.add(id(self.original_loan))
 
         # Clone the loan to avoid modifying the original
         self.warped_loan = copy.deepcopy(self.original_loan)
@@ -151,8 +151,7 @@ class Warp:
             exc_val: Exception value (if any)
             exc_tb: Exception traceback (if any)
         """
-        # Clear the active warp
-        Warp._active_warp = None
+        Warp._active_loans.discard(id(self.original_loan))
         self.warped_loan = None
 
         # Don't suppress any exceptions (no return needed for None)

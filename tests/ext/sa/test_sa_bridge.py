@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, create_engine, select
 from sqlalchemy.orm import Session, relationship
 
+from money_warp import Warp
 from money_warp.ext.sa import MoneyType, loan_bridge, settlement_bridge
 from money_warp.money import Money
 
@@ -19,7 +20,6 @@ from .conftest import (
     SettlementRecordFactory,
 )
 
-
 # ===========================================================================
 # settlement_bridge — metadata
 # ===========================================================================
@@ -30,11 +30,19 @@ def test_settlement_bridge_defaults():
         "balance": "remaining_balance",
         "date": "payment_date",
         "amount": "amount",
+        "interest_date": "interest_date",
+        "processing_date": "processing_date",
     }
 
 
 def test_settlement_bridge_custom_names():
-    @settlement_bridge(balance="bal", date="settled_at", amount="paid")
+    @settlement_bridge(
+        balance="bal",
+        date="settled_at",
+        amount="paid",
+        interest_date="int_dt",
+        processing_date="proc_dt",
+    )
     class Custom(Base):
         __tablename__ = "custom_settlements"
         id = Column(Integer, primary_key=True)
@@ -43,6 +51,8 @@ def test_settlement_bridge_custom_names():
         "balance": "bal",
         "date": "settled_at",
         "amount": "paid",
+        "interest_date": "int_dt",
+        "processing_date": "proc_dt",
     }
 
 
@@ -66,107 +76,70 @@ def test_loan_bridge_stores_metadata():
 
 
 # ===========================================================================
-# balance hybrid_property (Python side)
+# _load_money_warp_loan — raises on missing required fields
 # ===========================================================================
 
 
-def test_balance_no_settlements_returns_principal(session):
-    loan = LoanRecordFactory()
+def test_load_money_warp_loan_raises_when_interest_rate_none(session):
+    loan = LoanRecordFactory(interest_rate=None)
     session.expire_all()
     loaded = session.get(LoanRecord, loan.id)
-    assert loaded.balance == Money("10000")
 
-
-def test_balance_with_settlements_returns_last_remaining(session):
-    loan = LoanRecordFactory()
-    SettlementRecordFactory(
-        loan_id=loan.id,
-        payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
-        remaining_balance=Money("7500"),
-    )
-    SettlementRecordFactory(
-        loan_id=loan.id,
-        payment_date=datetime(2024, 3, 1, tzinfo=timezone.utc),
-        remaining_balance=Money("3800"),
-    )
-    session.expire_all()
-
-    loaded = session.get(LoanRecord, loan.id)
-    assert loaded.balance == Money("3800")
+    with pytest.raises(ValueError, match="interest_rate"):
+        loaded._load_money_warp_loan()
 
 
 # ===========================================================================
-# balance_at hybrid_method (Python side)
+# balance_at hybrid_method (Python side) — uses Loan reconstruction
 # ===========================================================================
 
 
-def test_balance_at_before_any_settlement_returns_principal(session):
+def test_balance_at_no_settlements_includes_accrued_interest(session):
     loan = LoanRecordFactory()
-    SettlementRecordFactory(
-        loan_id=loan.id,
-        payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
-    )
     session.expire_all()
-
     loaded = session.get(LoanRecord, loan.id)
-    assert loaded.balance_at(datetime(2024, 1, 15, tzinfo=timezone.utc)) == Money("10000")
+
+    result = loaded.balance_at(datetime(2024, 2, 1, tzinfo=timezone.utc))
+    assert result > Money("10000")
 
 
-def test_balance_at_after_first_settlement(session):
+def test_balance_at_matches_loan_current_balance(session):
     loan = LoanRecordFactory()
-    SettlementRecordFactory(
-        loan_id=loan.id,
-        payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
-        remaining_balance=Money("7500"),
-    )
-    SettlementRecordFactory(
-        loan_id=loan.id,
-        payment_date=datetime(2024, 3, 1, tzinfo=timezone.utc),
-        remaining_balance=Money("3800"),
-    )
     session.expire_all()
-
     loaded = session.get(LoanRecord, loan.id)
-    assert loaded.balance_at(datetime(2024, 2, 15, tzinfo=timezone.utc)) == Money("7500")
+    as_of = datetime(2024, 2, 15, tzinfo=timezone.utc)
+
+    mw_loan = loaded._load_money_warp_loan()
+    with Warp(mw_loan, as_of) as warped:
+        expected = warped.current_balance
+    assert loaded.balance_at(as_of) == expected
 
 
-def test_balance_at_after_all_settlements(session):
+def test_balance_at_with_settlement_reflects_post_payment_interest(session):
     loan = LoanRecordFactory()
     SettlementRecordFactory(
         loan_id=loan.id,
-        payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
-        remaining_balance=Money("7500"),
-    )
-    SettlementRecordFactory(
-        loan_id=loan.id,
-        payment_date=datetime(2024, 3, 1, tzinfo=timezone.utc),
-        remaining_balance=Money("3800"),
-    )
-    session.expire_all()
-
-    loaded = session.get(LoanRecord, loan.id)
-    assert loaded.balance_at(datetime(2025, 1, 1, tzinfo=timezone.utc)) == Money("3800")
-
-
-def test_balance_at_exact_settlement_date(session):
-    loan = LoanRecordFactory()
-    SettlementRecordFactory(
-        loan_id=loan.id,
+        amount=Money("3000"),
         payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
         remaining_balance=Money("7500"),
     )
     session.expire_all()
-
     loaded = session.get(LoanRecord, loan.id)
-    assert loaded.balance_at(datetime(2024, 2, 1, tzinfo=timezone.utc)) == Money("7500")
+
+    as_of = datetime(2024, 2, 15, tzinfo=timezone.utc)
+    result = loaded.balance_at(as_of)
+    mw_loan = loaded._load_money_warp_loan()
+    with Warp(mw_loan, as_of) as warped:
+        expected = warped.current_balance
+    assert result == expected
 
 
-def test_balance_at_no_settlements_returns_principal(session):
+def test_balance_delegates_to_balance_at(session):
     loan = LoanRecordFactory()
     session.expire_all()
-
     loaded = session.get(LoanRecord, loan.id)
-    assert loaded.balance_at(datetime(2025, 1, 1, tzinfo=timezone.utc)) == Money("10000")
+
+    assert loaded.balance == loaded.balance_at(datetime.now(tz=timezone.utc))
 
 
 # ===========================================================================
@@ -178,11 +151,13 @@ def test_balance_at_sql_filter(session):
     loan = LoanRecordFactory()
     SettlementRecordFactory(
         loan_id=loan.id,
+        amount=Money("3000"),
         payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
         remaining_balance=Money("7500"),
     )
     SettlementRecordFactory(
         loan_id=loan.id,
+        amount=Money("7000"),
         payment_date=datetime(2024, 3, 1, tzinfo=timezone.utc),
         remaining_balance=Money("500"),
     )
@@ -215,6 +190,7 @@ def test_balance_at_sql_order_by(session):
     loan2 = LoanRecordFactory(principal=Money("5000"))
     SettlementRecordFactory(
         loan_id=loan1.id,
+        amount=Money("7500"),
         payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
         remaining_balance=Money("3000"),
     )
@@ -246,6 +222,7 @@ def test_balance_filter_with_settlements(session):
     loan = LoanRecordFactory()
     SettlementRecordFactory(
         loan_id=loan.id,
+        amount=Money("9500"),
         payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
         remaining_balance=Money("800"),
     )
@@ -267,6 +244,7 @@ def test_balance_filter_paid_off(session):
     loan = LoanRecordFactory()
     SettlementRecordFactory(
         loan_id=loan.id,
+        amount=Money("10000"),
         payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
         remaining_balance=Money("0"),
     )
@@ -288,7 +266,7 @@ def test_loan_bridge_raises_without_settlement_bridge():
         remaining_balance = Column(MoneyType())
         payment_date = Column(DateTime)
 
-    @loan_bridge(principal="principal", settlements="settlements")
+    @loan_bridge()
     class BadLoan(Base):
         __tablename__ = "loans_bad"
         id = Column(Integer, primary_key=True)
