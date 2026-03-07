@@ -36,6 +36,7 @@ class CashFlowItem:
         *,
         entry: Optional[CashFlowEntry] = None,
         time_context: Optional[TimeContext] = None,
+        effective_date: Optional["datetime"] = None,
     ) -> None:
         if entry is not None:
             initial = entry
@@ -54,7 +55,8 @@ class CashFlowItem:
                 "CashFlowItem requires either an 'entry' keyword argument or positional (amount, datetime) arguments."
             )
 
-        self._timeline: List[Tuple["datetime", Optional[CashFlowEntry]]] = [(EPOCH, initial)]
+        start = effective_date if effective_date is not None else EPOCH
+        self._timeline: List[Tuple["datetime", Optional[CashFlowEntry]]] = [(start, initial)]
         self._time_ctx = time_context
 
     # ------------------------------------------------------------------

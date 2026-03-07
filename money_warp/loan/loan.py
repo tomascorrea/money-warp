@@ -273,6 +273,10 @@ class Loan:
         """Current datetime (Warp-aware via shared TimeContext)."""
         return self._time_ctx.now()
 
+    def _on_warp(self, target_date: datetime) -> None:
+        """Hook called by Warp after overriding TimeContext."""
+        self.calculate_late_fines(target_date)
+
     @tz_aware
     def days_since_last_payment(self, as_of_date: Optional[datetime] = None) -> int:
         """Get the number of days since the last payment as of a given date (defaults to current time)."""

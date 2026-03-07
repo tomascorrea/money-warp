@@ -16,6 +16,12 @@ money_warp/
 │   ├── item.py            # CashFlowItem (temporal container with timeline)
 │   ├── flow.py            # CashFlow (collection, resolves items)
 │   └── query.py           # CashFlowQuery (SQLAlchemy-style filtering)
+├── billing_cycle/
+│   ├── base.py            # BaseBillingCycle (abstract)
+│   └── monthly.py         # MonthlyBillingCycle (fixed calendar day)
+├── credit_card/
+│   ├── credit_card.py     # CreditCard state machine
+│   └── statement.py       # Statement (frozen derived view)
 ├── loan/
 │   └── loan.py            # Loan state machine
 ├── scheduler/
@@ -28,7 +34,7 @@ money_warp/
 │   └── grossup.py         # grossup() function, GrossupResult
 ├── present_value.py       # PV, NPV, IRR, MIRR, discount_factor
 ├── tz.py                  # Timezone config, ensure_aware, tz_aware decorator
-├── warp.py                # Warp context manager + WarpedTime
+├── warp.py                # Warp context manager + WarpedTime (generic)
 └── date_utils.py          # Date generation utilities
 ```
 
@@ -118,14 +124,20 @@ Money ─► CashFlowEntry ─► CashFlowItem ─► CashFlow
                             ▲                  │
                   TimeContext                   │
                     ▲                           │
-Rate ◄── InterestRate ─────────────────────► Loan ──► irr() returns Rate
-                                            │   │
-                                 Scheduler ◄─┘   └──► Warp
-                                    │          (clones + overrides TimeContext)
-                                    ▼
-                               BaseTax (IOF)
+Rate ◄── InterestRate ──────────────┬──────► Loan ──► irr() returns Rate
+                                    │       │   │
+                                    │  Scheduler ◄─┘
+                                    │       │       └──► Warp (generic)
+                                    │       ▼          (clones + overrides TimeContext
+                                    │  BaseTax (IOF)    + calls _on_warp)
+                                    │       │
+                                    │  grossup()
                                     │
-                               grossup()
+                                    └──────► CreditCard
+                                             │
+                                    BaseBillingCycle ◄─┘
+                                        ▲
+                                   MonthlyBillingCycle
 ```
 
 - `CashFlowEntry` is a frozen data record (`amount: Money`, `datetime`, etc.)
@@ -136,4 +148,6 @@ Rate ◄── InterestRate ─────────────────�
 - `Loan` optionally stores `BaseTax` instances for tax reporting in cash flows
 - `BaseTax` implementations (e.g. `IOF`) compute taxes from a `PaymentSchedule`
 - `grossup()` uses a scheduler and taxes to compute a grossed-up principal
-- `Warp` deep-clones a `Loan` and overrides the shared `TimeContext`
+- `CreditCard` creates a shared `TimeContext` and records transactions as `CashFlowItem` objects
+- `CreditCard` delegates billing-cycle dates to a `BaseBillingCycle` subclass
+- `Warp` is generic — deep-clones any object with `_time_ctx` and calls `_on_warp()` if present
