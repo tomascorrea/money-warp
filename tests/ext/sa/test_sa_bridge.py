@@ -20,20 +20,6 @@ from .conftest import (
 )
 
 
-def _add_loan(session, **overrides):
-    loan = LoanRecordFactory(**overrides)
-    session.add(loan)
-    session.flush()
-    return loan
-
-
-def _add_settlement(session, loan, **overrides):
-    settlement = SettlementRecordFactory(loan_id=loan.id, **overrides)
-    session.add(settlement)
-    session.flush()
-    return settlement
-
-
 # ===========================================================================
 # settlement_bridge — metadata
 # ===========================================================================
@@ -69,6 +55,13 @@ def test_loan_bridge_stores_metadata():
     assert LoanRecord._money_warp_bridge_meta == {
         "principal": "principal",
         "settlements": "settlements",
+        "interest_rate": "interest_rate",
+        "due_dates": "due_dates",
+        "disbursement_date": "disbursement_date",
+        "fine_rate": "fine_rate",
+        "grace_period_days": "grace_period_days",
+        "mora_interest_rate": "mora_interest_rate",
+        "mora_strategy": "mora_strategy",
     }
 
 
@@ -78,23 +71,21 @@ def test_loan_bridge_stores_metadata():
 
 
 def test_balance_no_settlements_returns_principal(session):
-    loan = _add_loan(session)
+    loan = LoanRecordFactory()
     session.expire_all()
     loaded = session.get(LoanRecord, loan.id)
     assert loaded.balance == Money("10000")
 
 
 def test_balance_with_settlements_returns_last_remaining(session):
-    loan = _add_loan(session)
-    _add_settlement(
-        session,
-        loan,
+    loan = LoanRecordFactory()
+    SettlementRecordFactory(
+        loan_id=loan.id,
         payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
         remaining_balance=Money("7500"),
     )
-    _add_settlement(
-        session,
-        loan,
+    SettlementRecordFactory(
+        loan_id=loan.id,
         payment_date=datetime(2024, 3, 1, tzinfo=timezone.utc),
         remaining_balance=Money("3800"),
     )
@@ -110,10 +101,9 @@ def test_balance_with_settlements_returns_last_remaining(session):
 
 
 def test_balance_at_before_any_settlement_returns_principal(session):
-    loan = _add_loan(session)
-    _add_settlement(
-        session,
-        loan,
+    loan = LoanRecordFactory()
+    SettlementRecordFactory(
+        loan_id=loan.id,
         payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
     )
     session.expire_all()
@@ -123,16 +113,14 @@ def test_balance_at_before_any_settlement_returns_principal(session):
 
 
 def test_balance_at_after_first_settlement(session):
-    loan = _add_loan(session)
-    _add_settlement(
-        session,
-        loan,
+    loan = LoanRecordFactory()
+    SettlementRecordFactory(
+        loan_id=loan.id,
         payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
         remaining_balance=Money("7500"),
     )
-    _add_settlement(
-        session,
-        loan,
+    SettlementRecordFactory(
+        loan_id=loan.id,
         payment_date=datetime(2024, 3, 1, tzinfo=timezone.utc),
         remaining_balance=Money("3800"),
     )
@@ -143,16 +131,14 @@ def test_balance_at_after_first_settlement(session):
 
 
 def test_balance_at_after_all_settlements(session):
-    loan = _add_loan(session)
-    _add_settlement(
-        session,
-        loan,
+    loan = LoanRecordFactory()
+    SettlementRecordFactory(
+        loan_id=loan.id,
         payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
         remaining_balance=Money("7500"),
     )
-    _add_settlement(
-        session,
-        loan,
+    SettlementRecordFactory(
+        loan_id=loan.id,
         payment_date=datetime(2024, 3, 1, tzinfo=timezone.utc),
         remaining_balance=Money("3800"),
     )
@@ -163,10 +149,9 @@ def test_balance_at_after_all_settlements(session):
 
 
 def test_balance_at_exact_settlement_date(session):
-    loan = _add_loan(session)
-    _add_settlement(
-        session,
-        loan,
+    loan = LoanRecordFactory()
+    SettlementRecordFactory(
+        loan_id=loan.id,
         payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
         remaining_balance=Money("7500"),
     )
@@ -177,7 +162,7 @@ def test_balance_at_exact_settlement_date(session):
 
 
 def test_balance_at_no_settlements_returns_principal(session):
-    loan = _add_loan(session)
+    loan = LoanRecordFactory()
     session.expire_all()
 
     loaded = session.get(LoanRecord, loan.id)
@@ -190,16 +175,14 @@ def test_balance_at_no_settlements_returns_principal(session):
 
 
 def test_balance_at_sql_filter(session):
-    loan = _add_loan(session)
-    _add_settlement(
-        session,
-        loan,
+    loan = LoanRecordFactory()
+    SettlementRecordFactory(
+        loan_id=loan.id,
         payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
         remaining_balance=Money("7500"),
     )
-    _add_settlement(
-        session,
-        loan,
+    SettlementRecordFactory(
+        loan_id=loan.id,
         payment_date=datetime(2024, 3, 1, tzinfo=timezone.utc),
         remaining_balance=Money("500"),
     )
@@ -213,10 +196,9 @@ def test_balance_at_sql_filter(session):
 
 
 def test_balance_at_sql_before_settlements(session):
-    loan = _add_loan(session)
-    _add_settlement(
-        session,
-        loan,
+    loan = LoanRecordFactory()
+    SettlementRecordFactory(
+        loan_id=loan.id,
         payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
     )
 
@@ -229,11 +211,10 @@ def test_balance_at_sql_before_settlements(session):
 
 
 def test_balance_at_sql_order_by(session):
-    loan1 = _add_loan(session, principal=Money("10000"))
-    loan2 = _add_loan(session, principal=Money("5000"))
-    _add_settlement(
-        session,
-        loan1,
+    loan1 = LoanRecordFactory(principal=Money("10000"))
+    loan2 = LoanRecordFactory(principal=Money("5000"))
+    SettlementRecordFactory(
+        loan_id=loan1.id,
         payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
         remaining_balance=Money("3000"),
     )
@@ -253,8 +234,8 @@ def test_balance_at_sql_order_by(session):
 
 
 def test_balance_filter_gt(session):
-    loan1 = _add_loan(session, principal=Money("10000"))
-    _add_loan(session, principal=Money("500"))
+    loan1 = LoanRecordFactory(principal=Money("10000"))
+    LoanRecordFactory(principal=Money("500"))
 
     results = session.execute(select(LoanRecord).where(LoanRecord.balance > Decimal("1000"))).scalars().all()
     assert len(results) == 1
@@ -262,10 +243,9 @@ def test_balance_filter_gt(session):
 
 
 def test_balance_filter_with_settlements(session):
-    loan = _add_loan(session)
-    _add_settlement(
-        session,
-        loan,
+    loan = LoanRecordFactory()
+    SettlementRecordFactory(
+        loan_id=loan.id,
         payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
         remaining_balance=Money("800"),
     )
@@ -275,19 +255,18 @@ def test_balance_filter_with_settlements(session):
 
 
 def test_balance_order_by(session):
-    loan1 = _add_loan(session, principal=Money("5000"))
-    loan2 = _add_loan(session, principal=Money("20000"))
-    loan3 = _add_loan(session, principal=Money("1000"))
+    loan1 = LoanRecordFactory(principal=Money("5000"))
+    loan2 = LoanRecordFactory(principal=Money("20000"))
+    loan3 = LoanRecordFactory(principal=Money("1000"))
 
     results = session.execute(select(LoanRecord).order_by(LoanRecord.balance.desc())).scalars().all()
     assert [r.id for r in results] == [loan2.id, loan1.id, loan3.id]
 
 
 def test_balance_filter_paid_off(session):
-    loan = _add_loan(session)
-    _add_settlement(
-        session,
-        loan,
+    loan = LoanRecordFactory()
+    SettlementRecordFactory(
+        loan_id=loan.id,
         payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
         remaining_balance=Money("0"),
     )

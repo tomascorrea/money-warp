@@ -6,17 +6,20 @@ Requires the ``sa`` extra::
     pip install money-warp[sa]
 """
 
+from datetime import datetime
 from decimal import Decimal
-from typing import Any, Optional, Type
+from typing import Any, List, Optional, Type
 
 from sqlalchemy import JSON, Integer, Numeric, String, func, select
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.types import TypeDecorator
 
 from money_warp.interest_rate import InterestRate
+from money_warp.loan import Loan, MoraStrategy
 from money_warp.money import Money
 from money_warp.rate import CompoundingFrequency, Rate, YearSize
 from money_warp.tz import ensure_aware, now
+from money_warp.warp import WarpedTime
 
 __all__ = [
     "MoneyType",
@@ -263,51 +266,148 @@ def _find_last_settlement_before(items, as_of, meta):
     return last_before
 
 
+def _parse_due_dates(raw: List[str]) -> List[datetime]:
+    """Convert a JSON list of ISO date strings to timezone-aware datetimes."""
+    return [ensure_aware(datetime.fromisoformat(d)) for d in raw]
+
+
+def _reconstruct_current_balance(instance, as_of, meta):
+    """Rebuild a money_warp Loan from SA fields, replay settlements, return current_balance.
+
+    Manipulates the Loan's time context directly (via WarpedTime) instead
+    of entering a Warp context manager, so this can safely be called from
+    inside an existing Warp block.
+    """
+    principal_val = getattr(instance, meta["principal"])
+    ir_val = getattr(instance, meta["interest_rate"], None)
+    dd_val = getattr(instance, meta["due_dates"], None)
+    db_val = getattr(instance, meta["disbursement_date"], None)
+
+    if ir_val is None or dd_val is None or db_val is None:
+        return None
+
+    kwargs: dict = {}
+
+    fine_rate_val = getattr(instance, meta["fine_rate"], None)
+    if fine_rate_val is not None:
+        kwargs["fine_rate"] = fine_rate_val
+
+    gp_val = getattr(instance, meta["grace_period_days"], None)
+    if gp_val is not None:
+        kwargs["grace_period_days"] = gp_val
+
+    mora_ir_val = getattr(instance, meta["mora_interest_rate"], None)
+    if mora_ir_val is not None:
+        kwargs["mora_interest_rate"] = mora_ir_val
+
+    mora_strat_val = getattr(instance, meta["mora_strategy"], None)
+    if mora_strat_val is not None:
+        if isinstance(mora_strat_val, str):
+            kwargs["mora_strategy"] = MoraStrategy[mora_strat_val]
+        else:
+            kwargs["mora_strategy"] = mora_strat_val
+
+    loan = Loan(
+        principal_val,
+        ir_val,
+        _parse_due_dates(dd_val),
+        disbursement_date=db_val,
+        **kwargs,
+    )
+
+    items = getattr(instance, meta["settlements"])
+    settlement_meta = type(items[0])._money_warp_bridge_meta if items else None
+
+    for item in items:
+        loan.record_payment(
+            getattr(item, settlement_meta["amount"]),
+            getattr(item, settlement_meta["date"]),
+        )
+
+    as_of_aware = ensure_aware(as_of)
+    loan._time_ctx.override(WarpedTime(as_of_aware))
+    loan.calculate_late_fines(as_of_aware)
+
+    return loan.current_balance
+
+
 def loan_bridge(
-    principal: str,
-    settlements: str,
+    principal: str = "principal",
+    settlements: str = "settlements",
+    interest_rate: str = "interest_rate",
+    due_dates: str = "due_dates",
+    disbursement_date: str = "disbursement_date",
+    fine_rate: str = "fine_rate",
+    grace_period_days: str = "grace_period_days",
+    mora_interest_rate: str = "mora_interest_rate",
+    mora_strategy: str = "mora_strategy",
 ):
     """Add ``balance_at(date)`` and ``balance`` to a loan model.
 
     Both are SQL-queryable via :mod:`sqlalchemy.ext.hybrid`.
 
     ``balance_at(date)``
-        Returns the remaining balance as of *date* — the
-        ``remaining_balance`` from the last settlement whose payment
-        date is ``<= date``, falling back to ``principal`` when there
-        are no settlements before that date.
+        When the loan model has ``interest_rate``, ``due_dates``, and
+        ``disbursement_date``, reconstructs a full
+        :class:`~money_warp.loan.Loan`, replays settlements, and returns
+        ``current_balance`` (principal + accrued interest + fines).
+        Falls back to the last settlement's ``remaining_balance`` (or
+        ``principal``) when those fields are absent.
 
     ``balance``
         Convenience property equivalent to ``balance_at(now())``.
+
+    All parameter names default to conventional column names. If your
+    model follows the naming convention, ``@loan_bridge()`` with no
+    arguments works.
 
     The settlement model **must** be decorated with
     :func:`settlement_bridge` so that this decorator can discover which
     columns hold balance, date, and amount.
 
     Args:
-        principal: Attribute name on the loan model for the principal
-            amount (``MoneyType`` column used as fallback).
+        principal: Attribute name for the principal amount.
         settlements: Relationship name pointing to the settlement model.
+        interest_rate: Attribute name for the interest rate.
+        due_dates: Attribute name for the JSON list of due dates.
+        disbursement_date: Attribute name for the disbursement date.
+        fine_rate: Attribute name for the fine rate.
+        grace_period_days: Attribute name for the grace period in days.
+        mora_interest_rate: Attribute name for the mora interest rate.
+        mora_strategy: Attribute name for the mora strategy.
     """
 
     def decorator(cls):
-        _settlements_attr = settlements
-        _principal_attr = principal
+        _meta = {
+            "principal": principal,
+            "settlements": settlements,
+            "interest_rate": interest_rate,
+            "due_dates": due_dates,
+            "disbursement_date": disbursement_date,
+            "fine_rate": fine_rate,
+            "grace_period_days": grace_period_days,
+            "mora_interest_rate": mora_interest_rate,
+            "mora_strategy": mora_strategy,
+        }
 
         @hybrid_method
         def balance_at(self, as_of):
-            items = getattr(self, _settlements_attr)
+            reconstructed = _reconstruct_current_balance(self, as_of, _meta)
+            if reconstructed is not None:
+                return reconstructed
+
+            items = getattr(self, _meta["settlements"])
             if not items:
-                return getattr(self, _principal_attr)
-            meta = type(items[0])._money_warp_bridge_meta
-            hit = _find_last_settlement_before(items, as_of, meta)
+                return getattr(self, _meta["principal"])
+            s_meta = type(items[0])._money_warp_bridge_meta
+            hit = _find_last_settlement_before(items, as_of, s_meta)
             if hit is not None:
-                return getattr(hit, meta["balance"])
-            return getattr(self, _principal_attr)
+                return getattr(hit, s_meta["balance"])
+            return getattr(self, _meta["principal"])
 
         @balance_at.expression
         def balance_at(cls, as_of):
-            info = _resolve_settlement_info(cls, _settlements_attr)
+            info = _resolve_settlement_info(cls, _meta["settlements"])
             return func.coalesce(
                 select(info["balance_col"])
                 .where(info["fk_col"] == info["pk_col"])
@@ -316,7 +416,7 @@ def loan_bridge(
                 .limit(1)
                 .correlate(cls)
                 .scalar_subquery(),
-                getattr(cls, _principal_attr),
+                getattr(cls, _meta["principal"]),
             )
 
         @hybrid_property
@@ -327,10 +427,7 @@ def loan_bridge(
         def balance(cls):
             return cls.balance_at(func.now())
 
-        cls._money_warp_bridge_meta = {
-            "principal": _principal_attr,
-            "settlements": _settlements_attr,
-        }
+        cls._money_warp_bridge_meta = _meta
         cls.balance_at = balance_at
         cls.balance = balance
         return cls
