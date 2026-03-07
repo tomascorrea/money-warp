@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Type
 from ..cash_flow import CashFlow, CashFlowItem
 from ..interest_rate import InterestRate
 from ..money import Money
+from ..rate import Rate
 from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
 from ..tax.base import BaseTax, TaxResult
 from ..time_context import TimeContext
@@ -463,7 +464,7 @@ class Loan:
         # Calculate and return present value
         return present_value(expected_cf, discount_rate, valuation_date)
 
-    def irr(self, guess: Optional[InterestRate] = None) -> InterestRate:
+    def irr(self, guess: Optional[Rate] = None) -> Rate:
         """
         Calculate the Internal Rate of Return (IRR) of the loan's expected cash flows.
 
@@ -479,7 +480,7 @@ class Loan:
             guess: Initial guess for IRR (defaults to 10% annual)
 
         Returns:
-            The internal rate of return of the loan's expected cash flows
+            The internal rate of return as a Rate (may be negative)
 
         Examples:
             >>> from money_warp import Loan, Money, InterestRate, Warp

@@ -8,7 +8,8 @@ MoneyWarp is a Time Value of Money library built around the metaphor of "time-wa
 money_warp/
 ├── __init__.py            # Public API exports
 ├── money.py               # Money (high-precision currency)
-├── interest_rate.py       # InterestRate + CompoundingFrequency
+├── rate.py                # Rate (signed base) + CompoundingFrequency + YearSize
+├── interest_rate.py       # InterestRate (non-negative refinement of Rate)
 ├── time_context.py        # TimeContext (shared Warp-compatible time source)
 ├── cash_flow/
 │   ├── entry.py           # CashFlowEntry (frozen data object)
@@ -37,15 +38,21 @@ money_warp/
 
 `Money` stores a `raw_amount: Decimal` at full precision for intermediate calculations and exposes a `real_amount: Decimal` rounded to 2 decimal places for display and comparison. All arithmetic returns new `Money` instances (immutable value object). Comparisons (`==`, `<`, `<=`, `>`, `>=`) use `real_amount`, so two values that round to the same cents are considered equal. Both `Money` and `Decimal` are accepted on the right-hand side, so `Money("100.50") == Decimal("100.50")` works directly without extracting `.real_amount`.
 
-### Explicit Interest Rates
+### Rate and InterestRate
 
-`InterestRate` eliminates the "is 5 the rate or the percentage?" ambiguity. It stores a decimal rate plus a `CompoundingFrequency` enum (`DAILY`, `MONTHLY`, `QUARTERLY`, `SEMI_ANNUALLY`, `ANNUALLY`, `CONTINUOUS`). All conversions go through an effective annual rate as the canonical intermediate form. The `accrue(principal, days)` method computes compound interest on a principal over a number of days, centralising the formula that was previously duplicated across the `Loan` class.
+The library uses two rate types to model the domain distinction between computed metrics and contractual parameters:
 
-String parsing accepts human-friendly formats like `"5.25% a"` or `"0.004167 m"`, as well as abbreviated (Brazilian/LatAm) notation: `"5.25% a.a."`, `"0.5% a.m."`, `"0.0137% a.d."`, `"2.75% a.t."`, `"3% a.s."`. The `str_style` constructor parameter (`"long"` default, or `"abbrev"`) controls how `__str__` renders the period label. Parsing an abbreviated string auto-sets `str_style="abbrev"` so that `str()` round-trips correctly. The style propagates through `to_daily()`, `to_monthly()`, and `to_annual()` conversions.
+- **`Rate`** (`rate.py`) — signed, general-purpose base type. Stores a decimal rate plus a `CompoundingFrequency` enum (`DAILY`, `MONTHLY`, `QUARTERLY`, `SEMI_ANNUALLY`, `ANNUALLY`, `CONTINUOUS`). Supports positive, negative, and zero values. All conversions go through an effective annual rate as the canonical intermediate form. Used as the return type for IRR and MIRR, and accepted by `present_value()` and `discount_factor()`.
+
+- **`InterestRate`** (`interest_rate.py`) — non-negative refinement of `Rate`. Adds a validation that rejects negative rates at construction time (both string and numeric). Also provides the `accrue(principal, days)` method for computing compound interest, which belongs exclusively to contractual rates. Used for loan terms, scheduler inputs, and annuity/perpetuity calculations.
+
+Conversion methods (`to_daily()`, `to_monthly()`, `to_annual()`) use `self.__class__(...)` so subclass identity is preserved.
+
+String parsing accepts human-friendly formats like `"5.25% a"`, `"-2.5% annual"` (negatives only for `Rate`), or `"0.004167 m"`, as well as abbreviated (Brazilian/LatAm) notation: `"5.25% a.a."`, `"0.5% a.m."`, `"0.0137% a.d."`, `"2.75% a.t."`, `"3% a.s."`. The `str_style` constructor parameter (`"long"` default, or `"abbrev"`) controls how `__str__` renders the period label. Parsing an abbreviated string auto-sets `str_style="abbrev"` so that `str()` round-trips correctly. The style propagates through conversions.
 
 ### Year Size (Day-Count Convention)
 
-The `YearSize` enum controls how many days constitute one year for daily rate conversions: `commercial` (365, default) and `banker` (360). The `year_size` parameter on `InterestRate.__init__` defaults to `YearSize.commercial` for backward compatibility. It affects three areas:
+The `YearSize` enum controls how many days constitute one year for daily rate conversions: `commercial` (365, default) and `banker` (360). The `year_size` parameter on `Rate.__init__` (and `InterestRate.__init__`) defaults to `YearSize.commercial` for backward compatibility. It affects three areas:
 
 - **Daily conversions** (`to_daily()`, `_to_effective_annual()` for DAILY rates): the exponent uses `year_size.value` instead of a hardcoded 365.
 - **`to_periodic_rate()`**: the short-circuit check compares against `year_size.value` for DAILY frequencies, so a banker-based daily rate correctly matches `num_periods=360`.
@@ -111,7 +118,7 @@ Money ─► CashFlowEntry ─► CashFlowItem ─► CashFlow
                             ▲                  │
                   TimeContext                   │
                     ▲                           │
-InterestRate ──────────────────────────────► Loan
+Rate ◄── InterestRate ─────────────────────► Loan ──► irr() returns Rate
                                             │   │
                                  Scheduler ◄─┘   └──► Warp
                                     │          (clones + overrides TimeContext)

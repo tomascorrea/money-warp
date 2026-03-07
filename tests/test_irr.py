@@ -10,6 +10,7 @@ from money_warp import (
     CashFlowItem,
     InterestRate,
     Money,
+    Rate,
     YearSize,
     internal_rate_of_return,
     irr,
@@ -64,7 +65,7 @@ def test_irr_multi_period_investment(multi_period_investment):
     calculated_irr = irr(multi_period_investment)
 
     # Should return a valid InterestRate
-    assert isinstance(calculated_irr, InterestRate)
+    assert isinstance(calculated_irr, Rate)
     # Should be positive (profitable investment)
     assert calculated_irr.as_decimal > 0
 
@@ -89,8 +90,8 @@ def test_irr_with_time_machine_for_specific_date(simple_investment):
         mid_year_irr = warped_loan.irr()
 
     # Both should be valid InterestRates
-    assert isinstance(normal_irr, InterestRate)
-    assert isinstance(mid_year_irr, InterestRate)
+    assert isinstance(normal_irr, Rate)
+    assert isinstance(mid_year_irr, Rate)
 
 
 def test_irr_with_custom_guess(simple_investment):
@@ -147,7 +148,7 @@ def test_irr_zero_npv_case():
     calculated_irr = irr(cf)
 
     # Should find a valid IRR
-    assert isinstance(calculated_irr, InterestRate)
+    assert isinstance(calculated_irr, Rate)
     assert calculated_irr.as_decimal > 0
 
 
@@ -202,7 +203,7 @@ def test_irr_complex_cash_flow():
     calculated_irr = irr(cf)
 
     # Should find a valid IRR for complex cash flow
-    assert isinstance(calculated_irr, InterestRate)
+    assert isinstance(calculated_irr, Rate)
 
 
 # Modified IRR (MIRR) tests
@@ -220,7 +221,7 @@ def test_mirr_basic():
 
     mirr = modified_internal_rate_of_return(cf, finance_rate, reinvestment_rate)
 
-    assert isinstance(mirr, InterestRate)
+    assert isinstance(mirr, Rate)
     assert mirr.as_decimal > 0  # Should be positive
 
 
@@ -267,8 +268,8 @@ def test_mirr_different_rates():
     mirr_low_finance = modified_internal_rate_of_return(cf, InterestRate("4% annual"), InterestRate("4% annual"))
 
     # Both should be valid
-    assert isinstance(mirr_high_finance, InterestRate)
-    assert isinstance(mirr_low_finance, InterestRate)
+    assert isinstance(mirr_high_finance, Rate)
+    assert isinstance(mirr_low_finance, Rate)
 
 
 # Integration with other functions

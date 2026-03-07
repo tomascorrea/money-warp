@@ -21,6 +21,7 @@ from money_warp.present_value import (
     present_value_of_annuity,
     present_value_of_perpetuity,
 )
+from money_warp.rate import Rate
 from money_warp.scheduler import (
     BaseScheduler,
     InvertedPriceScheduler,
@@ -46,6 +47,7 @@ from money_warp.warp import InvalidDateError, NestedWarpError, Warp, WarpError
 
 __all__ = [
     "Money",
+    "Rate",
     "InterestRate",
     "CompoundingFrequency",
     "YearSize",

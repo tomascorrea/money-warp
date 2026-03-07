@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from money_warp import InterestRate, Loan, Money, Warp
+from money_warp import InterestRate, Loan, Money, Rate, Warp
 
 
 def test_loan_present_value_with_own_rate():
@@ -132,7 +132,7 @@ def test_loan_irr_basic():
     loan_irr = loan.irr()
 
     # Should return an InterestRate
-    assert isinstance(loan_irr, InterestRate)
+    assert isinstance(loan_irr, Rate)
     # IRR should be very close to the loan's interest rate (5%)
     # because that's the rate where NPV ≈ 0
     actual_rate = float(loan_irr.as_decimal * 100)
@@ -152,7 +152,7 @@ def test_loan_irr_with_time_machine_for_valuation():
     with Warp(loan, datetime(2024, 2, 1, tzinfo=timezone.utc)) as warped_loan:
         loan_irr = warped_loan.irr()
 
-    assert isinstance(loan_irr, InterestRate)
+    assert isinstance(loan_irr, Rate)
     # Should be close to the loan's interest rate (4%)
     actual_rate = float(loan_irr.as_decimal * 100)
     assert abs(actual_rate - 4.0) < 0.1  # Should be very close to 4%
@@ -169,7 +169,7 @@ def test_loan_irr_with_custom_guess():
     guess = InterestRate("10% annual")
     loan_irr = loan.irr(guess=guess)
 
-    assert isinstance(loan_irr, InterestRate)
+    assert isinstance(loan_irr, Rate)
     # Should converge to loan's rate (6%) regardless of initial guess
     actual_rate = float(loan_irr.as_decimal * 100)
     assert abs(actual_rate - 6.0) < 0.1  # Should be very close to 6%
@@ -190,8 +190,8 @@ def test_loan_irr_with_time_machine():
         warped_irr = warped_loan.irr()
 
     # Both should be valid InterestRates
-    assert isinstance(normal_irr, InterestRate)
-    assert isinstance(warped_irr, InterestRate)
+    assert isinstance(normal_irr, Rate)
+    assert isinstance(warped_irr, Rate)
     # Both should be close to the loan's rate (7%)
     for test_irr in [normal_irr, warped_irr]:
         actual_rate = float(test_irr.as_decimal * 100)
@@ -209,7 +209,7 @@ def test_loan_irr_multiple_payments():
 
     loan_irr = loan.irr()
 
-    assert isinstance(loan_irr, InterestRate)
+    assert isinstance(loan_irr, Rate)
     # Should be very close to the loan's rate (5.5%)
     actual_rate = float(loan_irr.as_decimal * 100)
     assert abs(actual_rate - 5.5) < 0.1  # Should be very close to 5.5%

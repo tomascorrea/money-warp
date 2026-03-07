@@ -7,13 +7,14 @@ from typing import Callable, Optional, Tuple, Union
 from scipy.optimize import brentq, fsolve  # type: ignore[import]
 
 from .cash_flow import CashFlow
-from .interest_rate import InterestRate, YearSize
+from .interest_rate import InterestRate
 from .money import Money
+from .rate import Rate, YearSize
 from .tz import tz_aware
 
 
 @tz_aware
-def present_value(cash_flow: CashFlow, discount_rate: InterestRate, valuation_date: Optional[datetime] = None) -> Money:
+def present_value(cash_flow: CashFlow, discount_rate: Rate, valuation_date: Optional[datetime] = None) -> Money:
     """
     Calculate the Present Value (PV) of a cash flow stream.
 
@@ -186,7 +187,7 @@ def present_value_of_perpetuity(payment_amount: Money, interest_rate: InterestRa
     return Money(payment_amount.raw_amount / periodic_rate)
 
 
-def discount_factor(interest_rate: InterestRate, periods: Union[int, Decimal]) -> Decimal:
+def discount_factor(interest_rate: Rate, periods: Union[int, Decimal]) -> Decimal:
     """
     Calculate the discount factor for a given interest rate and time periods.
 
@@ -226,10 +227,9 @@ def _npv_function_factory(
         if rate_decimal > 10.0:  # Prevent rates above 1000%
             return -1e10
 
-        # Convert decimal rate to InterestRate
         # Handle both scalar and array inputs from scipy
         rate_percentage = rate_decimal.item() * 100 if hasattr(rate_decimal, "item") else float(rate_decimal) * 100  # type: ignore[attr-defined]
-        test_rate = InterestRate(f"{rate_percentage:.10f}% annual", year_size=year_size)
+        test_rate = Rate(f"{rate_percentage:.10f}% annual", year_size=year_size)
         npv = present_value(cash_flow, test_rate, valuation_date)
         return float(npv.raw_amount)
 
@@ -267,8 +267,8 @@ def _find_irr_bracket(npv_function: Callable[[float], float]) -> Tuple[Optional[
 
 
 def internal_rate_of_return(
-    cash_flow: CashFlow, guess: Optional[InterestRate] = None, year_size: YearSize = YearSize.commercial
-) -> InterestRate:
+    cash_flow: CashFlow, guess: Optional[Rate] = None, year_size: YearSize = YearSize.commercial
+) -> Rate:
     """
     Calculate the Internal Rate of Return (IRR) of a cash flow stream.
 
@@ -288,7 +288,7 @@ def internal_rate_of_return(
                    YearSize.banker for 360 days)
 
     Returns:
-        The internal rate of return as an InterestRate
+        The internal rate of return as a Rate (may be negative)
 
     Raises:
         ValueError: If IRR cannot be found (no solution or doesn't converge)
@@ -352,14 +352,11 @@ def internal_rate_of_return(
     if irr_decimal < -0.99 or irr_decimal > 10.0:  # Between -99% and 1000%
         raise ValueError(f"IRR solution unreasonable: {irr_decimal * 100:.2f}%")
 
-    # Convert back to InterestRate
     irr_percentage = irr_decimal * 100
-    return InterestRate(f"{irr_percentage:.8f}% annual", year_size=year_size)
+    return Rate(f"{irr_percentage:.8f}% annual", year_size=year_size)
 
 
-def irr(
-    cash_flow: CashFlow, guess: Optional[InterestRate] = None, year_size: YearSize = YearSize.commercial
-) -> InterestRate:
+def irr(cash_flow: CashFlow, guess: Optional[Rate] = None, year_size: YearSize = YearSize.commercial) -> Rate:
     """
     Calculate the Internal Rate of Return (IRR) of a cash flow stream.
 
@@ -377,7 +374,7 @@ def irr(
                    YearSize.banker for 360 days)
 
     Returns:
-        The internal rate of return as an InterestRate
+        The internal rate of return as a Rate (may be negative)
 
     Examples:
         >>> from datetime import datetime
@@ -450,7 +447,7 @@ def modified_internal_rate_of_return(
     finance_rate: InterestRate,
     reinvestment_rate: InterestRate,
     year_size: YearSize = YearSize.commercial,
-) -> InterestRate:
+) -> Rate:
     """
     Calculate the Modified Internal Rate of Return (MIRR).
 
@@ -471,7 +468,7 @@ def modified_internal_rate_of_return(
                    YearSize.banker for 360 days)
 
     Returns:
-        The modified internal rate of return as an InterestRate
+        The modified internal rate of return as a Rate (may be negative)
 
     Examples:
         >>> from datetime import datetime
@@ -528,6 +525,5 @@ def modified_internal_rate_of_return(
     # MIRR = ratio^(1/years) - 1
     mirr_decimal = ratio ** (Decimal("1") / total_periods_years) - Decimal("1")
 
-    # Convert to percentage and create InterestRate
     mirr_percentage = float(mirr_decimal * 100)
-    return InterestRate(f"{mirr_percentage:.6f}% annual", year_size=year_size)
+    return Rate(f"{mirr_percentage:.6f}% annual", year_size=year_size)

@@ -82,12 +82,16 @@ def test_interest_rate_string_parsing_mixed_case():
         "",  # Empty string
         "5.25% annual extra",  # Extra text
         "5.25%% a",  # Double %
-        "-5.25% a",  # Negative (not supported in regex)
     ],
 )
 def test_interest_rate_string_parsing_invalid_format(invalid_string):
     with pytest.raises(ValueError, match="Invalid rate format"):
         InterestRate(invalid_string)
+
+
+def test_interest_rate_string_parsing_rejects_negative():
+    with pytest.raises(ValueError, match="Interest rate cannot be negative"):
+        InterestRate("-5.25% a")
 
 
 # Numeric creation tests (backward compatibility)
