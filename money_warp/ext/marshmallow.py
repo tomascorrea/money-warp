@@ -22,6 +22,14 @@ __all__ = [
 _VALID_MONEY_REPRESENTATIONS = ("raw", "real", "cents")
 _VALID_RATE_REPRESENTATIONS = ("string", "dict")
 
+_FREQUENCY_TOKEN = {
+    CompoundingFrequency.ANNUALLY: "annual",
+    CompoundingFrequency.MONTHLY: "monthly",
+    CompoundingFrequency.DAILY: "daily",
+    CompoundingFrequency.QUARTERLY: "quarterly",
+    CompoundingFrequency.SEMI_ANNUALLY: "semi-annual",
+}
+
 
 class MoneyField(fields.Field):
     """Marshmallow field for :class:`~money_warp.money.Money`.
@@ -115,7 +123,8 @@ class RateField(fields.Field):
             raise self.make_error("invalid")
 
         if self.representation == "string":
-            return str(value)
+            token = _FREQUENCY_TOKEN[value.period]
+            return f"{value.as_percentage:.3f}% {token}"
 
         return {
             "rate": str(value.as_decimal),
