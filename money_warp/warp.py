@@ -2,9 +2,8 @@
 
 import copy
 from datetime import date, datetime
-from typing import Optional, Type, Union
+from typing import Any, Optional, Type, Union
 
-from .loan import Loan
 from .tz import ensure_aware
 
 
@@ -45,44 +44,65 @@ class Warp:
     """
     Time Machine context manager for financial projections and analysis.
 
-    Allows you to temporarily "warp" a loan to a specific date to analyze
-    its state at that point in time. This is useful for:
-    - Calculating loan balances at future dates
-    - Analyzing payment history up to a past date
-    - Creating "what if" scenarios at different points in time
+    Allows you to temporarily "warp" any financial instrument (Loan,
+    CreditCard, or any object with a ``_time_ctx`` attribute) to a
+    specific date to analyze its state at that point in time.
 
     Usage:
-        loan = Loan(...)
-        with Warp(loan, '2030-01-15') as warped_loan:
-            balance = warped_loan.current_balance
+        instrument = Loan(...)   # or CreditCard(...)
+        with Warp(instrument, '2030-01-15') as warped:
+            balance = warped.current_balance
 
-    Warping different Loan objects concurrently is allowed, but nested
-    warps on the **same** Loan are not.
+    Warping different objects concurrently is allowed, but nested
+    warps on the **same** object are not.
+
+    The target object must expose ``_time_ctx`` (a :class:`TimeContext`).
+    If it also has an ``_on_warp(target_date)`` method, that method is
+    called after overriding the time context on the clone.
     """
 
-    _active_loans: set = set()
+    _active_targets: set = set()
 
-    def __init__(self, loan: Loan, target_date: Union[str, date, datetime]) -> None:
+    def __init__(self, target: Any, target_date: Union[str, date, datetime]) -> None:
         """
         Initialize the Warp context manager.
 
         Args:
-            loan: The loan object to warp
+            target: The financial instrument to warp (Loan, CreditCard, etc.).
+                Must have a ``_time_ctx`` attribute.
             target_date: The date to warp to (accepts strings, date, or datetime objects)
 
         Raises:
-            NestedWarpError: If the same loan is already being warped
+            TypeError: If *target* has no ``_time_ctx`` attribute
+            NestedWarpError: If the same object is already being warped
             InvalidDateError: If the target_date cannot be parsed
         """
-        if id(loan) in Warp._active_loans:
+        if not hasattr(target, "_time_ctx"):
+            raise TypeError("Warp target must have a _time_ctx attribute (e.g. Loan or CreditCard)")
+
+        if id(target) in Warp._active_targets:
             raise NestedWarpError(
-                "Nested Warp contexts on the same Loan are not allowed. "
+                "Nested Warp contexts on the same object are not allowed. "
                 "Playing with time is dangerous enough with one level."
             )
 
-        self.original_loan = loan
+        self._original = target
         self.target_date = self._parse_date(target_date)
-        self.warped_loan: Optional[Loan] = None
+        self._warped: Optional[Any] = None
+
+    @property
+    def original_loan(self) -> Any:
+        """Backward-compatible alias for the original target."""
+        return self._original
+
+    @property
+    def warped_loan(self) -> Optional[Any]:
+        """Backward-compatible alias for the warped clone."""
+        return self._warped
+
+    @warped_loan.setter
+    def warped_loan(self, value: Any) -> None:
+        self._warped = value
 
     def _parse_date(self, target_date: Union[str, date, datetime]) -> datetime:
         """
@@ -109,36 +129,37 @@ class Warp:
         except (ValueError, TypeError) as e:
             raise InvalidDateError(f"Could not parse date '{target_date}': {e}") from e
 
-    def __enter__(self) -> Loan:
+    def __enter__(self) -> Any:
         """
-        Enter the Warp context and return a time-warped loan.
+        Enter the Warp context and return a time-warped clone.
 
         Returns:
-            A cloned loan with its state modified to reflect the target date
+            A deep-cloned object with its TimeContext overridden to the
+            target date.
         """
-        Warp._active_loans.add(id(self.original_loan))
+        Warp._active_targets.add(id(self._original))
 
-        # Clone the loan to avoid modifying the original
-        self.warped_loan = copy.deepcopy(self.original_loan)
+        self._warped = copy.deepcopy(self._original)
 
-        # Modify the warped loan's state based on target_date
         self._apply_time_warp()
 
-        return self.warped_loan
+        return self._warped
 
     def _apply_time_warp(self) -> None:
-        """Apply time warp to the cloned loan.
+        """Apply time warp to the cloned object.
 
         Overrides the shared TimeContext so every CashFlowItem in the
-        clone sees the warped time.  Then calculates late fines up to
-        the target date.
+        clone sees the warped time.  Then calls ``_on_warp`` if the
+        target provides it (e.g. Loan materialises fines, CreditCard
+        closes billing cycles).
         """
-        if self.warped_loan is None:
+        if self._warped is None:
             return
 
-        self.warped_loan._time_ctx.override(WarpedTime(self.target_date))
+        self._warped._time_ctx.override(WarpedTime(self.target_date))
 
-        self.warped_loan.calculate_late_fines(self.target_date)
+        if hasattr(self._warped, "_on_warp"):
+            self._warped._on_warp(self.target_date)
 
     def __exit__(
         self, exc_type: Optional[Type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[object]
@@ -151,10 +172,8 @@ class Warp:
             exc_val: Exception value (if any)
             exc_tb: Exception traceback (if any)
         """
-        Warp._active_loans.discard(id(self.original_loan))
-        self.warped_loan = None
-
-        # Don't suppress any exceptions (no return needed for None)
+        Warp._active_targets.discard(id(self._original))
+        self._warped = None
 
     def __str__(self) -> str:
         """String representation of the Warp."""
@@ -162,4 +181,4 @@ class Warp:
 
     def __repr__(self) -> str:
         """Detailed representation for debugging."""
-        return f"Warp(loan={self.original_loan!r}, target_date='{self.target_date.isoformat()}')"
+        return f"Warp(target={self._original!r}, target_date='{self.target_date.isoformat()}')"
