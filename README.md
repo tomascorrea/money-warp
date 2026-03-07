@@ -37,6 +37,7 @@ MoneyWarp is a Python library for working with the time value of money. It treat
 - 📋 **Installments & Settlements** — first-class views of the repayment plan and payment allocation
 - 🇧🇷 **Tax module** — Brazilian IOF with pluggable tax strategy, grossup, and preset rates
 - 🌐 **Timezone-aware** — all datetimes are UTC by default, configurable globally
+- 🔌 **Marshmallow extension** — custom fields for `Money`, `Rate`, and `InterestRate` serialization
 
 ## 📦 Installation
 
@@ -48,6 +49,14 @@ Or with Poetry:
 
 ```bash
 poetry add money-warp
+```
+
+### Marshmallow Extension
+
+To use the Marshmallow custom fields for `Money`, `Rate`, and `InterestRate`:
+
+```bash
+pip install money-warp[marshmallow]
 ```
 
 ## 🎯 Quick Start
@@ -226,6 +235,33 @@ banker = InterestRate("10% a", year_size=YearSize.banker)
 print(f"Commercial daily: {commercial.to_daily()}")  # 365-day year
 print(f"Banker daily: {banker.to_daily()}")          # 360-day year — slightly higher
 ```
+
+### Marshmallow Extension 🔌
+
+```python
+from marshmallow import Schema
+from money_warp import Money, InterestRate
+from money_warp.ext.marshmallow import MoneyField, InterestRateField
+
+class LoanSchema(Schema):
+    principal = MoneyField(representation="raw")     # "10000.00"
+    rate = InterestRateField(representation="string") # "5.250% annual"
+
+schema = LoanSchema()
+
+# Serialize
+data = schema.dump({"principal": Money("10000"), "rate": InterestRate("5.25% a")})
+# {"principal": "10000", "rate": "5.250% annual"}
+
+# Deserialize
+result = schema.load(data)
+# {"principal": Money(10000), "rate": InterestRate(5.25% annually)}
+```
+
+**Available fields:**
+- **MoneyField**: representations `"raw"` (default), `"real"`, `"cents"`
+- **RateField**: representations `"string"` (default), `"dict"`
+- **InterestRateField**: same as RateField, but rejects negative rates
 
 ### Easy Date Generation 📅
 
