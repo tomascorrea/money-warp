@@ -74,6 +74,25 @@ def test_warp_nested_contexts_raise_error(sample_loan):
         Warp(sample_loan, "2035-01-15")
 
 
+def test_warp_different_loans_concurrently_allowed():
+    loan_a = Loan(
+        Money("10000"),
+        InterestRate("5% annual"),
+        [datetime(2024, 1, 15, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+    loan_b = Loan(
+        Money("5000"),
+        InterestRate("8% annual"),
+        [datetime(2024, 2, 15, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+
+    with Warp(loan_a, "2030-01-15") as warped_a, Warp(loan_b, "2030-06-15") as warped_b:
+        assert isinstance(warped_a.current_balance, Money)
+        assert isinstance(warped_b.current_balance, Money)
+
+
 def test_warp_sequential_contexts_work(sample_loan):
     # Sequential warps should work fine
     with Warp(sample_loan, "2030-01-15") as warp1:

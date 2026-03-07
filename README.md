@@ -38,6 +38,7 @@ MoneyWarp is a Python library for working with the time value of money. It treat
 - 🇧🇷 **Tax module** — Brazilian IOF with pluggable tax strategy, grossup, and preset rates
 - 🌐 **Timezone-aware** — all datetimes are UTC by default, configurable globally
 - 🔌 **Marshmallow extension** — custom fields for `Money`, `Rate`, and `InterestRate` serialization
+- 🗄️ **SQLAlchemy extension** — column types for `Money`, `Rate`, `InterestRate` + loan/settlement bridge decorators
 
 ## 📦 Installation
 
@@ -57,6 +58,14 @@ To use the Marshmallow custom fields for `Money`, `Rate`, and `InterestRate`:
 
 ```bash
 pip install money-warp[marshmallow]
+```
+
+### SQLAlchemy Extension
+
+To use the SQLAlchemy column types and bridge decorators:
+
+```bash
+pip install money-warp[sa]
 ```
 
 ## 🎯 Quick Start
@@ -262,6 +271,59 @@ result = schema.load(data)
 - **MoneyField**: representations `"raw"` (default), `"real"`, `"cents"`
 - **RateField**: representations `"string"` (default), `"dict"`
 - **InterestRateField**: same as RateField, but rejects negative rates
+
+### SQLAlchemy Extension 🗄️
+
+```python
+from datetime import datetime
+from decimal import Decimal
+from sqlalchemy import Column, Integer, DateTime, JSON, ForeignKey, create_engine, select
+from sqlalchemy.orm import DeclarativeBase, Session, relationship
+from money_warp import Money, InterestRate
+from money_warp.ext.sa import MoneyType, InterestRateType, settlement_bridge, loan_bridge
+
+class Base(DeclarativeBase):
+    pass
+
+# Mark settlement model with column metadata
+@settlement_bridge()
+class SettlementRecord(Base):
+    __tablename__ = "settlements"
+    id = Column(Integer, primary_key=True)
+    loan_id = Column(Integer, ForeignKey("loans.id"))
+    amount = Column(MoneyType())                  # stores raw_amount as Numeric
+    payment_date = Column(DateTime)
+    remaining_balance = Column(MoneyType())        # balance after this settlement
+
+# Add SQL-queryable balance hybrid_property
+@loan_bridge(principal="principal", settlements="settlements")
+class LoanRecord(Base):
+    __tablename__ = "loans"
+    id = Column(Integer, primary_key=True)
+    principal = Column(MoneyType())
+    interest_rate = Column(InterestRateType(representation="json"))
+    disbursement_date = Column(DateTime)
+    due_dates = Column(JSON)
+    settlements = relationship("SettlementRecord", order_by="SettlementRecord.payment_date")
+
+# Instance access returns Money
+loan = session.get(LoanRecord, 1)
+loan.balance  # -> Money("8500.00") from last settlement
+
+# SQL queries work too
+high_balance = session.execute(
+    select(LoanRecord).where(LoanRecord.balance > Decimal("5000"))
+).scalars().all()
+```
+
+**Available types:**
+- **MoneyType**: representations `"raw"` (default), `"real"`, `"cents"`
+- **RateType**: representations `"string"` (default), `"json"`
+- **InterestRateType**: same as RateType, but rejects negative rates
+
+**Bridge decorators:**
+- **@settlement_bridge()**: marks settlement model with column metadata (defaults: `balance="remaining_balance"`, `date="payment_date"`, `amount="amount"`)
+- **@loan_bridge(principal=, settlements=)**: adds `balance` hybrid_property — Python side returns `Money`, SQL side uses a correlated subquery
 
 ### Easy Date Generation 📅
 
