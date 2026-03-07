@@ -351,7 +351,7 @@ def test_interest_rate_type_roundtrip_json(session):
 
 
 def test_settlement_bridge_defaults():
-    assert SettlementRecord._bridge_meta == {
+    assert SettlementRecord._money_warp_bridge_meta == {
         "balance": "remaining_balance",
         "date": "payment_date",
         "amount": "amount",
@@ -364,10 +364,22 @@ def test_settlement_bridge_custom_names():
         __tablename__ = "custom_settlements"
         id = Column(Integer, primary_key=True)
 
-    assert Custom._bridge_meta == {
+    assert Custom._money_warp_bridge_meta == {
         "balance": "bal",
         "date": "settled_at",
         "amount": "paid",
+    }
+
+
+# ===========================================================================
+# loan_bridge — metadata
+# ===========================================================================
+
+
+def test_loan_bridge_stores_metadata():
+    assert LoanRecord._money_warp_bridge_meta == {
+        "principal": "principal",
+        "settlements": "settlements",
     }
 
 
@@ -420,6 +432,248 @@ def test_loan_balance_with_settlements_returns_last_remaining(session):
 
     loaded = session.get(LoanRecord, 1)
     assert loaded.balance == Money("3800")
+
+
+# ===========================================================================
+# loan_bridge — balance_at hybrid_method (Python side)
+# ===========================================================================
+
+
+def test_loan_balance_at_before_any_settlement_returns_principal(session):
+    loan = LoanRecord(
+        id=1,
+        principal=Money("10000"),
+        interest_rate=InterestRate("10% a"),
+        disbursement_date=datetime(2024, 1, 1),
+        due_dates=["2024-02-01", "2024-03-01"],
+    )
+    session.add(loan)
+    session.add(
+        SettlementRecord(
+            loan_id=1,
+            amount=Money("3000"),
+            payment_date=datetime(2024, 2, 1),
+            remaining_balance=Money("7500"),
+        )
+    )
+    session.flush()
+    session.expire_all()
+
+    loaded = session.get(LoanRecord, 1)
+    assert loaded.balance_at(datetime(2024, 1, 15)) == Money("10000")
+
+
+def test_loan_balance_at_after_first_settlement(session):
+    loan = LoanRecord(
+        id=1,
+        principal=Money("10000"),
+        interest_rate=InterestRate("10% a"),
+        disbursement_date=datetime(2024, 1, 1),
+        due_dates=["2024-02-01", "2024-03-01"],
+    )
+    session.add(loan)
+    session.add_all(
+        [
+            SettlementRecord(
+                loan_id=1,
+                amount=Money("3000"),
+                payment_date=datetime(2024, 2, 1),
+                remaining_balance=Money("7500"),
+            ),
+            SettlementRecord(
+                loan_id=1,
+                amount=Money("4000"),
+                payment_date=datetime(2024, 3, 1),
+                remaining_balance=Money("3800"),
+            ),
+        ]
+    )
+    session.flush()
+    session.expire_all()
+
+    loaded = session.get(LoanRecord, 1)
+    assert loaded.balance_at(datetime(2024, 2, 15)) == Money("7500")
+
+
+def test_loan_balance_at_after_all_settlements(session):
+    loan = LoanRecord(
+        id=1,
+        principal=Money("10000"),
+        interest_rate=InterestRate("10% a"),
+        disbursement_date=datetime(2024, 1, 1),
+        due_dates=["2024-02-01", "2024-03-01"],
+    )
+    session.add(loan)
+    session.add_all(
+        [
+            SettlementRecord(
+                loan_id=1,
+                amount=Money("3000"),
+                payment_date=datetime(2024, 2, 1),
+                remaining_balance=Money("7500"),
+            ),
+            SettlementRecord(
+                loan_id=1,
+                amount=Money("4000"),
+                payment_date=datetime(2024, 3, 1),
+                remaining_balance=Money("3800"),
+            ),
+        ]
+    )
+    session.flush()
+    session.expire_all()
+
+    loaded = session.get(LoanRecord, 1)
+    assert loaded.balance_at(datetime(2025, 1, 1)) == Money("3800")
+
+
+def test_loan_balance_at_exact_settlement_date(session):
+    loan = LoanRecord(
+        id=1,
+        principal=Money("10000"),
+        interest_rate=InterestRate("10% a"),
+        disbursement_date=datetime(2024, 1, 1),
+        due_dates=["2024-02-01"],
+    )
+    session.add(loan)
+    session.add(
+        SettlementRecord(
+            loan_id=1,
+            amount=Money("3000"),
+            payment_date=datetime(2024, 2, 1),
+            remaining_balance=Money("7500"),
+        )
+    )
+    session.flush()
+    session.expire_all()
+
+    loaded = session.get(LoanRecord, 1)
+    assert loaded.balance_at(datetime(2024, 2, 1)) == Money("7500")
+
+
+def test_loan_balance_at_no_settlements_returns_principal(session):
+    loan = LoanRecord(
+        id=1,
+        principal=Money("10000"),
+        interest_rate=InterestRate("10% a"),
+        disbursement_date=datetime(2024, 1, 1),
+        due_dates=["2024-02-01"],
+    )
+    session.add(loan)
+    session.flush()
+    session.expire_all()
+
+    loaded = session.get(LoanRecord, 1)
+    assert loaded.balance_at(datetime(2025, 1, 1)) == Money("10000")
+
+
+# ===========================================================================
+# loan_bridge — balance_at hybrid_method (SQL side)
+# ===========================================================================
+
+
+def test_loan_balance_at_sql_filter(session):
+    session.add(
+        LoanRecord(
+            id=1,
+            principal=Money("10000"),
+            interest_rate=InterestRate("10% a"),
+            disbursement_date=datetime(2024, 1, 1),
+            due_dates=["2024-02-01"],
+        )
+    )
+    session.add_all(
+        [
+            SettlementRecord(
+                loan_id=1,
+                amount=Money("3000"),
+                payment_date=datetime(2024, 2, 1),
+                remaining_balance=Money("7500"),
+            ),
+            SettlementRecord(
+                loan_id=1,
+                amount=Money("9000"),
+                payment_date=datetime(2024, 3, 1),
+                remaining_balance=Money("500"),
+            ),
+        ]
+    )
+    session.flush()
+
+    results = (
+        session.execute(select(LoanRecord).where(LoanRecord.balance_at(datetime(2024, 2, 15)) > Decimal("5000")))
+        .scalars()
+        .all()
+    )
+    assert len(results) == 1
+    assert results[0].id == 1
+
+
+def test_loan_balance_at_sql_before_settlements(session):
+    session.add(
+        LoanRecord(
+            id=1,
+            principal=Money("10000"),
+            interest_rate=InterestRate("10% a"),
+            disbursement_date=datetime(2024, 1, 1),
+            due_dates=["2024-02-01"],
+        )
+    )
+    session.add(
+        SettlementRecord(
+            loan_id=1,
+            amount=Money("3000"),
+            payment_date=datetime(2024, 2, 1),
+            remaining_balance=Money("7500"),
+        )
+    )
+    session.flush()
+
+    results = (
+        session.execute(select(LoanRecord).where(LoanRecord.balance_at(datetime(2024, 1, 15)) > Decimal("9000")))
+        .scalars()
+        .all()
+    )
+    assert len(results) == 1
+    assert results[0].id == 1
+
+
+def test_loan_balance_at_sql_order_by(session):
+    session.add(
+        LoanRecord(
+            id=1,
+            principal=Money("10000"),
+            interest_rate=InterestRate("10% a"),
+            disbursement_date=datetime(2024, 1, 1),
+            due_dates=["2024-02-01"],
+        )
+    )
+    session.add(
+        LoanRecord(
+            id=2,
+            principal=Money("5000"),
+            interest_rate=InterestRate("10% a"),
+            disbursement_date=datetime(2024, 1, 1),
+            due_dates=["2024-02-01"],
+        )
+    )
+    session.add(
+        SettlementRecord(
+            loan_id=1,
+            amount=Money("8000"),
+            payment_date=datetime(2024, 2, 1),
+            remaining_balance=Money("3000"),
+        )
+    )
+    session.flush()
+
+    results = (
+        session.execute(select(LoanRecord).order_by(LoanRecord.balance_at(datetime(2024, 2, 15)).desc()))
+        .scalars()
+        .all()
+    )
+    assert results[0].id == 2
+    assert results[1].id == 1
 
 
 # ===========================================================================

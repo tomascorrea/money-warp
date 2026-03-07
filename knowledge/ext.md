@@ -76,20 +76,27 @@ Class decorator that stores column metadata on a settlement model:
 @settlement_bridge(balance="remaining_balance", date="payment_date", amount="amount")
 ```
 
-All params have defaults matching the names above — `@settlement_bridge()` with no args works if you follow the convention. Stores a `_bridge_meta` dict on the class.
+All params have defaults matching the names above — `@settlement_bridge()` with no args works if you follow the convention. Stores a `_money_warp_bridge_meta` dict on the class.
 
 ### loan_bridge
 
-Class decorator that adds a SQL-queryable `balance` hybrid_property:
+Class decorator that adds `balance_at(date)` hybrid method and `balance` hybrid property:
 
 ```python
 @loan_bridge(principal="principal", settlements="settlements")
 ```
 
-- **Python side:** returns `remaining_balance` from the last settlement (ordered by date), or `principal` if no settlements.
-- **SQL side:** correlated subquery with `COALESCE` fallback to the principal column. Works in `filter()`, `order_by()`, etc.
+Stores `_money_warp_bridge_meta` on the loan class with `{"principal": ..., "settlements": ...}`.
 
-The settlement model must be decorated with `@settlement_bridge` — `@loan_bridge` reads `_bridge_meta` from the relationship target at query time. Raises `TypeError` if missing.
+**`balance_at(date)`** (hybrid_method):
+- **Python side:** returns `remaining_balance` from the last settlement whose date is `<= date`, or `principal` if none qualify. Uses `ensure_aware()` for tz-safe comparison.
+- **SQL side:** correlated subquery with `WHERE payment_date <= :date` and `COALESCE` fallback to principal.
+
+**`balance`** (hybrid_property):
+- **Python side:** delegates to `self.balance_at(now())`.
+- **SQL side:** delegates to `cls.balance_at(func.now())`.
+
+The settlement model must be decorated with `@settlement_bridge` — `@loan_bridge` reads `_money_warp_bridge_meta` from the relationship target at query time. Raises `TypeError` if missing.
 
 ## Design Decisions
 
@@ -97,8 +104,8 @@ The settlement model must be decorated with `@settlement_bridge` — `@loan_brid
 - **Parseable string serialization:** String mode uses `_FREQUENCY_TOKEN` mapping instead of `str(rate)` because `Rate.__str__()` outputs `"annually"` / `"semi_annually"` which the Rate parser does not accept. The mapping outputs parser-compatible tokens like `"annual"` and `"semi-annual"`. Both extensions duplicate this mapping (each is self-contained).
 - **Private attribute access:** Dict/JSON serialization reads `value._precision`, `value._rounding`, `value._str_style` since there are no public getters. Acceptable because these are first-party extensions.
 - **Optional dependencies:** Each extension is declared optional in `pyproject.toml` under `[tool.poetry.extras]`. Importing without the dependency installed raises `ImportError`.
-- **Two-decorator bridge pattern:** `@settlement_bridge` stores metadata, `@loan_bridge` reads it. This keeps each model self-describing and avoids passing settlement column names through the loan decorator.
-- **hybrid_property for balance:** The SQL expression introspects the relationship at query time (mapper is configured by then) to discover the FK, balance column, and date column from `_bridge_meta`.
+- **Two-decorator bridge pattern:** `@settlement_bridge` stores metadata, `@loan_bridge` reads it. Both store `_money_warp_bridge_meta` (namespaced to avoid collisions). This keeps each model self-describing and avoids passing settlement column names through the loan decorator.
+- **`balance_at` + `balance` pattern:** `balance_at(date)` is a `hybrid_method` that accepts a date param. `balance` is a `hybrid_property` that delegates to `balance_at(now())` / `balance_at(func.now())`. The SQL expression introspects the relationship at query time to discover the FK, balance column, and date column from `_money_warp_bridge_meta`.
 
 ## Key Gotchas
 

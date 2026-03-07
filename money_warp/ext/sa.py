@@ -10,12 +10,13 @@ from decimal import Decimal
 from typing import Any, Optional, Type
 
 from sqlalchemy import JSON, Integer, Numeric, String, func, select
-from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.types import TypeDecorator
 
 from money_warp.interest_rate import InterestRate
 from money_warp.money import Money
 from money_warp.rate import CompoundingFrequency, Rate, YearSize
+from money_warp.tz import ensure_aware, now
 
 __all__ = [
     "MoneyType",
@@ -195,7 +196,7 @@ class InterestRateType(RateType):
 # Bridge decorators
 # ---------------------------------------------------------------------------
 
-_BRIDGE_META_ATTR = "_bridge_meta"
+_BRIDGE_META_ATTR = "_money_warp_bridge_meta"
 
 
 def settlement_bridge(
@@ -205,9 +206,9 @@ def settlement_bridge(
 ):
     """Mark a settlement model with column metadata for :func:`loan_bridge`.
 
-    Stores a ``_bridge_meta`` dict on the class so that ``@loan_bridge``
-    can discover which columns hold the remaining balance, payment date,
-    and payment amount.
+    Stores a ``_money_warp_bridge_meta`` dict on the class so that
+    ``@loan_bridge`` can discover which columns hold the remaining
+    balance, payment date, and payment amount.
 
     All parameters have sensible defaults. If your columns follow the
     naming convention, ``@settlement_bridge()`` with no arguments works.
@@ -219,7 +220,7 @@ def settlement_bridge(
     """
 
     def decorator(cls):
-        cls._bridge_meta = {
+        cls._money_warp_bridge_meta = {
             "balance": balance,
             "date": date,
             "amount": amount,
@@ -229,20 +230,55 @@ def settlement_bridge(
     return decorator
 
 
+def _resolve_settlement_info(cls, settlements_attr):
+    """Introspect the settlement relationship to extract column references."""
+    rel = getattr(cls, settlements_attr).property
+    target_model = rel.mapper.class_
+
+    if not hasattr(target_model, _BRIDGE_META_ATTR):
+        raise TypeError(
+            f"{target_model.__name__} must be decorated with "
+            "@settlement_bridge so that @loan_bridge can "
+            "discover its column metadata."
+        )
+
+    meta = target_model._money_warp_bridge_meta
+    return {
+        "balance_col": getattr(target_model, meta["balance"]),
+        "date_col": getattr(target_model, meta["date"]),
+        "fk_col": list(rel.remote_side)[0],
+        "pk_col": list(rel.local_columns)[0],
+    }
+
+
+def _find_last_settlement_before(items, as_of, meta):
+    """Return the last settlement whose date is ``<= as_of``, or ``None``."""
+    as_of_aware = ensure_aware(as_of)
+    last_before = None
+    for item in items:
+        if ensure_aware(getattr(item, meta["date"])) <= as_of_aware:
+            last_before = item
+        else:
+            break
+    return last_before
+
+
 def loan_bridge(
     principal: str,
     settlements: str,
 ):
-    """Add a SQL-queryable ``balance`` hybrid property to a loan model.
+    """Add ``balance_at(date)`` and ``balance`` to a loan model.
 
-    The ``balance`` is derived from the settlement relationship:
+    Both are SQL-queryable via :mod:`sqlalchemy.ext.hybrid`.
 
-    - **Python side**: returns the ``remaining_balance`` of the last
-      settlement (ordered by date), or the ``principal`` if there are
-      no settlements yet. Returns a :class:`~money_warp.money.Money`.
-    - **SQL side**: a correlated subquery wrapped in ``COALESCE`` that
-      falls back to the principal column. Works in ``filter()``,
-      ``order_by()``, and any other SQL expression context.
+    ``balance_at(date)``
+        Returns the remaining balance as of *date* — the
+        ``remaining_balance`` from the last settlement whose payment
+        date is ``<= date``, falling back to ``principal`` when there
+        are no settlements before that date.
+
+    ``balance``
+        Convenience property equivalent to ``balance_at(now())``.
 
     The settlement model **must** be decorated with
     :func:`settlement_bridge` so that this decorator can discover which
@@ -258,45 +294,44 @@ def loan_bridge(
         _settlements_attr = settlements
         _principal_attr = principal
 
-        @hybrid_property
-        def balance(self):
+        @hybrid_method
+        def balance_at(self, as_of):
             items = getattr(self, _settlements_attr)
-            if items:
-                meta = type(items[0])._bridge_meta
-                return getattr(items[-1], meta["balance"])
+            if not items:
+                return getattr(self, _principal_attr)
+            meta = type(items[0])._money_warp_bridge_meta
+            hit = _find_last_settlement_before(items, as_of, meta)
+            if hit is not None:
+                return getattr(hit, meta["balance"])
             return getattr(self, _principal_attr)
 
-        @balance.expression
-        def balance(cls):
-            rel = getattr(cls, _settlements_attr).property
-            target_model = rel.mapper.class_
-
-            if not hasattr(target_model, _BRIDGE_META_ATTR):
-                raise TypeError(
-                    f"{target_model.__name__} must be decorated with "
-                    "@settlement_bridge so that @loan_bridge can "
-                    "discover its column metadata."
-                )
-
-            meta = target_model._bridge_meta
-            balance_col = getattr(target_model, meta["balance"])
-            date_col = getattr(target_model, meta["date"])
-
-            remote_cols = list(rel.remote_side)
-            local_cols = list(rel.local_columns)
-            fk_col = remote_cols[0]
-            pk_col = local_cols[0]
-
+        @balance_at.expression
+        def balance_at(cls, as_of):
+            info = _resolve_settlement_info(cls, _settlements_attr)
             return func.coalesce(
-                select(balance_col)
-                .where(fk_col == pk_col)
-                .order_by(date_col.desc())
+                select(info["balance_col"])
+                .where(info["fk_col"] == info["pk_col"])
+                .where(info["date_col"] <= as_of)
+                .order_by(info["date_col"].desc())
                 .limit(1)
                 .correlate(cls)
                 .scalar_subquery(),
                 getattr(cls, _principal_attr),
             )
 
+        @hybrid_property
+        def balance(self):
+            return self.balance_at(now())
+
+        @balance.expression
+        def balance(cls):
+            return cls.balance_at(func.now())
+
+        cls._money_warp_bridge_meta = {
+            "principal": _principal_attr,
+            "settlements": _settlements_attr,
+        }
+        cls.balance_at = balance_at
         cls.balance = balance
         return cls
 
