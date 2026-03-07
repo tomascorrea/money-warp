@@ -169,3 +169,4 @@ class InterestRateType(RateType):
     """
 
     RATE_CLASS = InterestRate
+    cache_ok = True

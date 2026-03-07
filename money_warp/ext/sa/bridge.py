@@ -8,7 +8,7 @@ properties that delegate to a reconstructed :class:`~money_warp.loan.Loan`.
 from datetime import datetime
 from typing import List
 
-from sqlalchemy import Float, String, case, cast, column, func, select
+from sqlalchemy import Float, String, case, cast, column, func, literal, select
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 
 from money_warp.loan import Loan, MoraStrategy
@@ -313,6 +313,7 @@ def _build_sql_balance_expression(cls, as_of, meta):
                 else_=mora_interest_simple,
             ).label("mora_interest"),
         )
+        .select_from(loan_state.join(daily_rates, literal(True)).join(day_split, literal(True)))
         .correlate(cls)
         .cte("accrued", nesting=True)
     )
@@ -351,6 +352,7 @@ def _build_sql_balance_expression(cls, as_of, meta):
         select(
             (func.coalesce(fr_col, 0) * pmt * late_count).label("total_fines"),
         )
+        .select_from(daily_rates)
         .correlate(cls)
         .cte("late_fines", nesting=True)
     )
@@ -365,6 +367,7 @@ def _build_sql_balance_expression(cls, as_of, meta):
                 + late_fines.c.total_fines
             ).label("balance")
         )
+        .select_from(loan_state.join(accrued, literal(True)).join(late_fines, literal(True)))
         .correlate(cls)
         .scalar_subquery()
     )
