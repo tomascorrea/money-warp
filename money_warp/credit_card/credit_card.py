@@ -4,13 +4,12 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
 
-from ..billing_cycle import BaseBillingCycle, MonthlyBillingCycle
+from ..billing_cycle import BaseBillingCycle, MonthlyBillingCycle, Statement
 from ..cash_flow import CashFlow, CashFlowItem
 from ..interest_rate import InterestRate
 from ..money import Money
 from ..time_context import TimeContext
 from ..tz import tz_aware
-from .statement import Statement
 
 _DEBIT_CATEGORIES = frozenset({"purchase", "interest_charge", "fine_charge"})
 _CREDIT_CATEGORIES = frozenset({"payment", "refund"})
@@ -19,9 +18,10 @@ _CREDIT_CATEGORIES = frozenset({"payment", "refund"})
 class CreditCard:
     """Revolving credit instrument with periodic billing statements.
 
-    Transactions (purchases, payments, refunds) are recorded as
-    ``CashFlowItem`` objects.  Statements, interest charges, and fines
-    all **emerge from the cash flow** — they are never stored as
+    The credit card **is** a cash flow.  Transactions (purchases,
+    payments, refunds) are added directly to the underlying
+    :class:`CashFlow`.  Statements, interest charges, and fines all
+    **emerge from that cash flow** — they are never stored as
     independent state.  Billing-cycle processing materialises interest
     and fine items lazily, controlled by an idempotency counter.
 
@@ -81,8 +81,9 @@ class CreditCard:
         self.opening_date = opening_date if opening_date is not None else self._time_ctx.now()
         self.credit_limit = credit_limit
 
-        self._all_items: List[CashFlowItem] = []
+        self.cash_flow = CashFlow()
         self._cycles_closed: int = 0
+        self._last_closing_balance: Money = Money.zero()
 
     # ------------------------------------------------------------------
     # Time helpers
@@ -117,20 +118,20 @@ class CreditCard:
         if amount.is_negative() or amount.is_zero():
             raise ValueError("Purchase amount must be positive")
         date = date or self.now()
-        self._close_billing_cycles(date)
 
         if self.credit_limit is not None:
-            balance_after = self._raw_balance(date) + amount
+            balance_after = self._raw_balance() + amount
             if balance_after > self.credit_limit:
                 raise ValueError("Purchase would exceed credit limit")
 
-        self._all_items.append(
+        self.cash_flow.add_item(
             CashFlowItem(
                 amount,
                 date,
                 description or "Purchase",
                 "purchase",
                 time_context=self._time_ctx,
+                effective_date=date,
             )
         )
 
@@ -154,14 +155,14 @@ class CreditCard:
         if amount.is_negative() or amount.is_zero():
             raise ValueError("Payment amount must be positive")
         date = date or self.now()
-        self._close_billing_cycles(date)
-        self._all_items.append(
+        self.cash_flow.add_item(
             CashFlowItem(
                 amount,
                 date,
                 description or "Payment",
                 "payment",
                 time_context=self._time_ctx,
+                effective_date=date,
             )
         )
 
@@ -185,14 +186,14 @@ class CreditCard:
         if amount.is_negative() or amount.is_zero():
             raise ValueError("Refund amount must be positive")
         date = date or self.now()
-        self._close_billing_cycles(date)
-        self._all_items.append(
+        self.cash_flow.add_item(
             CashFlowItem(
                 amount,
                 date,
                 description or "Refund",
                 "refund",
                 time_context=self._time_ctx,
+                effective_date=date,
             )
         )
 
@@ -203,8 +204,8 @@ class CreditCard:
     @property
     def current_balance(self) -> Money:
         """Outstanding balance as of ``now()``, after closing due cycles."""
-        self._close_billing_cycles(self.now())
-        return self._raw_balance(self.now())
+        self._close_billing_cycles()
+        return self._raw_balance()
 
     @property
     def available_credit(self) -> Optional[Money]:
@@ -223,36 +224,14 @@ class CreditCard:
     @property
     def statements(self) -> List[Statement]:
         """All closed billing-period statements up to ``now()``."""
-        self._close_billing_cycles(self.now())
-        return self._build_statements()
-
-    # ------------------------------------------------------------------
-    # Cash flow
-    # ------------------------------------------------------------------
-
-    def get_cash_flow(self) -> CashFlow:
-        """Full cash flow with signed amounts.
-
-        Purchases / interest / fines are positive (credit extended);
-        payments / refunds are negative (money returned).
-        """
-        self._close_billing_cycles(self.now())
-        items: List[CashFlowItem] = []
-        now = self.now()
-        for item in self._all_items:
-            if item.datetime > now:
-                continue
-            sign = Money("1") if item.category in _DEBIT_CATEGORIES else Money("-1")
-            items.append(
-                CashFlowItem(
-                    item.amount * sign,
-                    item.datetime,
-                    item.description,
-                    item.category,
-                    time_context=self._time_ctx,
-                )
-            )
-        return CashFlow(items)
+        self._close_billing_cycles()
+        return self.billing_cycle.build_statements(
+            self.cash_flow,
+            self.opening_date,
+            self.now(),
+            self.minimum_payment_rate,
+            self.minimum_payment_floor,
+        )
 
     # ------------------------------------------------------------------
     # Warp hook
@@ -260,172 +239,119 @@ class CreditCard:
 
     def _on_warp(self, target_date: datetime) -> None:
         """Called by Warp after overriding TimeContext."""
-        self._close_billing_cycles(target_date)
+        self._close_billing_cycles()
 
     # ------------------------------------------------------------------
     # Billing-cycle processing (internal)
     # ------------------------------------------------------------------
 
-    def _close_billing_cycles(self, as_of_date: datetime) -> None:
+    def _close_billing_cycles(self) -> None:
         """Materialise interest charges and fines for all completed cycles.
 
         Idempotent: ``_cycles_closed`` tracks how many cycles have
-        already been processed so repeated calls are no-ops.
+        already been processed so repeated calls are no-ops.  Balance is
+        carried forward iteratively via ``_last_closing_balance``.
         """
-        closing_dates = self.billing_cycle.closing_dates_between(self.opening_date, as_of_date)
+        closing_dates = self.billing_cycle.closing_dates_between(self.opening_date, self.now())
+        running_balance = self._last_closing_balance
 
         while self._cycles_closed < len(closing_dates):
             idx = self._cycles_closed
             closing_date = closing_dates[idx]
-
             prev_closing = self.opening_date if idx == 0 else closing_dates[idx - 1]
 
-            prev_balance = self._balance_at(prev_closing)
-            payments_in_period = self._sum_category_between("payment", prev_closing, closing_date)
-            refunds_in_period = self._sum_category_between("refund", prev_closing, closing_date)
-            carried = prev_balance - payments_in_period - refunds_in_period
+            purchases = self._sum_category_between("purchase", prev_closing, closing_date)
+            payments = self._sum_category_between("payment", prev_closing, closing_date)
+            refunds = self._sum_category_between("refund", prev_closing, closing_date)
+
+            carried = running_balance - payments - refunds
             if carried.is_negative():
                 carried = Money.zero()
 
+            interest = Money.zero()
             if carried.is_positive():
                 days = (closing_date - prev_closing).days
                 interest = self.interest_rate.accrue(carried, days)
-                self._all_items.append(
+                self.cash_flow.add_item(
                     CashFlowItem(
                         interest,
                         closing_date,
                         f"Interest charge — period {idx + 1}",
                         "interest_charge",
                         time_context=self._time_ctx,
+                        effective_date=closing_date,
                     )
                 )
 
+            fine = Money.zero()
             if idx > 0:
-                self._maybe_apply_fine(closing_dates, idx)
+                fine = self._maybe_apply_fine(closing_dates, idx, running_balance)
+
+            running_balance = running_balance + purchases - payments - refunds + interest + fine
+            if running_balance.is_negative():
+                running_balance = Money.zero()
 
             self._cycles_closed += 1
+            self._last_closing_balance = running_balance
 
-    def _maybe_apply_fine(self, closing_dates: List[datetime], current_idx: int) -> None:
-        """Apply a fine if the previous cycle's minimum payment was not met."""
+    def _maybe_apply_fine(
+        self,
+        closing_dates: List[datetime],
+        current_idx: int,
+        prev_closing_balance: Money,
+    ) -> Money:
+        """Apply a fine if the previous cycle's minimum payment was not met.
+
+        Returns the fine amount (``Money.zero()`` when no fine applies).
+        """
+        if prev_closing_balance.is_zero() or prev_closing_balance.is_negative():
+            return Money.zero()
+
         prev_closing = closing_dates[current_idx - 1]
         prev_due = self.billing_cycle.due_date_for(prev_closing)
 
-        prev_balance = self._statement_closing_balance(closing_dates, current_idx - 1)
-        if prev_balance.is_zero() or prev_balance.is_negative():
-            return
-
-        minimum = self._compute_minimum_payment(prev_balance)
+        minimum = self.billing_cycle.compute_minimum_payment(
+            prev_closing_balance,
+            self.minimum_payment_rate,
+            self.minimum_payment_floor,
+        )
         payments_by_due = self._sum_category_between("payment", prev_closing, prev_due)
 
         if payments_by_due < minimum:
             fine = Money(minimum.raw_amount * self.fine_rate)
             if fine.is_positive():
-                self._all_items.append(
+                self.cash_flow.add_item(
                     CashFlowItem(
                         fine,
                         prev_due,
                         f"Late-payment fine — period {current_idx}",
                         "fine_charge",
                         time_context=self._time_ctx,
+                        effective_date=prev_due,
                     )
                 )
+                return fine
+        return Money.zero()
 
     # ------------------------------------------------------------------
-    # Statement builder
+    # Cash-flow query helpers
     # ------------------------------------------------------------------
 
-    def _build_statements(self) -> List[Statement]:
-        closing_dates = self.billing_cycle.closing_dates_between(self.opening_date, self.now())
-        result: List[Statement] = []
-
-        for idx in range(min(self._cycles_closed, len(closing_dates))):
-            closing_date = closing_dates[idx]
-            prev_closing = self.opening_date if idx == 0 else closing_dates[idx - 1]
-
-            prev_balance = self._balance_at(prev_closing)
-            purchases = self._sum_category_between("purchase", prev_closing, closing_date)
-            payments = self._sum_category_between("payment", prev_closing, closing_date)
-            refunds = self._sum_category_between("refund", prev_closing, closing_date)
-            interest = self._sum_category_between("interest_charge", prev_closing, closing_date)
-            fines = self._sum_category_between("fine_charge", prev_closing, closing_date)
-
-            closing_balance = prev_balance + purchases - payments - refunds + interest + fines
-            if closing_balance.is_negative():
-                closing_balance = Money.zero()
-
-            minimum = self._compute_minimum_payment(closing_balance)
-            due_date = self.billing_cycle.due_date_for(closing_date)
-
-            result.append(
-                Statement(
-                    period_number=idx + 1,
-                    opening_date=prev_closing,
-                    closing_date=closing_date,
-                    due_date=due_date,
-                    previous_balance=prev_balance,
-                    purchases_total=purchases,
-                    payments_total=payments,
-                    refunds_total=refunds,
-                    interest_charged=interest,
-                    fine_charged=fines,
-                    closing_balance=closing_balance,
-                    minimum_payment=minimum,
-                )
-            )
-
-        return result
-
-    def _statement_closing_balance(self, closing_dates: List[datetime], idx: int) -> Money:
-        """Compute closing balance for a single cycle by index."""
-        closing_date = closing_dates[idx]
-        prev_closing = closing_dates[idx - 1] if idx > 0 else self.opening_date
-
-        prev_balance = self._balance_at(prev_closing)
-        purchases = self._sum_category_between("purchase", prev_closing, closing_date)
-        payments = self._sum_category_between("payment", prev_closing, closing_date)
-        refunds = self._sum_category_between("refund", prev_closing, closing_date)
-        interest = self._sum_category_between("interest_charge", prev_closing, closing_date)
-        fines = self._sum_category_between("fine_charge", prev_closing, closing_date)
-
-        balance = prev_balance + purchases - payments - refunds + interest + fines
-        return balance if balance.is_positive() else Money.zero()
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    def _raw_balance(self, as_of: datetime) -> Money:
-        """Sum of debits minus credits up to *as_of*."""
-        total = Money.zero()
-        for item in self._all_items:
-            if item.datetime > as_of:
-                continue
-            if item.category in _DEBIT_CATEGORIES:
-                total = total + item.amount
-            elif item.category in _CREDIT_CATEGORIES:
-                total = total - item.amount
-        return total
-
-    def _balance_at(self, as_of: datetime) -> Money:
-        """Balance at a point in time (does NOT trigger cycle closing)."""
-        bal = self._raw_balance(as_of)
-        return bal if bal.is_positive() else Money.zero()
+    def _raw_balance(self) -> Money:
+        """Sum of debits minus credits (resolved items only)."""
+        debits = (self.cash_flow.query.filter_by(predicate=lambda i: i.category in _DEBIT_CATEGORIES)).sum_amounts()
+        credit_total = (
+            self.cash_flow.query.filter_by(predicate=lambda i: i.category in _CREDIT_CATEGORIES)
+        ).sum_amounts()
+        return debits - credit_total
 
     def _sum_category_between(self, category: str, after: datetime, up_to: datetime) -> Money:
         """Sum item amounts for *category* in the half-open interval (after, up_to]."""
-        total = Money.zero()
-        for item in self._all_items:
-            if item.category == category and after < item.datetime <= up_to:
-                total = total + item.amount
-        return total
-
-    def _compute_minimum_payment(self, closing_balance: Money) -> Money:
-        """Minimum payment for a given closing balance."""
-        if closing_balance.is_zero() or closing_balance.is_negative():
-            return Money.zero()
-        proportional = Money(closing_balance.raw_amount * self.minimum_payment_rate)
-        floor = self.minimum_payment_floor
-        return Money(min(closing_balance.raw_amount, max(proportional.raw_amount, floor.raw_amount)))
+        return (
+            self.cash_flow.query.filter_by(category=category)
+            .filter_by(datetime__gt=after, datetime__lte=up_to)
+            .sum_amounts()
+        )
 
     # ------------------------------------------------------------------
     # Dunder

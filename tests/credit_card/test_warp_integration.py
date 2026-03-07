@@ -34,11 +34,11 @@ def test_warp_does_not_mutate_original():
     card = _make_card()
     card.purchase(Money("500.00"), datetime(2024, 1, 10, tzinfo=timezone.utc))
 
-    original_items_count = len(card._all_items)
+    original_items_count = len(card.cash_flow.raw_items())
     with Warp(card, datetime(2024, 3, 1, tzinfo=timezone.utc)) as warped:
         _ = warped.current_balance
 
-    assert len(card._all_items) == original_items_count
+    assert len(card.cash_flow.raw_items()) == original_items_count
 
 
 def test_warp_closes_billing_cycles():

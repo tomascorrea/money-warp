@@ -1,4 +1,4 @@
-"""Statement data structure for credit card billing periods."""
+"""Statement data structure for billing-cycle periods."""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,11 +8,10 @@ from ..money import Money
 
 @dataclass(frozen=True)
 class Statement:
-    """A single billing-period statement for a credit card.
+    """A single billing-period statement.
 
-    Statements are consequences of the credit card's cash flow — they
-    describe what happened during one billing cycle.  The CreditCard
-    builds these on demand as derived views, never as stored state.
+    Statements are derived views built by the billing cycle from a
+    cash flow — they describe what happened during one period.
     """
 
     period_number: int

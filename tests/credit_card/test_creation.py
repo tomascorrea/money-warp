@@ -65,4 +65,4 @@ def test_credit_card_creation_zero_credit_limit():
 
 
 def test_credit_card_initial_balance_is_zero(card):
-    assert card._raw_balance(card.opening_date) == Money.zero()
+    assert card._raw_balance() == Money.zero()
