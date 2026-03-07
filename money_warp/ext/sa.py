@@ -68,14 +68,16 @@ class MoneyType(TypeDecorator):
             return dialect.type_descriptor(Integer())
         return dialect.type_descriptor(Numeric(precision=20, scale=10))
 
-    def process_bind_param(self, value: Optional[Money], dialect) -> Any:
+    def process_bind_param(self, value, dialect) -> Any:
         if value is None:
             return None
-        if self.representation == "raw":
-            return value.raw_amount
-        if self.representation == "real":
-            return value.real_amount
-        return value.cents
+        if isinstance(value, Money):
+            if self.representation == "raw":
+                return value.raw_amount
+            if self.representation == "real":
+                return value.real_amount
+            return value.cents
+        return value
 
     def process_result_value(self, value: Any, dialect) -> Optional[Money]:
         if value is None:
