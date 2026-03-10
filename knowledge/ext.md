@@ -133,23 +133,30 @@ The SQL side of `balance_at` uses nested CTEs (`nesting=True`) inside a single s
 | CTE | Purpose |
 |-----|---------|
 | `loan_state` | `COALESCE(last_remaining_balance, principal)` and `COALESCE(last_payment_date, disbursement_date)`. Uses scalar subqueries so it always returns 1 row even with no settlements. |
-| `daily_rates` | Converts rates of any period to daily via `_daily_rate_expr`. Handles all `CompoundingFrequency` values (annual, monthly, quarterly, semi-annual, daily, continuous). NULL mora rate coalesces to 0. |
+| `daily_rates` | Converts rates of any period to daily via `_daily_rate_expr`. Handles all `CompoundingFrequency` values for both JSON and string column representations. NULL mora rate coalesces to 0. |
 | `time_split` | Computes `total_days` and finds `next_due` date after last payment via `json_each(due_dates)`. |
 | `day_split` | Splits total days into `regular_days` and `mora_days` at the next-due boundary. |
 | `accrued` | `regular_interest` (compound on principal) and `mora_interest` (COMPOUND or SIMPLE branching via `mora_strategy`). |
 | `late_fines` | Counts late installments (`past_grace_count - settlement_count`), estimates PMT, applies fine rate. |
 | Final SELECT | `principal_balance + regular_interest + mora_interest + fines`. |
 
-NULL guard: `CASE WHEN json_extract(interest_rate, '$.rate') IS NULL` falls back to the simple `COALESCE(remaining_balance, principal)` since SQL cannot raise exceptions.
+NULL guard: Falls back to `COALESCE(remaining_balance, principal)` when no rate is present. The check depends on representation: JSON uses `json_extract(interest_rate, '$.rate') IS NULL`; string uses `interest_rate IS NULL`.
 
 ### Rate conversion helpers
 
-Two private helpers in `bridge.py` convert JSON-stored rates to daily rates in SQL, mirroring `Rate._to_effective_annual()` and `Rate.to_daily()`:
+Private helpers in `bridge.py` convert stored rates to daily rates in SQL, mirroring `Rate._to_effective_annual()` and `Rate.to_daily()`. They support both JSON and string column representations.
 
-- **`_effective_annual_expr(rate_col)`**: Extracts `$.rate`, `$.period`, and `$.year_size` from the JSON column. Returns a SQL `CASE` expression that converts the stored rate to an effective annual rate based on the period (`annually`, `monthly`, `quarterly`, `semi_annually`, `daily`, `continuous`). Falls back to treating the rate as annual for unknown period values.
-- **`_daily_rate_expr(rate_col)`**: Returns the stored rate directly when period is `daily`; otherwise converts through the effective annual rate: `pow(1 + eff_annual, 1/year_size) - 1`.
+**Column introspection:** `_get_rate_col_info(cls, attr_name)` reads the `InterestRateType` from the model's column to determine `representation` ("json" or "string") and `default_year_size`. This happens once at expression-build time — no SQL-side format detection.
 
-Both are used by the `daily_rates` CTE for `interest_rate` and `mora_interest_rate` columns. The `continuous` period uses `func.exp()` which requires the SQLite math extension (available in Python 3.11+ / SQLite 3.35+).
+**Param extraction:** `_extract_rate_params(rate_col, representation, default_year_size)` returns `(decimal_rate, period, year_size)` as SQL expressions:
+- JSON: uses `json_extract` for all three values.
+- String: parses `"5.250% annual"` via `SUBSTR`/`INSTR`, divides the percentage by 100; uses the column type's `default_year_size` since the string format does not embed year size.
+
+**Period mapping:** `_periods_per_year_expr(period, year_size, representation)` builds a SQL `CASE` generated from `CompoundingFrequency` — no hardcoded magic numbers. Period names differ by representation (JSON: `"annually"`, `"semi_annually"`; string: `"annual"`, `"semi-annual"` via `_FREQUENCY_TOKEN`). `CONTINUOUS` is excluded (handled separately via `exp()`). `DAILY` uses `year_size` instead of a fixed value.
+
+**Conversion:** `_effective_annual_expr(rate_col, representation, default_year_size)` and `_daily_rate_expr(rate_col, representation, default_year_size)` combine the above. Both are used by the `daily_rates` CTE for `interest_rate` and `mora_interest_rate` columns. The `continuous` period uses `func.exp()` which requires the SQLite math extension (available in Python 3.11+ / SQLite 3.35+).
+
+**NULL guard:** `_has_rate(rate_col, representation)` returns a SQL expression that is NULL when no parseable rate is present. For JSON: checks `json_extract(rate_col, '$.rate')`; for string: checks the column itself.
 
 ## Design Decisions
 
@@ -175,6 +182,8 @@ Both are used by the `daily_rates` CTE for `interest_rate` and `mora_interest_ra
 - **SQLite precision:** SQLite stores `Numeric` as floating-point internally. Very high-precision raw amounts (> ~10 significant digits) may lose precision. Use PostgreSQL or MySQL for production.
 - **SQL expression type asymmetry:** The `balance` hybrid_property returns `Money` on instances but raw `Numeric` in SQL expressions. Filter comparisons use `Decimal`, not `Money`: `LoanRecord.balance > Decimal("1000")`.
 - **SQL vs Python precision:** The SQL CTE expression uses float64 arithmetic while Python uses `Decimal`. For exact comparisons in tests, use approximate matching (e.g., `pytest.approx`) when comparing SQL results against Python `balance_at`.
-- **JSON NULL vs SQL NULL:** SQLAlchemy's `JSON` type stores Python `None` as the string `'null'` rather than SQL `NULL`. The NULL guard checks `json_extract(interest_rate, '$.rate') IS NULL` which correctly handles both cases since `json_extract('null', '$.rate')` returns NULL.
-- **Mora rate NULL handling:** When `mora_interest_rate` is NULL, `json_extract(NULL, '$.rate')` cascades NULL through `pow()`. The `daily_rates` CTE coalesces the mora daily rate to 0.0 to prevent this from nullifying the entire expression.
-- **Period-aware SQL rate conversion:** The SQL CTE handles all `CompoundingFrequency` periods (annual, monthly, quarterly, semi-annual, daily, continuous). This only applies to the `json` representation. The `string` representation triggers the NULL-rate fallback (simple balance) since `json_extract` on a plain string returns NULL for `$.rate`.
+- **JSON NULL vs SQL NULL:** SQLAlchemy's `JSON` type stores Python `None` as the string `'null'` rather than SQL `NULL`. For JSON representation, the NULL guard checks `json_extract(interest_rate, '$.rate') IS NULL` which correctly handles both cases since `json_extract('null', '$.rate')` returns NULL.
+- **Mora rate NULL handling:** When `mora_interest_rate` is NULL, the helper functions cascade NULL through `pow()`. The `daily_rates` CTE coalesces the mora daily rate to 0.0 to prevent this from nullifying the entire expression.
+- **Data-driven period mapping:** The SQL `CASE` branches in `_periods_per_year_expr` are generated from the `CompoundingFrequency` enum and `_FREQUENCY_TOKEN` mapping. Adding a new `CompoundingFrequency` member and its token automatically extends both JSON and string SQL support.
+- **String representation year_size limitation:** The string format (e.g., `"5.250% annual"`) does not embed `year_size`. The SQL helpers use the `rate_year_size` default from the column's `InterestRateType` definition. If different rates on the same column need different year sizes, use JSON representation instead.
+- **Continuous compounding in string format:** `CompoundingFrequency.CONTINUOUS` is not in `_FREQUENCY_TOKEN` and cannot be serialized as a string. Use JSON representation for continuous rates.
