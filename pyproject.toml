@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "money_warp"
-version = "0.7.0"
+version = "0.7.1"
 description = "MoneyWarp – Bend time. Model cash."
 license = "MIT"
 authors = ["Tomas Correa <tomas.correa@gmail.com>"]
@@ -130,6 +130,10 @@ ignore_transitive = [
     "ipython",
     "ipywidgets", 
     "plotly"
+]
+ignore_misplaced_dev = [
+    "sqlalchemy",
+    "marshmallow"
 ]
 extend_exclude = [
     "notebooks/",
