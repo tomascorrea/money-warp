@@ -1,0 +1,24 @@
+---
+description: Ask the user at the start of every new chat whether to follow the full development workflow
+alwaysApply: true
+---
+# Chat-Start Triage
+
+At the **very beginning** of every new chat, before doing anything else, ask the user which mode this conversation should follow. Use the `AskQuestion` tool:
+
+```
+AskQuestion:
+  title: "Chat Mode"
+  prompt: "Should this chat follow the full development workflow?"
+  options:
+    - id: full
+      label: "Yes -- full dev workflow (planning, branching, PRs, knowledge updates)"
+    - id: quick
+      label: "No -- quick task / exploration (skip workflow steps, keep code quality rules)"
+```
+
+## Behavior Based on Answer
+
+**Full dev workflow** (`full`): Follow every rule in `development.mdc` strictly -- planning before coding, feature branches, incremental commits, PR process, knowledge and docs updates.
+
+**Quick task / exploration** (`quick`): Skip the structured workflow steps (mandatory planning phase, feature branches, PRs, release process). Still enforce all code quality rules: `Money` type for monetary amounts, `scipy` for numerical solving, type hints, formatting, test patterns, and docstrings.
