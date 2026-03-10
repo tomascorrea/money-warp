@@ -31,9 +31,8 @@ These rules apply regardless of the chosen mode:
 - `scipy.optimize` for root-finding and numerical solving (never hand-rolled loops)
 - Type hints on all functions and classes
 - Code formatting: Black, isort, Ruff
-- Test patterns from `test-patterns.mdc`: function-based tests, single assert, parametrize, exact values
+- Test patterns from `quality.mdc`: function-based tests, single concept per test, parametrize, exact values, no mocks, fixtures over helpers
 - No imports inside functions or methods
-- No mocks unless absolutely necessary
 - Docstrings on public API
 
 ### Workflow-Only (skipped in quick mode)
@@ -100,13 +99,15 @@ If you wrote any root-finding or convergence logic, verify it uses `scipy.optimi
 
 ### C6. Test quality
 
-If you wrote or modified tests, verify they follow `test-patterns.mdc`:
+If you wrote or modified tests, verify they follow `quality.mdc`:
 - Function-based (no class-based test cases)
-- Single assert per test function
+- Single concept per test (multiple asserts on the same result are fine)
 - Parametrized for multiple input/output combinations
 - Assert exact literal values, not computed results
 - No conditional logic or loops inside tests
 - Descriptive names: `test_[component]_[action]_[scenario]`
+- No mocks unless absolutely necessary
+- Prefer fixtures over helper functions
 
 ### C7. Knowledge and docs (full workflow mode only)
 
@@ -131,10 +132,12 @@ When reviewing code changes (your own or when the user asks for a review), check
 ### D2. Test quality
 
 - No class-based test cases (`class TestX:` is forbidden)
-- One assert per test function
+- Single concept per test (multiple asserts on the same result are fine)
 - `pytest.mark.parametrize` for multiple scenarios
 - Exact literal values in assertions (no calculations in tests)
-- No mocks unless truly necessary
+- No conditional logic or loops inside tests
+- Descriptive names: `test_[component]_[action]_[scenario]`
+- No mocks unless absolutely necessary
 - Fixtures for reusable setup (not helper functions)
 
 ### D3. Common mistakes to catch

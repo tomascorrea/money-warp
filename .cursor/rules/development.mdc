@@ -148,7 +148,7 @@ pip install package_name
 ### Test Quality
 - **Test coverage**: Aim for >90% coverage
 - **Test types**: Unit tests, integration tests, end-to-end tests
-- **Mock external dependencies**: Use `unittest.mock` or `pytest-mock`
+- **Avoid mocks unless absolutely necessary**: Prefer real objects. See `quality.mdc` for details.
 - **Test data**: Use fixtures for reusable test data
 
 ### Prefer Fixtures Over Helper Functions ⭐
