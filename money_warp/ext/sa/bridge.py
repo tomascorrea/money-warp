@@ -179,6 +179,49 @@ def _load_money_warp_loan_impl(self):
 
 
 # ---------------------------------------------------------------------------
+# SQL helpers — rate conversion
+# ---------------------------------------------------------------------------
+
+
+def _effective_annual_expr(rate_col):
+    """SQL CASE converting any stored JSON rate to an effective annual rate.
+
+    Mirrors :meth:`Rate._to_effective_annual` for all
+    :class:`CompoundingFrequency` values stored in the JSON ``period`` field.
+    """
+    rate = cast(func.json_extract(rate_col, "$.rate"), Float)
+    period = func.json_extract(rate_col, "$.period")
+    year_size = cast(func.json_extract(rate_col, "$.year_size"), Float)
+
+    return case(
+        (period == "annually", rate),
+        (period == "monthly", func.pow(1.0 + rate, 12.0) - 1.0),
+        (period == "quarterly", func.pow(1.0 + rate, 4.0) - 1.0),
+        (period == "semi_annually", func.pow(1.0 + rate, 2.0) - 1.0),
+        (period == "daily", func.pow(1.0 + rate, year_size) - 1.0),
+        (period == "continuous", func.exp(rate) - 1.0),
+        else_=rate,
+    )
+
+
+def _daily_rate_expr(rate_col):
+    """SQL expression for the daily rate derived from a JSON-stored rate.
+
+    Returns the stored rate directly when the period is already daily;
+    otherwise converts through the effective annual rate.
+    """
+    rate = cast(func.json_extract(rate_col, "$.rate"), Float)
+    period = func.json_extract(rate_col, "$.period")
+    year_size = cast(func.json_extract(rate_col, "$.year_size"), Float)
+    eff_annual = _effective_annual_expr(rate_col)
+
+    return case(
+        (period == "daily", rate),
+        else_=func.pow(1.0 + eff_annual, 1.0 / year_size) - 1.0,
+    )
+
+
+# ---------------------------------------------------------------------------
 # SQL expression (CTE-based)
 # ---------------------------------------------------------------------------
 
@@ -233,15 +276,10 @@ def _build_sql_balance_expression(cls, as_of, meta):
     )
 
     # -- CTE 3: daily_rates ------------------------------------------------
-    annual_rate = cast(func.json_extract(ir_col, "$.rate"), Float)
-    year_size = cast(func.json_extract(ir_col, "$.year_size"), Float)
-    mora_annual = cast(func.json_extract(mir_col, "$.rate"), Float)
-    mora_ys = cast(func.json_extract(mir_col, "$.year_size"), Float)
-
     daily_rates = (
         select(
-            (func.pow(1.0 + annual_rate, 1.0 / year_size) - 1.0).label("daily_rate"),
-            func.coalesce(func.pow(1.0 + mora_annual, 1.0 / mora_ys) - 1.0, 0.0).label("mora_daily_rate"),
+            _daily_rate_expr(ir_col).label("daily_rate"),
+            func.coalesce(_daily_rate_expr(mir_col), 0.0).label("mora_daily_rate"),
         )
         .correlate(cls)
         .cte("daily_rates", nesting=True)
