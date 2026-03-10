@@ -99,6 +99,36 @@ class LoanRecord(Base):
     settlements = relationship("SettlementRecord", order_by="SettlementRecord.payment_date")
 
 
+@settlement_bridge()
+class StringSettlementRecord(Base):
+    __tablename__ = "string_settlements"
+    id = Column(Integer, primary_key=True)
+    loan_id = Column(Integer, ForeignKey("string_loans.id"))
+    amount = Column(MoneyType())
+    payment_date = Column(DateTime)
+    remaining_balance = Column(MoneyType())
+    interest_date = Column(DateTime, nullable=True)
+    processing_date = Column(DateTime, nullable=True)
+
+
+@loan_bridge()
+class StringLoanRecord(Base):
+    __tablename__ = "string_loans"
+    id = Column(Integer, primary_key=True)
+    principal = Column(MoneyType())
+    interest_rate = Column(InterestRateType(representation="string"), nullable=True)
+    disbursement_date = Column(DateTime, nullable=True)
+    due_dates = Column(JSON, nullable=True)
+    fine_rate = Column(Numeric(), nullable=True)
+    grace_period_days = Column(Integer(), nullable=True)
+    mora_interest_rate = Column(InterestRateType(representation="string"), nullable=True)
+    mora_strategy = Column(String(), nullable=True)
+    settlements = relationship(
+        "StringSettlementRecord",
+        order_by="StringSettlementRecord.payment_date",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -116,6 +146,8 @@ def session(engine):
     with Session(engine) as s:
         LoanRecordFactory._meta.sqlalchemy_session = s
         SettlementRecordFactory._meta.sqlalchemy_session = s
+        StringLoanRecordFactory._meta.sqlalchemy_session = s
+        StringSettlementRecordFactory._meta.sqlalchemy_session = s
         yield s
 
 
@@ -211,6 +243,33 @@ class LoanRecordFactory(factory.alchemy.SQLAlchemyModelFactory):
 class SettlementRecordFactory(factory.alchemy.SQLAlchemyModelFactory):
     class Meta:
         model = SettlementRecord
+        sqlalchemy_session_persistence = "flush"
+
+    amount = factory.LazyFunction(lambda: Money("3000"))
+    payment_date = factory.LazyFunction(lambda: datetime(2024, 2, 1, tzinfo=timezone.utc))
+    remaining_balance = factory.LazyFunction(lambda: Money("7000"))
+    interest_date = None
+    processing_date = None
+
+
+class StringLoanRecordFactory(factory.alchemy.SQLAlchemyModelFactory):
+    class Meta:
+        model = StringLoanRecord
+        sqlalchemy_session_persistence = "flush"
+
+    principal = factory.LazyFunction(lambda: Money("10000"))
+    interest_rate = factory.LazyFunction(lambda: InterestRate("10% a"))
+    disbursement_date = factory.LazyFunction(lambda: datetime(2024, 1, 1, tzinfo=timezone.utc))
+    due_dates = factory.LazyFunction(lambda: ["2024-02-01T00:00:00+00:00", "2024-03-01T00:00:00+00:00"])
+    fine_rate = None
+    grace_period_days = None
+    mora_interest_rate = None
+    mora_strategy = None
+
+
+class StringSettlementRecordFactory(factory.alchemy.SQLAlchemyModelFactory):
+    class Meta:
+        model = StringSettlementRecord
         sqlalchemy_session_persistence = "flush"
 
     amount = factory.LazyFunction(lambda: Money("3000"))
