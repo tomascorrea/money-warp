@@ -50,7 +50,43 @@ def test_money_creation_from_various_types(amount, expected):
 - **Good**: Separate tests for different conditions
 - **Use**: Parametrized tests for multiple scenarios
 
-### 6. Test Organization Patterns
+### 6. Assert Actual Values, Not Calculations ⭐
+**Tests should assert exact, literal values rather than computed results or complex calculations.**
+
+- **Good**: `assert allocation.principal_allocated == Money("296.74")`
+- **Good**: `assert settlement.fine_paid == Money("6.07")`
+- **Bad**: `assert total == sum(allocations)` (calculation in test)
+- **Bad**: `assert result == expected_amount + fees` (computation in test)
+- **Reason**: Exact values make tests more readable, maintainable, and catch regressions immediately
+
+**Examples:**
+```python
+# ✅ GOOD - Assert exact values
+def test_settlement_allocation_exact_values():
+    settlement = loan.record_payment(Money("800.00"), payment_date)
+    
+    # Assert exact expected installment amounts
+    assert original_schedule[0].payment_amount == Money("303.62")
+    assert original_schedule[1].payment_amount == Money("303.62")
+    
+    # Assert exact allocation amounts
+    assert settlement.allocations[0].principal_allocated == Money("292.99")
+    assert settlement.allocations[0].interest_allocated == Money("10.63")
+    assert settlement.allocations[0].is_fully_covered is True
+
+# ❌ BAD - Calculations and loops in tests
+def test_settlement_allocation_computed():
+    settlement = loan.record_payment(Money("800.00"), payment_date)
+    
+    total_allocated = Money.zero()
+    for allocation in settlement.allocations:  # Loop in test
+        total_allocated += (allocation.principal_allocated + 
+                           allocation.interest_allocated)  # Calculation
+    
+    assert total_allocated == Money("800.00")  # Could hide bugs
+```
+
+### 7. Test Organization Patterns
 
 #### File Structure
 ```
@@ -227,6 +263,35 @@ def test_addition():
 def test_works():
 ```
 
+### 5. ❌ Calculations in Tests
+```python
+# DON'T DO THIS - Calculations hide bugs and make tests unclear
+def test_settlement_totals():
+    settlement = loan.record_payment(Money("800.00"), date)
+    
+    # Bad: Calculation in test
+    total = sum(a.principal_allocated + a.interest_allocated 
+                for a in settlement.allocations)
+    assert total == Money("800.00")
+    
+    # Bad: Complex computation
+    expected_coverage = (settlement.allocations[0].principal_allocated >= 
+                        original_schedule[0].principal_payment)
+    assert settlement.allocations[0].is_fully_covered == expected_coverage
+
+# DO THIS INSTEAD - Assert exact values
+def test_settlement_exact_allocation_values():
+    settlement = loan.record_payment(Money("800.00"), date)
+    
+    # Good: Exact values
+    assert settlement.allocations[0].principal_allocated == Money("292.99")
+    assert settlement.allocations[0].interest_allocated == Money("10.63")
+    assert settlement.allocations[0].is_fully_covered is True
+    
+    assert settlement.allocations[1].principal_allocated == Money("297.18")
+    assert settlement.allocations[1].is_fully_covered is False
+```
+
 ## Example: Complete Test File Structure
 
 ```python
@@ -284,8 +349,31 @@ def test_money_cents_property_conversion():
 def test_money_very_small_amount_rounds_down():
     money = Money("0.001")
     assert money.real_amount == Decimal("0.00")
+
+
+# Settlement tests - demonstrating exact values pattern
+def test_settlement_allocation_exact_values():
+    """Example of asserting exact values instead of calculations."""
+    loan = create_test_loan()
+    
+    # Assert expected installment amounts (exact values)
+    original_schedule = loan.get_original_schedule()
+    assert original_schedule[0].payment_amount == Money("303.62")
+    assert original_schedule[1].payment_amount == Money("303.62")
+    
+    # Make payment and assert exact allocation values
+    settlement = loan.record_payment(Money("800.00"), payment_date)
+    
+    # Assert exact allocated amounts (no calculations)
+    assert settlement.allocations[0].principal_allocated == Money("292.99")
+    assert settlement.allocations[0].interest_allocated == Money("10.63")
+    assert settlement.allocations[0].is_fully_covered is True
+    
+    assert settlement.allocations[1].principal_allocated == Money("297.18")
+    assert settlement.allocations[1].interest_allocated == Money("0.00")
+    assert settlement.allocations[1].is_fully_covered is False
 ```
 
 ---
 
-**Remember**: Keep tests simple, focused, and deterministic. One test, one assert, one purpose! 🧪
+**Remember**: Keep tests simple, focused, and deterministic. Assert exact values, not calculations! 🧪

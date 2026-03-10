@@ -34,9 +34,26 @@ The **interest_date** controls how many days of interest are charged. Fewer days
 
 Neither method takes a date parameter — they use `self.now()` (which respects `Warp` context for time travel).
 
-- **`pay_installment(amount, description=None)`** — the common case. Records payment at `self.now()` and calculates interest up to `max(self.now(), next_due_date)`. Early or on-time payments accrue interest up to the due date (no discount). Late payments accrue interest up to `self.now()`, so the borrower pays extra interest for the additional days beyond the due date. Late fines are also applied automatically. A large late payment naturally covers the missed installment **and** eats into future installments — the allocation (fines → interest → principal) and `_covered_due_date_count()` handle this without special-casing.
+- **`pay_installment(amount, description=None)`** — the common case. Records payment at `self.now()` and calculates interest up to `max(self.now(), next_due_date)`. Works correctly for all three timing scenarios:
+  - **Early payment** (before due date): interest accrues up to the due date. The borrower pays the full scheduled interest — no discount. The installment is fully covered if the amount is sufficient.
+  - **On-time payment**: interest matches the scheduled amount exactly.
+  - **Late payment**: interest accrues up to `self.now()`, so the borrower pays extra interest (mora) for the days beyond the due date. Late fines are also applied automatically.
 
-- **`anticipate_payment(amount, installments=None, description=None)`** — early payment with discount. Records payment at `self.now()` and calculates interest only up to `self.now()` (fewer days = less interest charged). When `installments` is provided (1-based numbers), the corresponding expected cash-flow items are temporally deleted via `CashFlowItem.delete()`.
+  A large payment naturally covers the current installment **and** eats into future installments — the per-installment allocation and `_covered_due_date_count()` handle this without special-casing.
+
+- **`anticipate_payment(amount, installments=None, description=None)`** — early payment **with interest discount**. Records payment at `self.now()` and calculates interest only up to `self.now()` (fewer days = less interest charged). When `installments` is provided (1-based numbers), the corresponding expected cash-flow items are temporally deleted via `CashFlowItem.delete()`.
+
+### Early Payment vs Anticipation
+
+These are distinct concepts:
+
+| | `pay_installment` (early payment) | `anticipate_payment` (anticipation) |
+|---|---|---|
+| **Interest accrual** | Up to the **due date** | Up to the **payment date** |
+| **Discount** | None — borrower pays scheduled interest | Yes — fewer days = less interest |
+| **Installment status** | Fully covered (if amount sufficient) | NOT fully covered (interest < scheduled) |
+| **Use case** | Borrower wants to pay ahead of time, no discount expected | Borrower negotiates early payoff with reduced interest |
+| **Test folder** | `up_to_date_payments/` | `antecipation/` |
 
 - **`calculate_anticipation(installments)`** — pure calculation (no side effects). Returns an `AnticipationResult(amount, installments)` with the PV-based amount the borrower must pay today to eliminate specific installments. The formula: `amount = current_balance - PV(kept payments at kept dates)`. When all remaining installments are anticipated, `amount = current_balance` (full early payoff). Validates that all requested installment numbers are unpaid and in range.
 
@@ -192,6 +209,7 @@ Field semantics:
 - `*_paid` fields are aggregated totals from all settlement allocations attributed to this installment.
 - `allocations` is the reverse view of Settlement: all `SettlementAllocation`s that touched this installment.
 - Created via `Installment.from_schedule_entry(entry, allocations, expected_mora, expected_fine)`.
+- `allocate(fine, mora, interest, principal)` — distributes four component pools against remaining obligations, returns `(SettlementAllocation, remaining_fine, remaining_mora, remaining_interest, remaining_principal)`. Used by `_build_settlement_allocations` to walk through installments in order.
 - `PaymentScheduleEntry` remains the internal scheduler data structure. `Installment` is the public-facing API.
 
 ### Settlement (`loan.settlements`, returned by payment methods)
@@ -201,9 +219,19 @@ A frozen dataclass capturing how a single payment was allocated. Reconstructed f
 Fields: `payment_amount`, `payment_date`, `fine_paid`, `interest_paid`, `mora_paid`, `principal_paid`, `remaining_balance`, `allocations: List[SettlementAllocation]`.
 
 - `allocations` shows per-installment detail: which installments the payment covered and how much principal/interest/mora/fine went to each.
-- Interest, mora, and fines are attributed to the first installment touched. Principal is distributed across installments using milestone comparison against the original schedule.
 - All three payment methods (`record_payment`, `pay_installment`, `anticipate_payment`) return a `Settlement`.
 - The `settlements` property reconstructs all settlements by querying the cash flow. Warp-aware: only includes settlements with `payment_date <= self.now()`.
+
+#### Per-Installment Allocation
+
+Each component (fine, mora, interest, principal) is distributed as a **separate pool** across installments in order. The four pools come from `_allocate_payment` (loan-level totals). Each installment's `allocate()` method caps each component at the installment's remaining obligation for that component:
+
+1. Build an installment snapshot (`_build_installments_snapshot`) reflecting all prior settlement allocations — avoids circular dependency with `self.settlements`.
+2. For each installment in order, `Installment.allocate(fine_pool, mora_pool, interest_pool, principal_pool)` takes what's owed per component, returns the allocation and remaining pools.
+3. Fully-paid installments consume nothing and are skipped.
+4. When the loan is fully paid off (ending_balance ≈ 0), installments whose principal is fully covered are marked `is_fully_covered` even if their scheduled interest wasn't allocated from this specific payment.
+
+The `settlements` property maintains a running `allocations_by_number` dict so each settlement sees the cumulative allocation state from prior settlements.
 
 ### AnticipationResult
 

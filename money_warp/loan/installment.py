@@ -2,11 +2,13 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List
+from typing import List, Tuple
 
 from ..money import Money
 from ..scheduler import PaymentScheduleEntry
 from .settlement import SettlementAllocation
+
+_COVERAGE_TOLERANCE = Money("0.01")
 
 
 @dataclass(frozen=True)
@@ -45,8 +47,61 @@ class Installment:
 
     @property
     def is_fully_paid(self) -> bool:
-        """Whether this installment has been fully settled."""
-        return self.balance.is_zero()
+        """Whether this installment has been fully settled (within rounding tolerance)."""
+        return self.balance <= _COVERAGE_TOLERANCE
+
+    def allocate(
+        self,
+        available_fine: Money,
+        available_mora: Money,
+        available_interest: Money,
+        available_principal: Money,
+    ) -> Tuple[SettlementAllocation, Money, Money, Money, Money]:
+        """Allocate available component pools against this installment.
+
+        Each component is distributed independently, capped by both the
+        remaining obligation for that component and the available pool.
+
+        Args:
+            available_fine: Remaining fine pool from the payment.
+            available_mora: Remaining mora pool from the payment.
+            available_interest: Remaining interest pool from the payment.
+            available_principal: Remaining principal pool from the payment.
+
+        Returns:
+            A tuple of (SettlementAllocation, remaining_fine, remaining_mora,
+            remaining_interest, remaining_principal).
+        """
+        fine_owed = self.expected_fine - self.fine_paid
+        fine_alloc = Money(min(fine_owed.raw_amount, available_fine.raw_amount))
+
+        mora_owed = self.expected_mora - self.mora_paid
+        mora_alloc = Money(min(mora_owed.raw_amount, available_mora.raw_amount))
+
+        interest_owed = self.expected_interest - self.interest_paid
+        interest_alloc = Money(min(interest_owed.raw_amount, available_interest.raw_amount))
+
+        principal_owed = self.expected_principal - self.principal_paid
+        principal_alloc = Money(min(principal_owed.raw_amount, available_principal.raw_amount))
+
+        total = fine_alloc + mora_alloc + interest_alloc + principal_alloc
+        is_covered = total >= (self.balance - _COVERAGE_TOLERANCE)
+
+        allocation = SettlementAllocation(
+            installment_number=self.number,
+            principal_allocated=principal_alloc,
+            interest_allocated=interest_alloc,
+            mora_allocated=mora_alloc,
+            fine_allocated=fine_alloc,
+            is_fully_covered=is_covered,
+        )
+        return (
+            allocation,
+            available_fine - fine_alloc,
+            available_mora - mora_alloc,
+            available_interest - interest_alloc,
+            available_principal - principal_alloc,
+        )
 
     @classmethod
     def from_schedule_entry(

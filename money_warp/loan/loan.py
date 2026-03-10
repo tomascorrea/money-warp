@@ -816,7 +816,13 @@ class Loan:
             )
         )
 
-        return self._compute_settlement(payment_number - 1)
+        allocs_by_number: Dict[int, List[SettlementAllocation]] = {}
+        for i in range(payment_number - 1):
+            prev = self._compute_settlement(i, allocs_by_number)
+            for a in prev.allocations:
+                allocs_by_number.setdefault(a.installment_number, []).append(a)
+
+        return self._compute_settlement(payment_number - 1, allocs_by_number)
 
     def pay_installment(self, amount: Money, description: Optional[str] = None) -> Settlement:
         """
@@ -1001,8 +1007,19 @@ class Loan:
 
         return result
 
-    def _compute_settlement(self, entry_index: int) -> Settlement:
-        """Compute a Settlement for the payment event at entry_index by querying the cash flow."""
+    def _compute_settlement(
+        self,
+        entry_index: int,
+        allocations_by_number: Dict[int, List[SettlementAllocation]],
+    ) -> Settlement:
+        """Compute a Settlement for the payment event at entry_index.
+
+        Args:
+            entry_index: Index into ``_actual_schedule_entries``.
+            allocations_by_number: Per-installment allocations accumulated
+                from settlements *before* this one.  Used to build the
+                installment snapshot that drives per-installment allocation.
+        """
         entry = self._actual_schedule_entries[entry_index]
         items = self._extract_payment_items(entry_index)
 
@@ -1012,14 +1029,23 @@ class Loan:
         principal_paid = items["actual_principal"]
         payment_amount = fine_paid + interest_paid + mora_paid + principal_paid
 
-        covered_before = self._covered_due_date_count_at(entry_index)
-        allocations = self._build_settlement_allocations(
-            covered_before,
+        if entry_index == 0:
+            last_pay_date = self.disbursement_date
+        else:
+            last_pay_date = self._actual_schedule_entries[entry_index - 1].due_date
+
+        installments = self._build_installments_snapshot(
+            allocations_by_number,
             entry.beginning_balance,
-            principal_paid,
-            interest_paid,
-            mora_paid,
+            entry.due_date,
+            last_pay_date,
+        )
+        allocations = self._build_settlement_allocations(
+            installments,
             fine_paid,
+            mora_paid,
+            interest_paid,
+            principal_paid,
             entry.ending_balance,
         )
 
@@ -1034,68 +1060,69 @@ class Loan:
             allocations=allocations,
         )
 
-    def _covered_due_date_count_at(self, entry_index: int) -> int:
-        """How many due dates were covered just BEFORE the payment at entry_index."""
-        if entry_index == 0:
-            return 0
-        remaining = self._actual_schedule_entries[entry_index - 1].ending_balance
-        original = self.get_original_schedule()
-        covered = 0
-        for entry in original:
-            if remaining <= entry.ending_balance + self._COVERAGE_TOLERANCE:
-                covered += 1
-            else:
-                break
-        return covered
-
     def _build_settlement_allocations(
         self,
-        covered_before: int,
-        principal_before: Money,
-        principal_paid: Money,
-        interest_paid: Money,
-        mora_paid: Money,
+        installments: List[Installment],
         fine_paid: Money,
+        mora_paid: Money,
+        interest_paid: Money,
+        principal_paid: Money,
         ending_balance: Money,
     ) -> List[SettlementAllocation]:
-        """Build per-installment allocations for a settlement.
+        """Distribute a payment's components across installments.
 
-        Distributes principal across original schedule milestones.
-        Interest, mora, and fine are attributed to the first installment touched.
+        Each component (fine, mora, interest, principal) is distributed
+        as a separate pool.  Iterates through all installments in order;
+        fully-paid installments consume nothing and are skipped.
+
+        When the loan is fully paid off (ending_balance ≈ 0), installments
+        whose principal is fully covered are marked ``is_fully_covered``
+        even if their interest/mora wasn't allocated from this payment.
         """
-        original = self.get_original_schedule()
-        if covered_before >= len(original):
-            return []
+        loan_fully_paid = ending_balance <= self._COVERAGE_TOLERANCE
+        remaining_fine = fine_paid
+        remaining_mora = mora_paid
+        remaining_interest = interest_paid
+        remaining_principal = principal_paid
 
         allocations: List[SettlementAllocation] = []
-        remaining_to_allocate = principal_paid
-        remaining_balance = principal_before
-
-        for i in range(covered_before, len(original)):
-            milestone = original[i].ending_balance
-            gap = remaining_balance - milestone
-            if gap.is_negative():
-                gap = Money.zero()
-
-            principal_for_this = Money(min(gap.raw_amount, remaining_to_allocate.raw_amount))
-            remaining_to_allocate = remaining_to_allocate - principal_for_this
-            remaining_balance = remaining_balance - principal_for_this
-            fully_covered = remaining_balance <= milestone + self._COVERAGE_TOLERANCE
-
-            is_first = i == covered_before
-            allocations.append(
-                SettlementAllocation(
-                    installment_number=i + 1,
-                    principal_allocated=principal_for_this,
-                    interest_allocated=interest_paid if is_first else Money.zero(),
-                    mora_allocated=mora_paid if is_first else Money.zero(),
-                    fine_allocated=fine_paid if is_first else Money.zero(),
-                    is_fully_covered=fully_covered,
-                )
-            )
-
-            if remaining_to_allocate.is_zero() or remaining_to_allocate.is_negative():
+        for inst in installments:
+            if (
+                remaining_fine.is_zero()
+                and remaining_mora.is_zero()
+                and remaining_interest.is_zero()
+                and remaining_principal.is_zero()
+            ):
                 break
+
+            allocation, remaining_fine, remaining_mora, remaining_interest, remaining_principal = inst.allocate(
+                remaining_fine,
+                remaining_mora,
+                remaining_interest,
+                remaining_principal,
+            )
+            total = (
+                allocation.principal_allocated
+                + allocation.interest_allocated
+                + allocation.mora_allocated
+                + allocation.fine_allocated
+            )
+            if not total.is_positive():
+                continue
+
+            if loan_fully_paid and not allocation.is_fully_covered:
+                principal_owed = inst.expected_principal - inst.principal_paid
+                if allocation.principal_allocated >= (principal_owed - self._COVERAGE_TOLERANCE):
+                    allocation = SettlementAllocation(
+                        installment_number=allocation.installment_number,
+                        principal_allocated=allocation.principal_allocated,
+                        interest_allocated=allocation.interest_allocated,
+                        mora_allocated=allocation.mora_allocated,
+                        fine_allocated=allocation.fine_allocated,
+                        is_fully_covered=True,
+                    )
+
+            allocations.append(allocation)
 
         return allocations
 
@@ -1107,11 +1134,15 @@ class Loan:
         before self.now().
         """
         current_time = self.now()
+        allocs_by_number: Dict[int, List[SettlementAllocation]] = {}
         result: List[Settlement] = []
         for i, entry in enumerate(self._actual_schedule_entries):
             if entry.due_date > current_time:
                 break
-            result.append(self._compute_settlement(i))
+            settlement = self._compute_settlement(i, allocs_by_number)
+            for a in settlement.allocations:
+                allocs_by_number.setdefault(a.installment_number, []).append(a)
+            result.append(settlement)
         return result
 
     def _covered_count_for_balance(self, remaining: Money) -> int:
@@ -1125,6 +1156,62 @@ class Loan:
                 break
         return covered
 
+    def _build_installments_snapshot(
+        self,
+        allocations_by_number: Dict[int, List[SettlementAllocation]],
+        principal_balance: Money,
+        as_of_date: datetime,
+        last_payment_date: Optional[datetime] = None,
+    ) -> List[Installment]:
+        """Build Installment objects from pre-computed allocation data.
+
+        Unlike the ``installments`` property, this does NOT query
+        ``self.settlements`` — avoiding the circular dependency when
+        called from ``_build_settlement_allocations``.
+
+        Args:
+            allocations_by_number: Per-installment allocations accumulated so far.
+            principal_balance: Outstanding principal at the point in time.
+            as_of_date: Reference date for mora computation.
+            last_payment_date: Date of the most recent prior payment (for
+                compound mora).  Falls back to ``as_of_date`` when *None*.
+        """
+        original = self.get_original_schedule()
+        covered = self._covered_count_for_balance(principal_balance)
+
+        result: List[Installment] = []
+        for i, entry in enumerate(original):
+            installment_num = i + 1
+            allocs = allocations_by_number.get(installment_num, [])
+
+            expected_fine = self.fines_applied.get(entry.due_date, Money.zero())
+
+            if i < covered:
+                expected_mora = Money(sum(a.mora_allocated.raw_amount for a in allocs))
+            elif i == covered and entry.due_date < as_of_date:
+                if last_payment_date is not None:
+                    total_days = (as_of_date - last_payment_date).days
+                    _, expected_mora = self._compute_accrued_interest(
+                        total_days,
+                        principal_balance,
+                        entry.due_date,
+                        last_payment_date,
+                    )
+                else:
+                    days_overdue = (as_of_date - entry.due_date).days
+                    _, expected_mora = self._compute_accrued_interest(
+                        days_overdue,
+                        principal_balance,
+                        entry.due_date,
+                        entry.due_date,
+                    )
+            else:
+                expected_mora = Money.zero()
+
+            result.append(Installment.from_schedule_entry(entry, allocs, expected_mora, expected_fine))
+
+        return result
+
     @property
     def installments(self) -> List[Installment]:
         """The repayment plan as a list of Installments.
@@ -1137,10 +1224,6 @@ class Loan:
         Each installment carries expected_mora and expected_fine so its
         balance (and derived is_fully_paid) are self-contained.
         """
-        original = self.get_original_schedule()
-        covered = self._covered_count_for_balance(self.principal_balance)
-        now = self.now()
-
         allocations_by_number: Dict[int, List[SettlementAllocation]] = {}
         for settlement in self.settlements:
             for allocation in settlement.allocations:
@@ -1149,29 +1232,11 @@ class Loan:
                     allocations_by_number[num] = []
                 allocations_by_number[num].append(allocation)
 
-        result: List[Installment] = []
-        for i, entry in enumerate(original):
-            installment_num = i + 1
-            allocs = allocations_by_number.get(installment_num, [])
-
-            expected_fine = self.fines_applied.get(entry.due_date, Money.zero())
-
-            if i < covered:
-                expected_mora = Money(sum(a.mora_allocated.raw_amount for a in allocs))
-            elif i == covered and entry.due_date < now:
-                days_overdue = (now - entry.due_date).days
-                _, expected_mora = self._compute_accrued_interest(
-                    days_overdue,
-                    self.principal_balance,
-                    entry.due_date,
-                    entry.due_date,
-                )
-            else:
-                expected_mora = Money.zero()
-
-            result.append(Installment.from_schedule_entry(entry, allocs, expected_mora, expected_fine))
-
-        return result
+        return self._build_installments_snapshot(
+            allocations_by_number,
+            self.principal_balance,
+            self.now(),
+        )
 
     _COVERAGE_TOLERANCE = Money("0.01")
 
