@@ -11,7 +11,9 @@ from typing import List
 from sqlalchemy import Float, String, case, cast, column, func, literal, select
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 
+from money_warp.ext.sa.types import _FREQUENCY_TOKEN
 from money_warp.loan import Loan, MoraStrategy
+from money_warp.rate import CompoundingFrequency
 from money_warp.tz import ensure_aware, now
 from money_warp.warp import Warp, WarpedTime
 
@@ -182,43 +184,101 @@ def _load_money_warp_loan_impl(self):
 # SQL helpers — rate conversion
 # ---------------------------------------------------------------------------
 
+# Period-name lookups derived from CompoundingFrequency, keyed by representation.
+# JSON uses freq.name.lower(); string uses the tokens from types._FREQUENCY_TOKEN.
+_PERIOD_NAMES: dict[str, dict[CompoundingFrequency, str]] = {
+    "json": {freq: freq.name.lower() for freq in CompoundingFrequency},
+    "string": {freq: token for freq, token in _FREQUENCY_TOKEN.items()},
+}
 
-def _effective_annual_expr(rate_col):
-    """SQL CASE converting any stored JSON rate to an effective annual rate.
 
-    Mirrors :meth:`Rate._to_effective_annual` for all
-    :class:`CompoundingFrequency` values stored in the JSON ``period`` field.
+def _get_rate_col_info(cls, attr_name):
+    """Introspect a rate column's type to get ``(representation, default_year_size)``."""
+    col_type = getattr(cls, attr_name).property.columns[0].type
+    representation = getattr(col_type, "representation", "json")
+    year_size = getattr(col_type, "rate_year_size", None)
+    default_year_size = float(year_size.value) if year_size is not None else 365.0
+    return representation, default_year_size
+
+
+def _extract_rate_params(rate_col, representation, default_year_size):
+    """Extract ``(decimal_rate, period, year_size)`` as SQL expressions.
+
+    For JSON: reads ``$.rate``, ``$.period``, ``$.year_size`` via ``json_extract``.
+    For string: parses ``"5.250% annual"`` via ``SUBSTR``/``INSTR``; uses
+    *default_year_size* since the string format does not embed year size.
     """
-    rate = cast(func.json_extract(rate_col, "$.rate"), Float)
-    period = func.json_extract(rate_col, "$.period")
-    year_size = cast(func.json_extract(rate_col, "$.year_size"), Float)
+    if representation == "json":
+        rate = cast(func.json_extract(rate_col, "$.rate"), Float)
+        period = func.json_extract(rate_col, "$.period")
+        year_size = cast(func.json_extract(rate_col, "$.year_size"), Float)
+    else:
+        pct_pos = func.instr(rate_col, "%")
+        rate = cast(func.substr(rate_col, 1, pct_pos - 1), Float) / 100.0
+        period = func.trim(func.substr(rate_col, pct_pos + 1))
+        year_size = default_year_size
+    return rate, period, year_size
 
+
+def _periods_per_year_expr(period, year_size, representation):
+    """Map a period name to its periods-per-year value in SQL.
+
+    Generated from :class:`CompoundingFrequency` — no hardcoded magic numbers.
+    ``CONTINUOUS`` is excluded (handled separately via ``exp()``).
+    """
+    names = _PERIOD_NAMES[representation]
+    branches = []
+    for freq in CompoundingFrequency:
+        if freq == CompoundingFrequency.CONTINUOUS:
+            continue
+        name = names.get(freq)
+        if name is None:
+            continue
+        n = year_size if freq == CompoundingFrequency.DAILY else float(freq.value)
+        branches.append((period == name, n))
+    return case(*branches, else_=1.0)
+
+
+def _effective_annual_from_params(rate, period, n):
+    """Apply the effective-annual formula to pre-extracted SQL params.
+
+    Mirrors :meth:`Rate._to_effective_annual`.
+    """
     return case(
-        (period == "annually", rate),
-        (period == "monthly", func.pow(1.0 + rate, 12.0) - 1.0),
-        (period == "quarterly", func.pow(1.0 + rate, 4.0) - 1.0),
-        (period == "semi_annually", func.pow(1.0 + rate, 2.0) - 1.0),
-        (period == "daily", func.pow(1.0 + rate, year_size) - 1.0),
         (period == "continuous", func.exp(rate) - 1.0),
-        else_=rate,
+        else_=func.pow(1.0 + rate, n) - 1.0,
     )
 
 
-def _daily_rate_expr(rate_col):
-    """SQL expression for the daily rate derived from a JSON-stored rate.
+def _effective_annual_expr(rate_col, representation, default_year_size):
+    """SQL expression converting any stored rate to effective annual."""
+    rate, period, year_size = _extract_rate_params(rate_col, representation, default_year_size)
+    n = _periods_per_year_expr(period, year_size, representation)
+    return _effective_annual_from_params(rate, period, n)
+
+
+def _daily_rate_expr(rate_col, representation, default_year_size):
+    """SQL expression for the daily rate from a stored rate column.
 
     Returns the stored rate directly when the period is already daily;
     otherwise converts through the effective annual rate.
+    Mirrors :meth:`Rate.to_daily`.
     """
-    rate = cast(func.json_extract(rate_col, "$.rate"), Float)
-    period = func.json_extract(rate_col, "$.period")
-    year_size = cast(func.json_extract(rate_col, "$.year_size"), Float)
-    eff_annual = _effective_annual_expr(rate_col)
+    rate, period, year_size = _extract_rate_params(rate_col, representation, default_year_size)
+    n = _periods_per_year_expr(period, year_size, representation)
+    eff_annual = _effective_annual_from_params(rate, period, n)
 
     return case(
         (period == "daily", rate),
         else_=func.pow(1.0 + eff_annual, 1.0 / year_size) - 1.0,
     )
+
+
+def _has_rate(rate_col, representation):
+    """SQL expression that is NULL when no parseable rate is present."""
+    if representation == "json":
+        return cast(func.json_extract(rate_col, "$.rate"), Float)
+    return rate_col
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +292,7 @@ def _build_sql_balance_expression(cls, as_of, meta):
     Uses nested CTEs (``nesting=True``) inside a single scalar subquery
     so that each computation step is named and readable.  Falls back to
     ``COALESCE(remaining_balance, principal)`` when the interest rate
-    JSON is NULL (defensive guard for data that was stored without full
+    is NULL (defensive guard for data that was stored without full
     loan parameters).
     """
     info = _resolve_settlement_info(cls, meta["settlements"])
@@ -244,6 +304,9 @@ def _build_sql_balance_expression(cls, as_of, meta):
     gp_col = getattr(cls, meta["grace_period_days"])
     mir_col = getattr(cls, meta["mora_interest_rate"])
     ms_col = getattr(cls, meta["mora_strategy"])
+
+    ir_repr, ir_ys = _get_rate_col_info(cls, meta["interest_rate"])
+    mir_repr, mir_ys = _get_rate_col_info(cls, meta["mora_interest_rate"])
 
     # -- CTE 1: loan_state -------------------------------------------------
     # Uses scalar subqueries so this always returns exactly 1 row even
@@ -278,8 +341,8 @@ def _build_sql_balance_expression(cls, as_of, meta):
     # -- CTE 3: daily_rates ------------------------------------------------
     daily_rates = (
         select(
-            _daily_rate_expr(ir_col).label("daily_rate"),
-            func.coalesce(_daily_rate_expr(mir_col), 0.0).label("mora_daily_rate"),
+            _daily_rate_expr(ir_col, ir_repr, ir_ys).label("daily_rate"),
+            func.coalesce(_daily_rate_expr(mir_col, mir_repr, mir_ys), 0.0).label("mora_daily_rate"),
         )
         .correlate(cls)
         .cte("daily_rates", nesting=True)
@@ -410,10 +473,10 @@ def _build_sql_balance_expression(cls, as_of, meta):
         .scalar_subquery()
     )
 
-    # -- Simple fallback (defensive: rate JSON is NULL) --------------------
+    # -- Simple fallback (defensive: rate is NULL) -------------------------
     simple_balance = func.coalesce(last_balance_sq, pr_col)
 
-    rate_present = cast(func.json_extract(ir_col, "$.rate"), Float)
+    rate_present = _has_rate(ir_col, ir_repr)
     return case(
         (rate_present.is_(None), simple_balance),
         else_=full_balance_sq,
