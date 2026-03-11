@@ -12,12 +12,19 @@ pip install money-warp[sa]
 
 ### MoneyType
 
-Stores `Money` instances. The `representation` parameter controls the column type and conversion:
+Stores `Money` instances:
+
+```python
+MoneyType(representation="raw", precision=20, scale=10)
+```
+
+- `representation` controls the storage format (see table below).
+- `precision` and `scale` set the `Numeric` column dimensions. Ignored when `representation="cents"` (uses `Integer`).
 
 | Representation | Column type | Bind (Money -> DB) | Result (DB -> Money) |
 |---|---|---|---|
-| `"raw"` (default) | `Numeric(20,10)` | `money.raw_amount` | `Money(value)` |
-| `"real"` | `Numeric(20,10)` | `money.real_amount` | `Money(value)` |
+| `"raw"` (default) | `Numeric(precision, scale)` | `money.raw_amount` | `Money(value)` |
+| `"real"` | `Numeric(precision, scale)` | `money.real_amount` | `Money(value)` |
 | `"cents"` | `Integer` | `money.cents` | `Money.from_cents(value)` |
 
 `process_bind_param` also accepts raw `Decimal`/`int`/`float` values (passthrough) so that SQL comparisons like `LoanRecord.balance > Decimal("1000")` work without wrapping in `Money`.
