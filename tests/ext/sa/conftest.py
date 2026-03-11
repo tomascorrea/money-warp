@@ -48,6 +48,12 @@ class MoneyCentsModel(Base):
     amount = Column(MoneyType(representation="cents"))
 
 
+class MoneyCustomPrecisionModel(Base):
+    __tablename__ = "money_custom_precision"
+    id = Column(Integer, primary_key=True)
+    amount = Column(MoneyType(representation="raw", precision=10, scale=2))
+
+
 class RateStringModel(Base):
     __tablename__ = "rate_string"
     id = Column(Integer, primary_key=True)

@@ -3,11 +3,12 @@
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import Integer
 
 from money_warp.ext.sa import MoneyType
 from money_warp.money import Money
 
-from .conftest import MoneyCentsModel, MoneyRawModel, MoneyRealModel
+from .conftest import MoneyCentsModel, MoneyCustomPrecisionModel, MoneyRawModel, MoneyRealModel
 
 # ===========================================================================
 # Construction
@@ -23,6 +24,40 @@ def test_money_type_invalid_representation_raises():
 def test_money_type_valid_representation_accepted(representation):
     col_type = MoneyType(representation=representation)
     assert col_type.representation == representation
+
+
+def test_money_type_default_precision_and_scale():
+    col_type = MoneyType()
+    assert col_type.precision == 20
+    assert col_type.scale == 10
+
+
+def test_money_type_custom_precision_and_scale():
+    col_type = MoneyType(precision=12, scale=4)
+    assert col_type.precision == 12
+    assert col_type.scale == 4
+
+
+def test_money_type_cents_ignores_precision_and_scale(session):
+    col_type = MoneyType(representation="cents", precision=8, scale=3)
+    assert col_type.precision == 8
+    assert col_type.scale == 3
+    dialect_impl = col_type.load_dialect_impl(session.bind.dialect)
+    assert isinstance(dialect_impl, Integer)
+
+
+# ===========================================================================
+# Round-trip with custom precision/scale
+# ===========================================================================
+
+
+def test_money_type_roundtrip_custom_precision(session):
+    original = Money("12345.67")
+    session.add(MoneyCustomPrecisionModel(id=1, amount=original))
+    session.flush()
+    session.expire_all()
+    loaded = session.get(MoneyCustomPrecisionModel, 1)
+    assert loaded.amount.real_amount == Decimal("12345.67")
 
 
 # ===========================================================================
