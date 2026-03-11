@@ -449,7 +449,7 @@ def test_late_overpayment_total_interest_for_45_days():
         fine_rate=InterestRate("2% annual"),
     )
 
-    daily_rate = InterestRate("6% a").to_daily().as_decimal
+    daily_rate = InterestRate("6% a").to_daily().as_decimal()
     expected_total = Decimal("10000") * ((1 + daily_rate) ** 45 - 1)
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
@@ -476,7 +476,7 @@ def test_late_overpayment_principal_is_remainder_after_fine_and_interest():
 
     scheduled_payment = loan.get_expected_payment_amount(datetime(2025, 2, 1, tzinfo=timezone.utc))
     fine = scheduled_payment.raw_amount * Decimal("0.02")
-    daily_rate = InterestRate("6% a").to_daily().as_decimal
+    daily_rate = InterestRate("6% a").to_daily().as_decimal()
     interest = Decimal("10000") * ((1 + daily_rate) ** 45 - 1)
     expected_principal = Decimal("7000") - fine - interest
 
@@ -503,7 +503,7 @@ def test_late_overpayment_ending_balance_in_actual_entry():
 
     scheduled_payment = loan.get_expected_payment_amount(datetime(2025, 2, 1, tzinfo=timezone.utc))
     fine = scheduled_payment.raw_amount * Decimal("0.02")
-    daily_rate = InterestRate("6% a").to_daily().as_decimal
+    daily_rate = InterestRate("6% a").to_daily().as_decimal()
     interest = Decimal("10000") * ((1 + daily_rate) ** 45 - 1)
     principal_paid = Decimal("7000") - fine - interest
     expected_ending = Decimal("10000") - principal_paid

@@ -57,7 +57,7 @@ class PriceScheduler(BaseScheduler):
         return_days = [(due_date - disbursement_date).days for due_date in due_dates]
 
         # Calculate PMT using the reference formula
-        daily_rate = interest_rate.to_daily().as_decimal
+        daily_rate = interest_rate.to_daily().as_decimal()
 
         # Create an instance with the loan parameters
         scheduler = cls(principal.raw_amount, daily_rate, return_days, disbursement_date)

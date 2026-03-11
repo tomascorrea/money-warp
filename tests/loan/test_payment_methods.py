@@ -39,7 +39,7 @@ def test_pay_installment_charges_interest_to_due_date():
         interest_items = [p for p in warped._all_payments if p.category == "actual_interest"]
         assert len(interest_items) == 1
 
-        daily_rate = InterestRate("6% a").to_daily().as_decimal
+        daily_rate = InterestRate("6% a").to_daily().as_decimal()
         expected_interest = Decimal("10000") * ((1 + daily_rate) ** 31 - 1)
         assert interest_items[0].amount == Money(expected_interest)
 
@@ -115,7 +115,7 @@ def test_anticipate_payment_charges_interest_only_for_elapsed_days():
         warped.anticipate_payment(Money("5000.00"))
         interest_items = [p for p in warped._all_payments if p.category == "actual_interest"]
 
-        daily_rate = InterestRate("6% a").to_daily().as_decimal
+        daily_rate = InterestRate("6% a").to_daily().as_decimal()
         expected_interest = Decimal("10000") * ((1 + daily_rate) ** 14 - 1)
         assert interest_items[0].amount == Money(expected_interest)
 
@@ -194,7 +194,7 @@ def test_record_payment_with_explicit_interest_date():
     )
 
     interest_items = [p for p in loan._all_payments if p.category == "actual_interest"]
-    daily_rate = InterestRate("6% a").to_daily().as_decimal
+    daily_rate = InterestRate("6% a").to_daily().as_decimal()
     expected_interest = Decimal("10000") * ((1 + daily_rate) ** 31 - 1)
     assert interest_items[0].amount == Money(expected_interest)
 
@@ -210,7 +210,7 @@ def test_record_payment_interest_date_defaults_to_payment_date():
     loan.record_payment(Money("5000.00"), payment_date=datetime(2025, 1, 15, tzinfo=timezone.utc))
 
     interest_items = [p for p in loan._all_payments if p.category == "actual_interest"]
-    daily_rate = InterestRate("6% a").to_daily().as_decimal
+    daily_rate = InterestRate("6% a").to_daily().as_decimal()
     expected_interest = Decimal("10000") * ((1 + daily_rate) ** 14 - 1)
     assert interest_items[0].amount == Money(expected_interest)
 

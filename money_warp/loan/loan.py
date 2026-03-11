@@ -360,7 +360,7 @@ class Loan:
             if not payment_made:
                 # Apply fine: percentage of expected payment amount
                 expected_payment = self.get_expected_payment_amount(due_date)
-                fine_amount = Money(expected_payment.raw_amount * self.fine_rate.as_decimal)
+                fine_amount = Money(expected_payment.raw_amount * self.fine_rate.as_decimal())
 
                 # Record the fine
                 self.fines_applied[due_date] = fine_amount

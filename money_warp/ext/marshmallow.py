@@ -124,10 +124,10 @@ class RateField(fields.Field):
 
         if self.representation == "string":
             token = _FREQUENCY_TOKEN[value.period]
-            return f"{value.as_percentage:.3f}% {token}"
+            return f"{value.as_percentage():.3f}% {token}"
 
         return {
-            "rate": str(value.as_decimal),
+            "rate": str(value.as_decimal()),
             "period": value.period.name.lower(),
             "year_size": value.year_size.value,
             "precision": value._precision,

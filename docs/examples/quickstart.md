@@ -178,8 +178,9 @@ print(f"As monthly: {annual.to_monthly()}")
 print(f"As daily: {annual.to_daily()}")
 
 # Safe decimal access
-print(f"As decimal: {annual.as_decimal}")      # 0.065
-print(f"As percentage: {annual.as_percentage}") # 6.5
+print(f"As decimal: {annual.as_decimal()}")      # 0.065
+print(f"As percentage: {annual.as_percentage()}") # 6.5
+print(f"As float: {annual.as_float(4)}")        # 0.065
 ```
 
 ## Next Steps

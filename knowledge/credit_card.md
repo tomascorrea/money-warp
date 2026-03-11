@@ -57,7 +57,7 @@ All validate positive amounts. `purchase` also checks `credit_limit` if set. `da
 
 1. Compute the **carried balance**: `max(0, previous_closing_balance - payments_in_period - refunds_in_period)`.
 2. If carried balance is positive, compute interest via `interest_rate.accrue(carried, days)` and materialise as a `CashFlowItem` with category `"interest_charge"`.
-3. For cycles after the first: check if the previous cycle's minimum payment was met (payments between previous close and previous due date). If not, materialise a fine = `fine_rate.as_decimal * minimum_payment.raw_amount` (wrapped in `Money`).
+3. For cycles after the first: check if the previous cycle's minimum payment was met (payments between previous close and previous due date). If not, materialise a fine = `fine_rate.as_decimal() * minimum_payment.raw_amount` (wrapped in `Money`).
 4. Update `_last_closing_balance` with the new closing balance.
 
 Tracked by `_cycles_closed` counter to guarantee idempotency.
