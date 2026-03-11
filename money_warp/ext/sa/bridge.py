@@ -12,6 +12,7 @@ from sqlalchemy import Float, String, case, cast, column, func, literal, select
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 
 from money_warp.ext.sa.types import _FREQUENCY_TOKEN
+from money_warp.interest_rate import InterestRate
 from money_warp.loan import Loan, MoraStrategy
 from money_warp.rate import _ABBREV_MAP, CompoundingFrequency
 from money_warp.tz import ensure_aware, now
@@ -104,10 +105,16 @@ def _collect_optional_loan_kwargs(instance, meta):
     """Gather optional Loan constructor kwargs from the SA instance."""
     kwargs: dict = {}
 
-    for key in ("fine_rate", "grace_period_days", "mora_interest_rate"):
+    for key in ("grace_period_days", "mora_interest_rate"):
         val = getattr(instance, meta[key], None)
         if val is not None:
             kwargs[key] = val
+
+    fine_rate_val = getattr(instance, meta["fine_rate"], None)
+    if fine_rate_val is not None:
+        if not isinstance(fine_rate_val, InterestRate):
+            fine_rate_val = InterestRate(fine_rate_val, period=CompoundingFrequency.ANNUALLY)
+        kwargs["fine_rate"] = fine_rate_val
 
     mora_strat_val = getattr(instance, meta["mora_strategy"], None)
     if mora_strat_val is not None:
@@ -286,6 +293,26 @@ def _has_rate(rate_col, representation):
     return rate_col
 
 
+def _fine_rate_decimal_expr(cls, meta_key):
+    """SQL expression for the fine rate as a plain decimal.
+
+    Handles both ``Numeric`` columns (used directly) and
+    ``RateType``/``InterestRateType`` columns (decimal rate extracted
+    from the stored string or JSON).
+    """
+    col = getattr(cls, meta_key)
+    col_type = col.property.columns[0].type
+    representation = getattr(col_type, "representation", None)
+    if representation is None:
+        return col
+    default_year_size = 365.0
+    ys = getattr(col_type, "rate_year_size", None)
+    if ys is not None:
+        default_year_size = float(ys.value)
+    rate, _period, _year_size = _extract_rate_params(col, representation, default_year_size)
+    return rate
+
+
 # ---------------------------------------------------------------------------
 # SQL expression (CTE-based)
 # ---------------------------------------------------------------------------
@@ -305,7 +332,7 @@ def _build_sql_balance_expression(cls, as_of, meta):
     ir_col = getattr(cls, meta["interest_rate"])
     dd_col = getattr(cls, meta["due_dates"])
     db_col = getattr(cls, meta["disbursement_date"])
-    fr_col = getattr(cls, meta["fine_rate"])
+    fr_col = _fine_rate_decimal_expr(cls, meta["fine_rate"])
     gp_col = getattr(cls, meta["grace_period_days"])
     mir_col = getattr(cls, meta["mora_interest_rate"])
     ms_col = getattr(cls, meta["mora_strategy"])
