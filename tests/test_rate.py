@@ -440,3 +440,149 @@ def test_rate_as_float_negative_rate_with_precision():
 def test_rate_as_float_zero_rate():
     rate = Rate("0% annual")
     assert rate.as_float() == 0.0
+
+
+# ---------------------------------------------------------------------------
+# str_decimals tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "str_decimals,expected",
+    [
+        (0, "5% annually"),
+        (1, "5.2% annually"),
+        (2, "5.25% annually"),
+        (3, "5.250% annually"),
+        (5, "5.25000% annually"),
+    ],
+)
+def test_rate_str_decimals_long_style(str_decimals, expected):
+    rate = Rate("5.25% annual", str_decimals=str_decimals)
+    assert str(rate) == expected
+
+
+@pytest.mark.parametrize(
+    "str_decimals,expected",
+    [
+        (0, "5% a.a."),
+        (2, "5.25% a.a."),
+        (3, "5.250% a.a."),
+    ],
+)
+def test_rate_str_decimals_abbrev_style(str_decimals, expected):
+    rate = Rate("5.25% a.a.", str_decimals=str_decimals)
+    assert str(rate) == expected
+
+
+def test_rate_str_decimals_default_is_three():
+    rate = Rate("5.25% annual")
+    assert str(rate) == "5.250% annually"
+
+
+def test_rate_str_decimals_negative_rate():
+    rate = Rate("-2.5% annual", str_decimals=2)
+    assert str(rate) == "-2.50% annually"
+
+
+def test_rate_str_decimals_propagates_to_monthly():
+    rate = Rate("12% annual", str_decimals=2)
+    monthly = rate.to_monthly()
+    assert str(monthly).endswith("% monthly")
+    assert len(str(monthly).split("%")[0].split(".")[-1]) == 2
+
+
+def test_rate_str_decimals_propagates_to_annual():
+    rate = Rate("1% monthly", str_decimals=4)
+    annual = rate.to_annual()
+    assert str(annual).endswith("% annually")
+    assert len(str(annual).split("%")[0].split(".")[-1]) == 4
+
+
+def test_rate_str_decimals_propagates_to_daily():
+    rate = Rate("12% annual", str_decimals=5)
+    daily = rate.to_daily()
+    assert str(daily).endswith("% daily")
+    assert len(str(daily).split("%")[0].split(".")[-1]) == 5
+
+
+# ---------------------------------------------------------------------------
+# abbrev_labels tests
+# ---------------------------------------------------------------------------
+
+
+def test_rate_abbrev_labels_override_single_label():
+    rate = Rate(
+        0.05,
+        CompoundingFrequency.MONTHLY,
+        str_style="abbrev",
+        abbrev_labels={CompoundingFrequency.MONTHLY: "a.m"},
+    )
+    assert str(rate) == "5.000% a.m"
+
+
+def test_rate_abbrev_labels_override_all_labels():
+    labels = {
+        CompoundingFrequency.ANNUALLY: "a.a",
+        CompoundingFrequency.MONTHLY: "a.m",
+        CompoundingFrequency.DAILY: "a.d",
+        CompoundingFrequency.QUARTERLY: "a.t",
+        CompoundingFrequency.SEMI_ANNUALLY: "a.s",
+    }
+    rate = Rate(0.05, CompoundingFrequency.ANNUALLY, str_style="abbrev", abbrev_labels=labels)
+    assert str(rate) == "5.000% a.a"
+
+
+def test_rate_abbrev_labels_partial_override_keeps_defaults():
+    rate = Rate(
+        0.05,
+        CompoundingFrequency.ANNUALLY,
+        str_style="abbrev",
+        abbrev_labels={CompoundingFrequency.MONTHLY: "a.m"},
+    )
+    assert str(rate) == "5.000% a.a."
+
+
+def test_rate_abbrev_labels_none_uses_defaults():
+    rate = Rate(0.05, CompoundingFrequency.MONTHLY, str_style="abbrev")
+    assert str(rate) == "5.000% a.m."
+
+
+def test_rate_abbrev_labels_combined_with_str_decimals():
+    rate = Rate(
+        "3.99% a.m.",
+        str_decimals=2,
+        abbrev_labels={CompoundingFrequency.MONTHLY: "a.m"},
+    )
+    assert str(rate) == "3.99% a.m"
+
+
+def test_rate_abbrev_labels_does_not_affect_long_style():
+    rate = Rate(
+        0.05,
+        CompoundingFrequency.MONTHLY,
+        str_style="long",
+        abbrev_labels={CompoundingFrequency.MONTHLY: "per.month"},
+    )
+    assert str(rate) == "5.000% monthly"
+
+
+def test_rate_abbrev_labels_propagates_to_monthly():
+    labels = {CompoundingFrequency.MONTHLY: "a.m"}
+    rate = Rate("12% a.a.", abbrev_labels=labels)
+    monthly = rate.to_monthly()
+    assert str(monthly) == f"{monthly.as_percentage():.3f}% a.m"
+
+
+def test_rate_abbrev_labels_propagates_to_annual():
+    labels = {CompoundingFrequency.ANNUALLY: "a.a"}
+    rate = Rate("1% a.m.", abbrev_labels=labels)
+    annual = rate.to_annual()
+    assert str(annual).endswith("% a.a")
+
+
+def test_rate_abbrev_labels_propagates_to_daily():
+    labels = {CompoundingFrequency.DAILY: "a.d"}
+    rate = Rate("12% a.a.", abbrev_labels=labels)
+    daily = rate.to_daily()
+    assert str(daily).endswith("% a.d")

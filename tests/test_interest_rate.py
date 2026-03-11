@@ -642,3 +642,104 @@ def test_year_size_string_parsing_with_banker():
     rate = InterestRate("5.25% a.a.", year_size=YearSize.banker)
     assert rate.year_size == YearSize.banker
     assert rate.as_decimal() == Decimal("0.0525")
+
+
+# --- str_decimals tests ---
+
+
+@pytest.mark.parametrize(
+    "str_decimals,expected",
+    [
+        (0, "5% annually"),
+        (2, "5.25% annually"),
+        (3, "5.250% annually"),
+        (5, "5.25000% annually"),
+    ],
+)
+def test_interest_rate_str_decimals_long_style(str_decimals, expected):
+    rate = InterestRate("5.25% a", str_decimals=str_decimals)
+    assert str(rate) == expected
+
+
+@pytest.mark.parametrize(
+    "str_decimals,expected",
+    [
+        (2, "5.25% a.a."),
+        (3, "5.250% a.a."),
+    ],
+)
+def test_interest_rate_str_decimals_abbrev_style(str_decimals, expected):
+    rate = InterestRate("5.25% a.a.", str_decimals=str_decimals)
+    assert str(rate) == expected
+
+
+def test_interest_rate_str_decimals_default_is_three():
+    rate = InterestRate("5.25% a")
+    assert str(rate) == "5.250% annually"
+
+
+def test_interest_rate_str_decimals_propagates_to_monthly():
+    rate = InterestRate("12% a.a.", str_decimals=2)
+    monthly = rate.to_monthly()
+    assert len(str(monthly).split("%")[0].split(".")[-1]) == 2
+
+
+def test_interest_rate_str_decimals_propagates_to_annual():
+    rate = InterestRate("1% a.m.", str_decimals=4)
+    annual = rate.to_annual()
+    assert len(str(annual).split("%")[0].split(".")[-1]) == 4
+
+
+# --- abbrev_labels tests ---
+
+
+def test_interest_rate_abbrev_labels_override_monthly():
+    rate = InterestRate(
+        "3.99% a.m.",
+        abbrev_labels={CompoundingFrequency.MONTHLY: "a.m"},
+    )
+    assert str(rate) == "3.990% a.m"
+
+
+def test_interest_rate_abbrev_labels_combined_with_str_decimals():
+    rate = InterestRate(
+        "3.99% a.m.",
+        str_decimals=2,
+        abbrev_labels={CompoundingFrequency.MONTHLY: "a.m"},
+    )
+    assert str(rate) == "3.99% a.m"
+
+
+def test_interest_rate_abbrev_labels_partial_keeps_defaults():
+    rate = InterestRate(
+        "5% a.a.",
+        abbrev_labels={CompoundingFrequency.MONTHLY: "a.m"},
+    )
+    assert str(rate) == "5.000% a.a."
+
+
+def test_interest_rate_abbrev_labels_propagates_through_conversion():
+    labels = {
+        CompoundingFrequency.MONTHLY: "a.m",
+        CompoundingFrequency.ANNUALLY: "a.a",
+    }
+    rate = InterestRate("12% a.a.", abbrev_labels=labels)
+    monthly = rate.to_monthly()
+    assert str(monthly).endswith("% a.m")
+    annual = monthly.to_annual()
+    assert str(annual).endswith("% a.a")
+
+
+def test_interest_rate_abbrev_labels_none_uses_defaults():
+    rate = InterestRate(0.05, CompoundingFrequency.MONTHLY, str_style="abbrev")
+    assert str(rate) == "5.000% a.m."
+
+
+def test_interest_rate_abbrev_labels_does_not_affect_long_style():
+    rate = InterestRate(
+        0.05,
+        CompoundingFrequency.MONTHLY,
+        str_style="long",
+        abbrev_labels={CompoundingFrequency.MONTHLY: "pm"},
+    )
+    assert str(rate) == "5.000% monthly"
