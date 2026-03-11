@@ -33,8 +33,8 @@ class CreditCard:
             as minimum payment (default 0.15 = 15 %).
         minimum_payment_floor: Absolute floor for the minimum payment
             (default $25).
-        fine_rate: Fine as fraction of the minimum payment when the
-            minimum is not met (default 0.02 = 2 %).
+        fine_rate: Fine rate applied to the minimum payment when the
+            minimum is not met (default 2% annual).
         opening_date: When the card was opened.  Defaults to ``now()``.
         credit_limit: Maximum outstanding balance.  ``None`` means
             unlimited.
@@ -42,7 +42,7 @@ class CreditCard:
 
     _DEFAULT_MINIMUM_PAYMENT_RATE = Decimal("0.15")
     _DEFAULT_MINIMUM_PAYMENT_FLOOR = Money("25.00")
-    _DEFAULT_FINE_RATE = Decimal("0.02")
+    _DEFAULT_FINE_RATE = InterestRate("2% annual")
 
     @tz_aware
     def __init__(
@@ -51,7 +51,7 @@ class CreditCard:
         billing_cycle: Optional[BaseBillingCycle] = None,
         minimum_payment_rate: Optional[Decimal] = None,
         minimum_payment_floor: Optional[Money] = None,
-        fine_rate: Optional[Decimal] = None,
+        fine_rate: Optional[InterestRate] = None,
         opening_date: Optional[datetime] = None,
         credit_limit: Optional[Money] = None,
     ) -> None:
@@ -66,8 +66,6 @@ class CreditCard:
             raise ValueError("minimum_payment_rate must be between 0 and 1")
         if minimum_payment_floor.is_negative():
             raise ValueError("minimum_payment_floor must be non-negative")
-        if fine_rate < 0:
-            raise ValueError("fine_rate must be non-negative")
         if credit_limit is not None and (credit_limit.is_negative() or credit_limit.is_zero()):
             raise ValueError("credit_limit must be positive")
 
@@ -318,7 +316,7 @@ class CreditCard:
         payments_by_due = self._sum_category_between("payment", prev_closing, prev_due)
 
         if payments_by_due < minimum:
-            fine = Money(minimum.raw_amount * self.fine_rate)
+            fine = Money(minimum.raw_amount * self.fine_rate.as_decimal)
             if fine.is_positive():
                 self.cash_flow.add_item(
                     CashFlowItem(
