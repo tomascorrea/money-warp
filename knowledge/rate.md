@@ -21,11 +21,22 @@ MoneyWarp distinguishes between two rate types based on domain semantics.
 Both types share the same conversion, comparison, and display logic (inherited from `Rate`):
 
 - **String parsing:** `"5.25% a"`, `"0.5% a.m."`, `"-2.5% annual"` (negatives only valid for `Rate`)
+- **Accessors:** `as_decimal(precision=None)`, `as_percentage(precision=None)`, `as_float(precision=None)` — all are methods (not properties). When `precision` is given, the result is quantized/rounded to that many decimal places.
 - **Conversions:** `to_daily()`, `to_monthly()`, `to_annual()`, `to_periodic_rate(n)`
 - **Comparisons:** `==`, `<`, `<=`, `>`, `>=` (via effective annual rate)
 - **Year size:** `YearSize.commercial` (365, default) or `YearSize.banker` (360)
 
 Conversion methods use `self.__class__(...)` so `InterestRate.to_monthly()` returns an `InterestRate` and `Rate.to_monthly()` returns a `Rate`.
+
+### Accessor Details
+
+| Method | Return type | No precision | With precision |
+|---|---|---|---|
+| `as_decimal()` | `Decimal` | Raw stored rate (e.g. `Decimal("0.0525")`) | Quantized via `ROUND_HALF_UP` (or the rate's configured rounding) |
+| `as_percentage()` | `Decimal` | Raw percentage (e.g. `Decimal("5.25")`) | Same quantization behaviour |
+| `as_float()` | `float` | `float(raw_rate)` | `round(float_value, precision)` |
+
+`as_float(precision)` is a convenience that replaces the verbose `round(float(rate.as_decimal()), n)` pattern commonly needed for JSON serialization and API responses.
 
 ## Cross-Type Compatibility
 

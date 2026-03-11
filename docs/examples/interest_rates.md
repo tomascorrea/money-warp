@@ -71,8 +71,9 @@ Safe access to decimal and percentage representations:
 ```python
 rate = InterestRate("6.5% a")
 
-print(f"As percentage: {rate.as_percentage}")  # 6.5
-print(f"As decimal: {rate.as_decimal}")        # 0.065
+print(f"As percentage: {rate.as_percentage()}")  # 6.5
+print(f"As decimal: {rate.as_decimal()()}")        # 0.065
+print(f"As float: {rate.as_float(4)}")           # 0.065
 print(f"Frequency: {rate.period}")             # CompoundingFrequency.ANNUALLY
 print(f"Display: {rate}")                      # 6.500% annually
 ```
@@ -118,8 +119,8 @@ print(f"Nominal annual: {nominal}")
 print(f"Effective monthly: {monthly_effective}")
 
 # Verify: 12 months of monthly rate should equal annual
-annual_check = (1 + monthly_effective.as_decimal) ** 12 - 1
-print(f"Verification: {annual_check:.6f} ≈ {nominal.as_decimal:.6f}")
+annual_check = (1 + monthly_effective.as_decimal()) ** 12 - 1
+print(f"Verification: {annual_check:.6f} ≈ {nominal.as_decimal():.6f}")
 ```
 
 **Output:**
@@ -152,7 +153,7 @@ def analyze_credit_card(balance, apr_string, monthly_payment):
     print()
     
     # Calculate monthly interest (30 days)
-    monthly_interest = balance * (daily_rate.as_decimal * 30)
+    monthly_interest = balance * (daily_rate.as_decimal() * 30)
     principal_payment = monthly_payment - monthly_interest
     
     print(f"Monthly breakdown:")
@@ -168,7 +169,7 @@ def analyze_credit_card(balance, apr_string, monthly_payment):
     current_balance = balance
     
     while current_balance > Money.zero() and months < 600:  # Max 50 years
-        interest = current_balance * (daily_rate.as_decimal * 30)
+        interest = current_balance * (daily_rate.as_decimal() * 30)
         principal = monthly_payment - interest
         
         if principal <= Money.zero():
@@ -277,7 +278,7 @@ def calculate_compound_returns(principal, daily_rate_pct, days):
     print()
     
     # Calculate compound growth
-    growth_factor = (1 + daily_rate.as_decimal) ** days
+    growth_factor = (1 + daily_rate.as_decimal()) ** days
     final_amount = principal * growth_factor
     total_return = final_amount - principal
     
@@ -420,8 +421,8 @@ from money_warp import InterestRate, YearSize, Money
 rate_365 = InterestRate("10% a", year_size=YearSize.commercial)
 rate_360 = InterestRate("10% a", year_size=YearSize.banker)
 
-print(f"Commercial daily: {rate_365.to_daily().as_decimal:.10f}")  # ~0.0002611578
-print(f"Banker daily:     {rate_360.to_daily().as_decimal:.10f}")  # ~0.0002651568
+print(f"Commercial daily: {rate_365.to_daily().as_decimal():.10f}")  # ~0.0002611578
+print(f"Banker daily:     {rate_360.to_daily().as_decimal():.10f}")  # ~0.0002651568
 
 # This difference compounds when accruing interest
 principal = Money("100000")
@@ -484,7 +485,7 @@ for name, rate in annual_rates.items():
     print(f"{name}: {rate}")
 
 # Finding the best rate
-best_savings = max(rates['savings'], rates['checking'], key=lambda r: r.as_decimal)
+best_savings = max(rates['savings'], rates['checking'], key=lambda r: r.as_decimal())
 print(f"Best savings rate: {best_savings}")
 ```
 
