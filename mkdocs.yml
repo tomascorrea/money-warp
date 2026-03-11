@@ -17,6 +17,11 @@ nav:
     - Time Machine (Warp): examples/time_machine.md
     - Present Value & IRR: examples/present_value_irr.md
     - Fines & Mora Interest: examples/fines.md
+    - Tax & IOF: examples/tax.md
+    - Timezone Handling: examples/timezone.md
+  - Extensions:
+    - Marshmallow: examples/marshmallow.md
+    - SQLAlchemy: examples/sqlalchemy.md
   - API Reference: modules.md
 
 plugins:
