@@ -60,6 +60,10 @@ class Money:
         """Absolute value."""
         return Money(abs(self._amount))
 
+    def __float__(self) -> float:
+        """Float representation using full internal precision."""
+        return float(self._amount)
+
     def _compare_value(self, other: object) -> Union[Decimal, type(NotImplemented)]:
         """Extract the Decimal value to compare against, or NotImplemented."""
         if isinstance(other, Money):

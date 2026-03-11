@@ -257,6 +257,25 @@ def test_money_to_real_money_real_amount():
     assert real_money.real_amount == Decimal("100.12")
 
 
+# Float conversion tests
+@pytest.mark.parametrize(
+    "amount,expected",
+    [
+        ("100.50", 100.50),
+        ("0.00", 0.0),
+        ("-50.25", -50.25),
+        ("100.123456789", 100.123456789),
+    ],
+)
+def test_money_float_conversion(amount, expected):
+    assert float(Money(amount)) == expected
+
+
+def test_money_float_returns_float_type():
+    result = float(Money("100.50"))
+    assert type(result) is float
+
+
 # Display tests
 @pytest.mark.parametrize(
     "amount,expected",
