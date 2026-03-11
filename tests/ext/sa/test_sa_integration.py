@@ -19,6 +19,8 @@ from .conftest import (
     _LATE_PAYMENT_DUE_DATES,
     LoanRecord,
     LoanRecordFactory,
+    StringLoanRecord,
+    StringLoanRecordFactory,
 )
 
 _LOAN_PRINCIPAL = Money("10000")
@@ -219,5 +221,70 @@ def test_balance_at_sql_matches_python_various_mora_rate_periods(session, mora_r
     expected = float(loaded.balance_at(as_of).raw_amount)
 
     sql_result = session.execute(select(LoanRecord.balance_at(as_of)).where(LoanRecord.id == sa_loan.id)).scalar()
+
+    assert float(sql_result.raw_amount) == pytest.approx(expected, abs=1e-4)
+
+
+# ===========================================================================
+# balance_at(date) — string representation SQL side
+# ===========================================================================
+
+
+@pytest.mark.parametrize(
+    "rate_str",
+    [
+        "10% a",
+        "1% m",
+        "3% q",
+        "5% s",
+        "0.03% d",
+    ],
+    ids=["annual", "monthly", "quarterly", "semi_annual", "daily"],
+)
+def test_string_repr_balance_at_sql_matches_python(session, rate_str):
+    """SQL CTE with string-representation rates matches Python balance."""
+    sa_loan = StringLoanRecordFactory(interest_rate=InterestRate(rate_str))
+    session.expire_all()
+    loaded = session.get(StringLoanRecord, sa_loan.id)
+
+    as_of = datetime(2024, 1, 20, tzinfo=timezone.utc)
+    expected = float(loaded.balance_at(as_of).raw_amount)
+
+    sql_result = session.execute(
+        select(StringLoanRecord.balance_at(as_of)).where(StringLoanRecord.id == sa_loan.id)
+    ).scalar()
+
+    assert float(sql_result.raw_amount) == pytest.approx(expected, abs=1e-4)
+
+
+@pytest.mark.parametrize(
+    "mora_rate_str",
+    [
+        "12% a",
+        "1% m",
+        "3% q",
+    ],
+    ids=["annual", "monthly", "quarterly"],
+)
+def test_string_repr_balance_at_sql_matches_python_mora(session, mora_rate_str):
+    """SQL CTE with string-representation mora rates matches Python balance."""
+    sa_loan = StringLoanRecordFactory(
+        interest_rate=InterestRate("6% a"),
+        mora_interest_rate=InterestRate(mora_rate_str),
+        mora_strategy="COMPOUND",
+        fine_rate=Decimal("0.02"),
+        grace_period_days=0,
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        due_dates=[d.isoformat() for d in _LATE_PAYMENT_DUE_DATES],
+    )
+    session.expire_all()
+    loaded = session.get(StringLoanRecord, sa_loan.id)
+
+    as_of = datetime(2025, 3, 20, tzinfo=timezone.utc)
+    expected = float(loaded.balance_at(as_of).raw_amount)
+
+    sql_result = session.execute(
+        select(StringLoanRecord.balance_at(as_of)).where(StringLoanRecord.id == sa_loan.id)
+    ).scalar()
 
     assert float(sql_result.raw_amount) == pytest.approx(expected, abs=1e-4)

@@ -1,45 +1,32 @@
-# MoneyWarp 💰⏰
+# MoneyWarp
 
 **Bend time. Model cash.**
 
-[![Release](https://img.shields.io/github/v/release/tomas_correa/money-warp)](https://img.shields.io/github/v/release/tomas_correa/money-warp)
-[![Build status](https://img.shields.io/github/actions/workflow/status/tomas_correa/money-warp/main.yml?branch=main)](https://github.com/tomas_correa/money-warp/actions/workflows/main.yml?query=branch%3Amain)
-[![codecov](https://codecov.io/gh/tomas_correa/money-warp/branch/main/graph/badge.svg)](https://codecov.io/gh/tomas_correa/money-warp)
-[![License](https://img.shields.io/github/license/tomas_correa/money-warp)](https://img.shields.io/github/license/tomas_correa/money-warp)
+[![Release](https://img.shields.io/github/v/release/tomascorrea/money-warp)](https://img.shields.io/github/v/release/tomascorrea/money-warp)
+[![Build status](https://img.shields.io/github/actions/workflow/status/tomascorrea/money-warp/on-release-main.yml?branch=main)](https://github.com/tomascorrea/money-warp/actions/workflows/on-release-main.yml?query=branch%3Amain)
+[![codecov](https://codecov.io/gh/tomascorrea/money-warp/branch/main/graph/badge.svg)](https://codecov.io/gh/tomascorrea/money-warp)
+[![License](https://img.shields.io/github/license/tomascorrea/money-warp)](https://img.shields.io/github/license/tomascorrea/money-warp)
 
-> **⚠️ Development Stage Notice**
-> 
-> MoneyWarp is currently in active development and should be considered **alpha/pre-release software**. While the core functionality is implemented and tested, the API may change between versions. Use in production environments at your own risk.
->
-> - ✅ Core classes (`Money`, `InterestRate`, `CashFlow`, `Loan`) are stable
-> - ✅ Comprehensive test suite with 830+ tests
-> - ✅ Time Machine, Present Value, and IRR functions complete
-> - ⚠️ API may evolve based on user feedback
-> - ⚠️ Not yet published to PyPI
-> - 🚧 Additional features and schedulers in development
+> **Development Stage Notice** -- MoneyWarp is in active development (alpha). Core classes are stable and covered by 1200+ tests, but the API may evolve.
 
-MoneyWarp is a Python library for working with the time value of money. It treats loans, annuities, and investments as simple cash flows through time — and gives you the tools to warp them back and forth between present, future, and everything in between.
+MoneyWarp is a Python library for working with the time value of money. It treats loans, annuities, and investments as cash flows through time -- and gives you the tools to warp them back and forth between present, future, and everything in between.
 
-## 🚀 Key Features
+## Key Features
 
-- 🕰️ **Time Machine (Warp)** - Travel to any date and see loan state as of that moment
-- 🔢 **Calculate PMT, NPV, IRR, MIRR** and other core finance functions with scipy
-- ⏳ **Track loans and repayments** as evolving cash-flow streams  
-- 🌀 **Explore "what if" timelines** by bending payments across time
-- 💰 **High-precision calculations** using Decimal arithmetic
-- 📊 **Progressive Price Schedules** (French amortization system)
-- 📈 **Inverted Price Schedules** (Constant Amortization System - SAC)
-- 🎯 **Flexible payment scheduling** with irregular due dates
-- 📅 **Easy date generation** with smart month-end handling via python-dateutil
-- 🔒 **Type-safe interest rates** with explicit percentage handling
-- 🧮 **Robust numerics** powered by scipy for IRR and financial calculations
-- ⚖️ **Fine engine** with fines, mora interest, and configurable grace periods
-- 🍭 **Sugar payment methods** — `pay_installment()` and `anticipate_payment()`
-- 📋 **Installments & Settlements** — first-class views of the repayment plan and payment allocation
-- 🇧🇷 **Tax module** — Brazilian IOF with pluggable tax strategy, grossup, and preset rates
-- 🌐 **Timezone-aware** — all datetimes are UTC by default, configurable globally
+- **Time Machine (Warp)** -- travel to any date and see loan state as of that moment
+- **PMT, NPV, IRR, MIRR** -- core finance functions powered by scipy
+- **Loan tracking** -- payments, fines, mora interest, grace periods
+- **High-precision Money** -- Decimal arithmetic, never floats
+- **Amortization schedules** -- French (Price) and SAC (Inverted Price)
+- **Flexible dates** -- irregular due dates, smart month-end handling
+- **Type-safe interest rates** -- explicit percentage handling, frequency conversions
+- **Installments and Settlements** -- first-class repayment plan and payment allocation
+- **Tax module** -- Brazilian IOF, grossup, pluggable tax strategy
+- **Timezone-aware** -- UTC by default, configurable globally
+- **Marshmallow extension** -- custom fields for serialization
+- **SQLAlchemy extension** -- column types + loan/settlement bridge with SQL-queryable balance
 
-## 🧮 Time Value of Money Functions
+## Time Value of Money Functions
 
 MoneyWarp provides comprehensive TVM functions powered by scipy:
 
@@ -63,38 +50,40 @@ MoneyWarp provides comprehensive TVM functions powered by scipy:
 - **Type safety**: Full type annotations and mypy compatibility
 - **Error handling**: Clear messages and edge case handling
 
-## 📖 Documentation
+## Documentation
 
 Explore the comprehensive examples and API reference:
 
-- **[Quick Start](examples/quickstart.md)** - Get up and running quickly
-- **[Money](examples/money.md)** - High-precision monetary amounts
-- **[Interest Rates](examples/interest_rates.md)** - Type-safe rate handling and conversions
-- **[Date Generation](examples/date_generation.md)** - Smart payment date utilities
-- **[Present Value & IRR](examples/present_value_irr.md)** - TVM functions and analysis
-- **[Time Machine](examples/time_machine.md)** - Travel through time with loans
-- **[Cash Flow Analysis](examples/cash_flow.md)** - Work with cash flow streams
-- **[Fines & Payments](examples/fines.md)** - Fines, mora interest, installments, settlements, and payment methods
-- **[Tax & IOF](examples/tax.md)** - Brazilian IOF, grossup, and pluggable taxes
-- **[Timezone Handling](examples/timezone.md)** - UTC default, global configuration, silent coercion
-- **[API Reference](modules.md)** - Complete function documentation
+- **[Quick Start](examples/quickstart.md)** -- get up and running quickly
+- **[Money](examples/money.md)** -- high-precision monetary amounts
+- **[Interest Rates](examples/interest_rates.md)** -- type-safe rate handling and conversions
+- **[Date Generation](examples/date_generation.md)** -- smart payment date utilities
+- **[Present Value & IRR](examples/present_value_irr.md)** -- TVM functions and analysis
+- **[Time Machine](examples/time_machine.md)** -- travel through time with loans
+- **[Cash Flow Analysis](examples/cash_flow.md)** -- work with cash flow streams
+- **[Fines & Payments](examples/fines.md)** -- fines, mora interest, installments, settlements, and payment methods
+- **[Tax & IOF](examples/tax.md)** -- Brazilian IOF, grossup, and pluggable taxes
+- **[Timezone Handling](examples/timezone.md)** -- UTC default, global configuration, silent coercion
+- **[Marshmallow Extension](examples/marshmallow.md)** -- custom Marshmallow fields for Money, Rate, InterestRate
+- **[SQLAlchemy Extension](examples/sqlalchemy.md)** -- column types, bridge decorators, SQL-queryable balance
+- **[API Reference](modules.md)** -- complete function documentation
 
-## 🏗️ Architecture
+## Architecture
 
 MoneyWarp is built around core financial concepts:
 
-- **💰 Money**: High-precision monetary amounts using Decimal
-- **📈 InterestRate**: Type-safe rates with frequency conversions, abbreviated notation, and day-count conventions
-- **💸 CashFlow**: Collections with SQLAlchemy-style querying
-- **🏦 Loan**: State machines for loan analysis and tracking
-- **📋 Installment & Settlement**: Derived views of repayment plans and payment allocations
-- **🇧🇷 Tax**: Pluggable tax strategy with IOF, grossup, and presets
-- **🌐 tz**: Timezone configuration — UTC default, global `set_tz()`, silent coercion
-- **🕰️ Warp**: Time Machine for temporal financial analysis
+- **Money**: High-precision monetary amounts using Decimal
+- **InterestRate**: Type-safe rates with frequency conversions, abbreviated notation, and day-count conventions
+- **CashFlow**: Collections with SQLAlchemy-style querying
+- **Loan**: State machines for loan analysis and tracking
+- **Installment & Settlement**: Derived views of repayment plans and payment allocations
+- **Tax**: Pluggable tax strategy with IOF, grossup, and presets
+- **tz**: Timezone configuration -- UTC default, global `set_tz()`, silent coercion
+- **Warp**: Time Machine for temporal financial analysis
 
-## 🧪 Quality & Testing
+## Quality & Testing
 
-- **830+ comprehensive tests** with 100% core functionality coverage
+- **1200+ comprehensive tests** with 100% core functionality coverage
 - **Type safety**: Full mypy compatibility with zero type errors
 - **Code quality**: Passes ruff linting and black formatting
 - **Robust numerics**: Scipy-powered calculations for reliability

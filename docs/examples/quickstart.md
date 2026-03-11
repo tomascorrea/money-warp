@@ -6,20 +6,21 @@ Welcome to MoneyWarp! This guide will get you up and running with the core conce
 
 ## Installation
 
-> **Note:** MoneyWarp is not yet published to PyPI. For now, install from source:
-
 ```bash
-git clone https://github.com/tomas_correa/money-warp.git
-cd money-warp
-pip install -e .
+pip install money-warp
 ```
 
-Or using Poetry (recommended for development):
+Or with Poetry:
 
 ```bash
-git clone https://github.com/tomas_correa/money-warp.git
-cd money-warp
-poetry install
+poetry add money-warp
+```
+
+With optional extensions:
+
+```bash
+pip install money-warp[marshmallow]   # Marshmallow fields
+pip install money-warp[sa]            # SQLAlchemy types + bridge
 ```
 
 ## Basic Loan Analysis
