@@ -46,7 +46,7 @@ def test_irr_simple_investment(simple_investment):
 
     # Should be approximately 10% (1100/1000 - 1 = 0.10)
     expected_rate = 10.0
-    actual_rate = float(calculated_irr.as_decimal * 100)
+    actual_rate = float(calculated_irr.as_decimal() * 100)
 
     assert abs(actual_rate - expected_rate) < 0.1  # Within 0.1%
 
@@ -56,7 +56,7 @@ def test_internal_rate_of_return_simple_investment(simple_investment):
 
     # Should be approximately 10%
     expected_rate = 10.0
-    actual_rate = float(calculated_irr.as_decimal * 100)
+    actual_rate = float(calculated_irr.as_decimal() * 100)
 
     assert abs(actual_rate - expected_rate) < 0.1
 
@@ -67,7 +67,7 @@ def test_irr_multi_period_investment(multi_period_investment):
     # Should return a valid InterestRate
     assert isinstance(calculated_irr, Rate)
     # Should be positive (profitable investment)
-    assert calculated_irr.as_decimal > 0
+    assert calculated_irr.as_decimal() > 0
 
 
 def test_irr_with_time_machine_for_specific_date(simple_investment):
@@ -100,7 +100,7 @@ def test_irr_with_custom_guess(simple_investment):
 
     # Should still converge to approximately 10%
     expected_rate = 10.0
-    actual_rate = float(calculated_irr.as_decimal * 100)
+    actual_rate = float(calculated_irr.as_decimal() * 100)
 
     assert abs(actual_rate - expected_rate) < 0.1
 
@@ -149,7 +149,7 @@ def test_irr_zero_npv_case():
 
     # Should find a valid IRR
     assert isinstance(calculated_irr, Rate)
-    assert calculated_irr.as_decimal > 0
+    assert calculated_irr.as_decimal() > 0
 
 
 # Precision and convergence tests
@@ -167,7 +167,7 @@ def test_irr_high_precision():
 
     # Should be very close to 5.127%
     expected_rate = 5.127
-    actual_rate = float(calculated_irr.as_decimal * 100)
+    actual_rate = float(calculated_irr.as_decimal() * 100)
 
     assert abs(actual_rate - expected_rate) < 0.001
 
@@ -184,7 +184,7 @@ def test_irr_scipy_convergence():
     calculated_irr = internal_rate_of_return(cf)
 
     expected_rate = 10.0
-    actual_rate = float(calculated_irr.as_decimal * 100)
+    actual_rate = float(calculated_irr.as_decimal() * 100)
 
     assert abs(actual_rate - expected_rate) < 0.001  # Very precise with scipy
 
@@ -222,7 +222,7 @@ def test_mirr_basic():
     mirr = modified_internal_rate_of_return(cf, finance_rate, reinvestment_rate)
 
     assert isinstance(mirr, Rate)
-    assert mirr.as_decimal > 0  # Should be positive
+    assert mirr.as_decimal() > 0  # Should be positive
 
 
 def test_mirr_empty_cash_flow():
@@ -306,7 +306,7 @@ def test_irr_very_small_cash_flows():
 
     # Should still work with very small amounts
     expected_rate = 10.0  # 0.011/0.01 - 1 = 0.10
-    actual_rate = float(calculated_irr.as_decimal * 100)
+    actual_rate = float(calculated_irr.as_decimal() * 100)
 
     assert abs(actual_rate - expected_rate) < 1.0  # Within 1% (precision may be lower for tiny amounts)
 
@@ -322,7 +322,7 @@ def test_irr_very_large_cash_flows():
 
     # Should work with large amounts
     expected_rate = 10.0
-    actual_rate = float(calculated_irr.as_decimal * 100)
+    actual_rate = float(calculated_irr.as_decimal() * 100)
 
     assert abs(actual_rate - expected_rate) < 0.1
 
@@ -344,7 +344,7 @@ def test_irr_result_string_representation():
     assert "annual" in irr_str.lower()
 
     # Should be convertible to float
-    rate_as_float = float(calculated_irr.as_decimal)
+    rate_as_float = float(calculated_irr.as_decimal())
     assert 0.05 < rate_as_float < 0.20  # Between 5% and 20% is reasonable
 
 
@@ -359,7 +359,7 @@ def test_irr_banker_year_differs_from_commercial():
     irr_commercial = irr(cf, year_size=YearSize.commercial)
     irr_banker = irr(cf, year_size=YearSize.banker)
 
-    assert irr_commercial.as_decimal != irr_banker.as_decimal
+    assert irr_commercial.as_decimal() != irr_banker.as_decimal()
 
 
 def test_irr_banker_year_returns_banker_year_size():
@@ -424,7 +424,7 @@ def test_internal_rate_of_return_with_banker_year():
     calculated_irr = internal_rate_of_return(cf, year_size=YearSize.banker)
 
     assert calculated_irr.year_size == YearSize.banker
-    assert calculated_irr.as_decimal > 0
+    assert calculated_irr.as_decimal() > 0
 
 
 def test_mirr_banker_year_differs_from_commercial():
@@ -442,7 +442,7 @@ def test_mirr_banker_year_differs_from_commercial():
     mirr_commercial = modified_internal_rate_of_return(cf, finance_rate, reinvestment_rate)
     mirr_banker = modified_internal_rate_of_return(cf, finance_rate, reinvestment_rate, year_size=YearSize.banker)
 
-    assert mirr_commercial.as_decimal != mirr_banker.as_decimal
+    assert mirr_commercial.as_decimal() != mirr_banker.as_decimal()
 
 
 def test_mirr_banker_year_returns_banker_year_size():

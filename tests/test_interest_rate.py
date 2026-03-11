@@ -40,12 +40,12 @@ from money_warp.money import Money
 )
 def test_interest_rate_string_parsing(rate_string, expected_decimal, expected_percentage, expected_frequency):
     rate = InterestRate(rate_string)
-    assert rate.as_decimal == expected_decimal
+    assert rate.as_decimal() == expected_decimal
 
 
 def test_interest_rate_string_parsing_stores_percentage():
     rate = InterestRate("5.25% a")
-    assert rate.as_percentage == Decimal("5.25")
+    assert rate.as_percentage() == Decimal("5.25")
 
 
 def test_interest_rate_string_parsing_stores_frequency():
@@ -56,12 +56,12 @@ def test_interest_rate_string_parsing_stores_frequency():
 # String parsing edge cases
 def test_interest_rate_string_parsing_with_extra_spaces():
     rate = InterestRate("  5.25%   a  ")
-    assert rate.as_decimal == Decimal("0.0525")
+    assert rate.as_decimal() == Decimal("0.0525")
 
 
 def test_interest_rate_string_parsing_case_insensitive():
     rate = InterestRate("5.25% ANNUAL")
-    assert rate.as_decimal == Decimal("0.0525")
+    assert rate.as_decimal() == Decimal("0.0525")
 
 
 def test_interest_rate_string_parsing_mixed_case():
@@ -97,12 +97,12 @@ def test_interest_rate_string_parsing_rejects_negative():
 # Numeric creation tests (backward compatibility)
 def test_interest_rate_numeric_creation_decimal():
     rate = InterestRate(0.0525, CompoundingFrequency.ANNUALLY)
-    assert rate.as_decimal == Decimal("0.0525")
+    assert rate.as_decimal() == Decimal("0.0525")
 
 
 def test_interest_rate_numeric_creation_percentage():
     rate = InterestRate(5.25, CompoundingFrequency.ANNUALLY, as_percentage=True)
-    assert rate.as_decimal == Decimal("0.0525")
+    assert rate.as_decimal() == Decimal("0.0525")
 
 
 def test_interest_rate_numeric_creation_stores_frequency():
@@ -119,7 +119,7 @@ def test_interest_rate_numeric_creation_missing_period_raises_error():
 def test_interest_rate_string_vs_numeric_equivalent():
     string_rate = InterestRate("5.25% a")
     numeric_rate = InterestRate(5.25, CompoundingFrequency.ANNUALLY, as_percentage=True)
-    assert string_rate.as_decimal == numeric_rate.as_decimal
+    assert string_rate.as_decimal() == numeric_rate.as_decimal()
     assert string_rate.period == numeric_rate.period
 
 
@@ -128,7 +128,7 @@ def test_interest_rate_to_monthly_from_annual():
     annual_rate = InterestRate("6% a")
     monthly_rate = annual_rate.to_monthly()
     # Should be approximately 0.4868% monthly
-    assert abs(monthly_rate.as_percentage - Decimal("0.4868")) < Decimal("0.001")
+    assert abs(monthly_rate.as_percentage() - Decimal("0.4868")) < Decimal("0.001")
 
 
 def test_interest_rate_to_monthly_returns_monthly_frequency():
@@ -141,7 +141,7 @@ def test_interest_rate_to_daily_from_annual():
     annual_rate = InterestRate("5% a")
     daily_rate = annual_rate.to_daily()
     # Should be approximately 0.0134% daily
-    assert abs(daily_rate.as_percentage - Decimal("0.0134")) < Decimal("0.001")
+    assert abs(daily_rate.as_percentage() - Decimal("0.0134")) < Decimal("0.001")
 
 
 def test_interest_rate_to_daily_returns_daily_frequency():
@@ -154,7 +154,7 @@ def test_interest_rate_to_annual_from_monthly():
     monthly_rate = InterestRate("0.5% m")
     annual_rate = monthly_rate.to_annual()
     # Should be approximately 6.17% annually (0.5% compounded 12 times)
-    assert abs(annual_rate.as_percentage - Decimal("6.17")) < Decimal("0.01")
+    assert abs(annual_rate.as_percentage() - Decimal("6.17")) < Decimal("0.01")
 
 
 def test_interest_rate_to_annual_returns_annual_frequency():
@@ -179,7 +179,7 @@ def test_interest_rate_to_periodic_rate_monthly():
 def test_interest_rate_to_periodic_rate_same_frequency():
     monthly_rate = InterestRate("0.5% m")
     periodic_rate = monthly_rate.to_periodic_rate(12)
-    assert periodic_rate == monthly_rate.as_decimal
+    assert periodic_rate == monthly_rate.as_decimal()
 
 
 # Comparison tests
@@ -245,12 +245,12 @@ def test_interest_rate_repr_representation():
 # Property tests
 def test_interest_rate_as_decimal_property():
     rate = InterestRate("5.25% a")
-    assert rate.as_decimal == Decimal("0.0525")
+    assert rate.as_decimal() == Decimal("0.0525")
 
 
 def test_interest_rate_as_percentage_property():
     rate = InterestRate("0.0525 a")
-    assert rate.as_percentage == Decimal("5.25")
+    assert rate.as_percentage() == Decimal("5.25")
 
 
 def test_interest_rate_period_property():
@@ -261,20 +261,20 @@ def test_interest_rate_period_property():
 # Edge case tests
 def test_interest_rate_zero_rate():
     rate = InterestRate("0% a")
-    assert rate.as_decimal == Decimal("0.0")
-    assert rate.as_percentage == Decimal("0.0")
+    assert rate.as_decimal() == Decimal("0.0")
+    assert rate.as_percentage() == Decimal("0.0")
 
 
 def test_interest_rate_very_high_rate():
     rate = InterestRate("50% a")
-    assert rate.as_decimal == Decimal("0.5")
-    assert rate.as_percentage == Decimal("50.0")
+    assert rate.as_decimal() == Decimal("0.5")
+    assert rate.as_percentage() == Decimal("50.0")
 
 
 def test_interest_rate_very_small_rate():
     rate = InterestRate("0.01% a")
-    assert rate.as_decimal == Decimal("0.0001")
-    assert rate.as_percentage == Decimal("0.01")
+    assert rate.as_decimal() == Decimal("0.0001")
+    assert rate.as_percentage() == Decimal("0.01")
 
 
 def test_interest_rate_daily_compounding():
@@ -287,7 +287,7 @@ def test_interest_rate_continuous_compounding():
     annual_rate = rate.to_annual()
     # For continuous compounding: e^r - 1
     # 5% continuous should be approximately 5.127% effective annual
-    assert abs(annual_rate.as_percentage - Decimal("5.127")) < Decimal("0.001")
+    assert abs(annual_rate.as_percentage() - Decimal("5.127")) < Decimal("0.001")
 
 
 # Conversion accuracy tests
@@ -296,7 +296,7 @@ def test_interest_rate_round_trip_conversion():
     monthly = original.to_monthly()
     back_to_annual = monthly.to_annual()
     # Should be very close to original (allowing for small rounding differences)
-    assert abs(original.as_percentage - back_to_annual.as_percentage) < Decimal("0.01")
+    assert abs(original.as_percentage() - back_to_annual.as_percentage()) < Decimal("0.01")
 
 
 def test_interest_rate_compound_frequency_enum_values():
@@ -329,7 +329,7 @@ def test_interest_rate_compound_frequency_enum_values():
 )
 def test_interest_rate_string_parsing_precision(rate_string, expected_decimal):
     rate = InterestRate(rate_string)
-    assert rate.as_decimal == expected_decimal
+    assert rate.as_decimal() == expected_decimal
 
 
 def test_interest_rate_string_parsing_all_frequencies():
@@ -380,7 +380,7 @@ def test_precision_propagates_to_daily_conversion():
     rate = InterestRate("1% m", precision=6)
     daily = rate.to_daily()
     expected_daily = (1 + Decimal("0.126825")) ** (Decimal(1) / Decimal(365)) - 1
-    assert daily.as_decimal == expected_daily
+    assert daily.as_decimal() == expected_daily
 
 
 def test_precision_propagates_to_monthly_conversion():
@@ -399,7 +399,7 @@ def test_rounding_mode_round_down():
 
 def test_precision_does_not_alter_stored_rate():
     rate = InterestRate("1% m", precision=6)
-    assert rate.as_decimal == Decimal("0.01")
+    assert rate.as_decimal() == Decimal("0.01")
 
 
 # --- str_style tests ---
@@ -422,12 +422,12 @@ def test_interest_rate_abbreviated_string_parsing(
     rate_string, expected_decimal, expected_percentage, expected_frequency
 ):
     rate = InterestRate(rate_string)
-    assert rate.as_decimal == expected_decimal
+    assert rate.as_decimal() == expected_decimal
 
 
 def test_interest_rate_abbreviated_parsing_stores_percentage():
     rate = InterestRate("5.25% a.a.")
-    assert rate.as_percentage == Decimal("5.25")
+    assert rate.as_percentage() == Decimal("5.25")
 
 
 def test_interest_rate_abbreviated_parsing_stores_frequency():
@@ -542,34 +542,34 @@ def test_year_size_banker_to_daily_uses_360():
     rate = InterestRate("10% a", year_size=YearSize.banker)
     daily = rate.to_daily()
     expected = (1 + Decimal("0.10")) ** (Decimal("1") / Decimal("360")) - 1
-    assert daily.as_decimal == expected
+    assert daily.as_decimal() == expected
 
 
 def test_year_size_commercial_to_daily_uses_365():
     rate = InterestRate("10% a", year_size=YearSize.commercial)
     daily = rate.to_daily()
     expected = (1 + Decimal("0.10")) ** (Decimal("1") / Decimal("365")) - 1
-    assert daily.as_decimal == expected
+    assert daily.as_decimal() == expected
 
 
 def test_year_size_banker_daily_rate_higher_than_commercial():
     banker = InterestRate("10% a", year_size=YearSize.banker).to_daily()
     commercial = InterestRate("10% a", year_size=YearSize.commercial).to_daily()
-    assert banker.as_decimal > commercial.as_decimal
+    assert banker.as_decimal() > commercial.as_decimal()
 
 
 def test_year_size_banker_daily_to_annual_round_trip():
     original = InterestRate("10% a", year_size=YearSize.banker)
     daily = original.to_daily()
     back = daily.to_annual()
-    assert abs(back.as_percentage - Decimal("10")) < Decimal("0.0001")
+    assert abs(back.as_percentage() - Decimal("10")) < Decimal("0.0001")
 
 
 def test_year_size_banker_effective_annual_from_daily():
     daily_rate = (1 + Decimal("0.10")) ** (Decimal("1") / Decimal("360")) - 1
     rate = InterestRate(daily_rate, CompoundingFrequency.DAILY, year_size=YearSize.banker)
     annual = rate.to_annual()
-    assert abs(annual.as_percentage - Decimal("10")) < Decimal("0.001")
+    assert abs(annual.as_percentage() - Decimal("10")) < Decimal("0.001")
 
 
 def test_year_size_propagates_to_daily():
@@ -641,4 +641,4 @@ def test_year_size_repr_omits_commercial():
 def test_year_size_string_parsing_with_banker():
     rate = InterestRate("5.25% a.a.", year_size=YearSize.banker)
     assert rate.year_size == YearSize.banker
-    assert rate.as_decimal == Decimal("0.0525")
+    assert rate.as_decimal() == Decimal("0.0525")

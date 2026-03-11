@@ -61,7 +61,7 @@ def present_value(cash_flow: CashFlow, discount_rate: Rate, valuation_date: Opti
         raise ValueError("Cannot calculate present value: no cash flows or invalid valuation date")
 
     # Convert discount rate to daily rate for precise calculations
-    daily_rate = discount_rate.to_daily().as_decimal
+    daily_rate = discount_rate.to_daily().as_decimal()
 
     total_pv = Money.zero()
 
@@ -128,7 +128,7 @@ def present_value_of_annuity(
         return Money.zero()
 
     # Get the periodic interest rate as decimal
-    periodic_rate = interest_rate.as_decimal
+    periodic_rate = interest_rate.as_decimal()
 
     if periodic_rate == 0:
         # Special case: zero interest rate
@@ -178,7 +178,7 @@ def present_value_of_perpetuity(payment_amount: Money, interest_rate: InterestRa
     if payment_amount.is_zero():
         return Money.zero()
 
-    periodic_rate = interest_rate.as_decimal
+    periodic_rate = interest_rate.as_decimal()
 
     if periodic_rate <= 0:
         raise ValueError("Interest rate must be positive for perpetuity calculations")
@@ -210,7 +210,7 @@ def discount_factor(interest_rate: Rate, periods: Union[int, Decimal]) -> Decima
     if periods == 0:
         return Decimal("1")
 
-    rate = interest_rate.as_decimal
+    rate = interest_rate.as_decimal()
     return Decimal("1") / ((Decimal("1") + rate) ** Decimal(str(periods)))
 
 
@@ -323,7 +323,7 @@ def internal_rate_of_return(
         raise ValueError("Cannot calculate IRR: no cash flows")
 
     # Use 10% as default initial guess
-    initial_guess = 0.10 if guess is None else float(guess.as_decimal)
+    initial_guess = 0.10 if guess is None else guess.as_float()
 
     # Create NPV function
     npv_function = _npv_function_factory(cash_flow, valuation_date, year_size)
@@ -422,7 +422,7 @@ def _calculate_mirr_components(
     for item in positive_flows:
         periods_to_end = (latest_date - item.datetime).days / days_per_year
         if periods_to_end >= 0:
-            annual_rate = reinvestment_rate.as_decimal
+            annual_rate = reinvestment_rate.as_decimal()
             compound_factor = (Decimal("1") + annual_rate) ** periods_to_end
             fv_positive += Money(item.amount.raw_amount * compound_factor)
         else:
@@ -433,7 +433,7 @@ def _calculate_mirr_components(
     for item in negative_flows:
         periods_from_start = (item.datetime - valuation_date).days / days_per_year
         if periods_from_start >= 0:
-            annual_rate = finance_rate.as_decimal
+            annual_rate = finance_rate.as_decimal()
             discount_factor = (Decimal("1") + annual_rate) ** periods_from_start
             pv_negative += Money(item.amount.raw_amount / discount_factor)
         else:

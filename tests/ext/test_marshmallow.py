@@ -292,7 +292,7 @@ def test_rate_field_serialize_dict_str_style():
 
 def test_rate_field_deserialize_string_annually():
     result = StringRateSchema().load({"rate": "5.25% a"})
-    assert result["rate"].as_decimal == Decimal("0.0525")
+    assert result["rate"].as_decimal() == Decimal("0.0525")
 
 
 def test_rate_field_deserialize_string_monthly():
@@ -302,7 +302,7 @@ def test_rate_field_deserialize_string_monthly():
 
 def test_rate_field_deserialize_string_negative():
     result = StringRateSchema().load({"rate": "-2.5% a"})
-    assert result["rate"].as_decimal == Decimal("-0.025")
+    assert result["rate"].as_decimal() == Decimal("-0.025")
 
 
 def test_rate_field_deserialize_string_invalid_raises():
@@ -328,7 +328,7 @@ def test_rate_field_deserialize_string_uses_field_year_size():
 def test_rate_field_deserialize_dict_basic():
     data = {"rate": {"rate": "0.0525", "period": "annually"}}
     result = DictRateSchema().load(data)
-    assert result["rate"].as_decimal == Decimal("0.0525")
+    assert result["rate"].as_decimal() == Decimal("0.0525")
 
 
 def test_rate_field_deserialize_dict_with_year_size():

@@ -102,6 +102,6 @@ class InterestRate(Rate):
         Returns:
             The accrued interest (not including the principal).
         """
-        daily_rate = self.to_daily().as_decimal
+        daily_rate = self.to_daily().as_decimal()
         accrued = principal.raw_amount * ((1 + daily_rate) ** Decimal(str(days)) - 1)
         return Money(accrued)

@@ -48,7 +48,7 @@ class InvertedPriceScheduler(BaseScheduler):
         fixed_principal_payment = principal.raw_amount / Decimal(str(len(due_dates)))
 
         # Get daily interest rate
-        daily_rate = interest_rate.to_daily().as_decimal
+        daily_rate = interest_rate.to_daily().as_decimal()
 
         # Generate schedule entries
         entries = []

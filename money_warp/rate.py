@@ -183,15 +183,46 @@ class Rate:
             "period": frequency,
         }
 
-    @property
-    def as_decimal(self) -> Decimal:
-        """Get as decimal (0.05 = 5%)."""
-        return self._decimal_rate
+    def as_decimal(self, precision: Optional[int] = None) -> Decimal:
+        """Get as decimal (0.05 = 5%).
 
-    @property
-    def as_percentage(self) -> Decimal:
-        """Get as percentage (5.0 = 5%)."""
-        return self._percentage_rate
+        Args:
+            precision: Number of decimal places. None returns the raw value.
+
+        Returns:
+            The rate as a Decimal, optionally quantized.
+        """
+        if precision is None:
+            return self._decimal_rate
+        return self._decimal_rate.quantize(Decimal(10) ** -precision, rounding=self._rounding)
+
+    def as_percentage(self, precision: Optional[int] = None) -> Decimal:
+        """Get as percentage (5.0 = 5%).
+
+        Args:
+            precision: Number of decimal places. None returns the raw value.
+
+        Returns:
+            The rate as a percentage Decimal, optionally quantized.
+        """
+        if precision is None:
+            return self._percentage_rate
+        return self._percentage_rate.quantize(Decimal(10) ** -precision, rounding=self._rounding)
+
+    def as_float(self, precision: Optional[int] = None) -> float:
+        """Get as a float (0.05 = 5%).
+
+        Args:
+            precision: Number of decimal places to round to. None returns
+                       the unrounded float conversion.
+
+        Returns:
+            The rate as a float, optionally rounded.
+        """
+        value = float(self._decimal_rate)
+        if precision is None:
+            return value
+        return round(value, precision)
 
     @property
     def year_size(self) -> YearSize:

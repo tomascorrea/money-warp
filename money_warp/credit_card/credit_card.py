@@ -316,7 +316,7 @@ class CreditCard:
         payments_by_due = self._sum_category_between("payment", prev_closing, prev_due)
 
         if payments_by_due < minimum:
-            fine = Money(minimum.raw_amount * self.fine_rate.as_decimal)
+            fine = Money(minimum.raw_amount * self.fine_rate.as_decimal())
             if fine.is_positive():
                 self.cash_flow.add_item(
                     CashFlowItem(

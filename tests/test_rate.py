@@ -36,27 +36,27 @@ from money_warp.rate import CompoundingFrequency
 )
 def test_rate_creation_from_string(rate_str, expected_decimal):
     rate = Rate(rate_str)
-    assert rate.as_decimal == expected_decimal
+    assert rate.as_decimal() == expected_decimal
 
 
 def test_rate_creation_negative_numeric():
     rate = Rate(-0.05, CompoundingFrequency.ANNUALLY)
-    assert rate.as_decimal == Decimal("-0.05")
+    assert rate.as_decimal() == Decimal("-0.05")
 
 
 def test_rate_creation_negative_numeric_as_percentage():
     rate = Rate(-5, CompoundingFrequency.ANNUALLY, as_percentage=True)
-    assert rate.as_decimal == Decimal("-0.05")
+    assert rate.as_decimal() == Decimal("-0.05")
 
 
 def test_rate_creation_zero_numeric():
     rate = Rate(0, CompoundingFrequency.ANNUALLY)
-    assert rate.as_decimal == Decimal("0")
+    assert rate.as_decimal() == Decimal("0")
 
 
 def test_rate_creation_positive_numeric():
     rate = Rate(0.10, CompoundingFrequency.ANNUALLY)
-    assert rate.as_decimal == Decimal("0.1")
+    assert rate.as_decimal() == Decimal("0.1")
 
 
 # ---------------------------------------------------------------------------
@@ -66,17 +66,17 @@ def test_rate_creation_positive_numeric():
 
 def test_rate_negative_string_percentage():
     rate = Rate("-3.5% annual")
-    assert rate.as_percentage == Decimal("-3.5")
+    assert rate.as_percentage() == Decimal("-3.5")
 
 
 def test_rate_negative_string_decimal():
     rate = Rate("-0.035 annual")
-    assert rate.as_decimal == Decimal("-0.035")
+    assert rate.as_decimal() == Decimal("-0.035")
 
 
 def test_rate_negative_string_abbreviated():
     rate = Rate("-1.25% a.a.")
-    assert rate.as_percentage == Decimal("-1.25")
+    assert rate.as_percentage() == Decimal("-1.25")
     assert rate.period == CompoundingFrequency.ANNUALLY
 
 
@@ -113,21 +113,21 @@ def test_rate_negative_annual_to_monthly():
     rate = Rate("-12% annual")
     monthly = rate.to_monthly()
     assert monthly.period == CompoundingFrequency.MONTHLY
-    assert monthly.as_decimal < 0
+    assert monthly.as_decimal() < 0
 
 
 def test_rate_negative_annual_to_daily():
     rate = Rate("-5% annual")
     daily = rate.to_daily()
     assert daily.period == CompoundingFrequency.DAILY
-    assert daily.as_decimal < 0
+    assert daily.as_decimal() < 0
 
 
 def test_rate_negative_monthly_to_annual():
     rate = Rate("-1% monthly")
     annual = rate.to_annual()
     assert annual.period == CompoundingFrequency.ANNUALLY
-    assert annual.as_decimal < 0
+    assert annual.as_decimal() < 0
 
 
 def test_rate_conversion_preserves_class_for_rate():
@@ -230,7 +230,7 @@ def test_interest_rate_rejects_negative_percentage():
 
 def test_interest_rate_allows_zero():
     rate = InterestRate("0% annual")
-    assert rate.as_decimal == Decimal("0")
+    assert rate.as_decimal() == Decimal("0")
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +285,7 @@ def test_irr_negative_result_when_fees_erode_return():
     cf = CashFlow(items)
     result = irr(cf)
     assert isinstance(result, Rate)
-    assert result.as_decimal < 0
+    assert result.as_decimal() < 0
 
 
 # ---------------------------------------------------------------------------
@@ -302,3 +302,141 @@ def test_rate_year_size_propagates_through_conversion():
 def test_rate_year_size_default_is_commercial():
     rate = Rate("5% annual")
     assert rate.year_size == YearSize.commercial
+
+
+# ---------------------------------------------------------------------------
+# as_decimal(precision) tests
+# ---------------------------------------------------------------------------
+
+
+def test_rate_as_decimal_no_precision_returns_raw_value():
+    rate = Rate("5.25% annual")
+    assert rate.as_decimal() == Decimal("0.0525")
+
+
+def test_rate_as_decimal_with_precision_quantizes():
+    rate = Rate("5.25% annual")
+    assert rate.as_decimal(2) == Decimal("0.05")
+
+
+def test_rate_as_decimal_precision_four_places():
+    rate = Rate(Decimal("0.12345678"), CompoundingFrequency.MONTHLY)
+    assert rate.as_decimal(4) == Decimal("0.1235")
+
+
+def test_rate_as_decimal_precision_zero():
+    rate = Rate("5.25% annual")
+    assert rate.as_decimal(0) == Decimal("0")
+
+
+def test_rate_as_decimal_precision_high():
+    rate = Rate(Decimal("0.123456789012"), CompoundingFrequency.ANNUALLY)
+    assert rate.as_decimal(10) == Decimal("0.1234567890")
+
+
+@pytest.mark.parametrize(
+    "rate_value,precision,expected",
+    [
+        ("5.25% annual", None, Decimal("0.0525")),
+        ("5.25% annual", 1, Decimal("0.1")),
+        ("5.25% annual", 2, Decimal("0.05")),
+        ("5.25% annual", 4, Decimal("0.0525")),
+        ("5.25% annual", 6, Decimal("0.052500")),
+    ],
+)
+def test_rate_as_decimal_parametrized(rate_value, precision, expected):
+    rate = Rate(rate_value)
+    assert rate.as_decimal(precision) == expected
+
+
+# ---------------------------------------------------------------------------
+# as_percentage(precision) tests
+# ---------------------------------------------------------------------------
+
+
+def test_rate_as_percentage_no_precision_returns_raw_value():
+    rate = Rate("5.25% annual")
+    assert rate.as_percentage() == Decimal("5.25")
+
+
+def test_rate_as_percentage_with_precision_quantizes():
+    rate = Rate("5.256% annual")
+    assert rate.as_percentage(2) == Decimal("5.26")
+
+
+def test_rate_as_percentage_precision_zero():
+    rate = Rate("5.25% annual")
+    assert rate.as_percentage(0) == Decimal("5")
+
+
+@pytest.mark.parametrize(
+    "rate_value,precision,expected",
+    [
+        ("5.25% annual", None, Decimal("5.25")),
+        ("5.25% annual", 1, Decimal("5.3")),
+        ("5.25% annual", 2, Decimal("5.25")),
+        ("5.25% annual", 4, Decimal("5.2500")),
+    ],
+)
+def test_rate_as_percentage_parametrized(rate_value, precision, expected):
+    rate = Rate(rate_value)
+    assert rate.as_percentage(precision) == expected
+
+
+# ---------------------------------------------------------------------------
+# as_float(precision) tests
+# ---------------------------------------------------------------------------
+
+
+def test_rate_as_float_returns_float_type():
+    rate = Rate("5.25% annual")
+    assert isinstance(rate.as_float(), float)
+
+
+def test_rate_as_float_no_precision():
+    rate = Rate("5.25% annual")
+    assert rate.as_float() == 0.0525
+
+
+def test_rate_as_float_with_precision():
+    rate = Rate("5.25% annual")
+    assert rate.as_float(2) == 0.05
+
+
+def test_rate_as_float_precision_four():
+    rate = Rate(Decimal("0.12345678"), CompoundingFrequency.MONTHLY)
+    assert rate.as_float(4) == 0.1235
+
+
+def test_rate_as_float_precision_zero():
+    rate = Rate("5.25% annual")
+    assert rate.as_float(0) == 0.0
+
+
+@pytest.mark.parametrize(
+    "rate_value,precision,expected",
+    [
+        ("5.25% annual", None, 0.0525),
+        ("5.25% annual", 1, 0.1),
+        ("5.25% annual", 2, 0.05),
+        ("5.25% annual", 4, 0.0525),
+    ],
+)
+def test_rate_as_float_parametrized(rate_value, precision, expected):
+    rate = Rate(rate_value)
+    assert rate.as_float(precision) == expected
+
+
+def test_rate_as_float_negative_rate():
+    rate = Rate("-5.25% annual")
+    assert rate.as_float() == -0.0525
+
+
+def test_rate_as_float_negative_rate_with_precision():
+    rate = Rate("-5.25% annual")
+    assert rate.as_float(2) == -0.05
+
+
+def test_rate_as_float_zero_rate():
+    rate = Rate("0% annual")
+    assert rate.as_float() == 0.0

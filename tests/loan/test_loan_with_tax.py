@@ -235,4 +235,4 @@ def test_grossup_loan_irr_not_inflated_by_double_counted_tax():
         taxes=[IOF(daily_rate="0.0082%", additional_rate="0.38%")],
     )
     irr = loan.irr()
-    assert abs(irr.as_decimal - Decimal("0.710526")) < Decimal("0.01")
+    assert abs(irr.as_decimal() - Decimal("0.710526")) < Decimal("0.01")
