@@ -468,3 +468,115 @@ def test_interest_rate_field_roundtrip_dict():
     serialized = DictInterestRateSchema().dump({"rate": original})
     loaded = DictInterestRateSchema().load(serialized)
     assert loaded["rate"] == original
+
+
+# ===========================================================================
+# RateField — str_decimals and abbrev_labels
+# ===========================================================================
+
+
+def test_rate_field_serialize_string_respects_str_decimals():
+    rate = Rate("5.25% a", str_decimals=2)
+    result = StringRateSchema().dump({"rate": rate})
+    assert result["rate"] == "5.25% annual"
+
+
+def test_rate_field_serialize_string_default_three_decimals():
+    rate = Rate("5.25% a")
+    result = StringRateSchema().dump({"rate": rate})
+    assert result["rate"] == "5.250% annual"
+
+
+def test_rate_field_serialize_dict_includes_str_decimals():
+    rate = Rate(Decimal("0.05"), CompoundingFrequency.ANNUALLY, str_decimals=2)
+    result = DictRateSchema().dump({"rate": rate})
+    assert result["rate"]["str_decimals"] == 2
+
+
+def test_rate_field_serialize_dict_includes_abbrev_labels():
+    labels = {CompoundingFrequency.MONTHLY: "a.m"}
+    rate = Rate(Decimal("0.01"), CompoundingFrequency.MONTHLY, str_style="abbrev", abbrev_labels=labels)
+    result = DictRateSchema().dump({"rate": rate})
+    assert result["rate"]["abbrev_labels"] == {"monthly": "a.m"}
+
+
+def test_rate_field_serialize_dict_abbrev_labels_none_when_default():
+    rate = Rate(Decimal("0.05"), CompoundingFrequency.ANNUALLY)
+    result = DictRateSchema().dump({"rate": rate})
+    assert result["rate"]["abbrev_labels"] is None
+
+
+def test_rate_field_roundtrip_dict_with_str_decimals():
+    original = Rate(
+        Decimal("0.0525"),
+        CompoundingFrequency.ANNUALLY,
+        str_decimals=2,
+    )
+    serialized = DictRateSchema().dump({"rate": original})
+    loaded = DictRateSchema().load(serialized)
+    assert loaded["rate"]._str_decimals == 2
+    assert str(loaded["rate"]) == "5.25% annually"
+
+
+def test_rate_field_roundtrip_dict_with_abbrev_labels():
+    labels = {CompoundingFrequency.MONTHLY: "a.m"}
+    original = Rate(
+        Decimal("0.01"),
+        CompoundingFrequency.MONTHLY,
+        str_style="abbrev",
+        abbrev_labels=labels,
+    )
+    serialized = DictRateSchema().dump({"rate": original})
+    loaded = DictRateSchema().load(serialized)
+    assert str(loaded["rate"]) == "1.000% a.m"
+
+
+def test_rate_field_roundtrip_dict_with_both_formatting_params():
+    labels = {CompoundingFrequency.ANNUALLY: "a.a"}
+    original = Rate(
+        Decimal("0.0525"),
+        CompoundingFrequency.ANNUALLY,
+        str_style="abbrev",
+        str_decimals=2,
+        abbrev_labels=labels,
+    )
+    serialized = DictRateSchema().dump({"rate": original})
+    loaded = DictRateSchema().load(serialized)
+    assert str(loaded["rate"]) == "5.25% a.a"
+
+
+def test_rate_field_deserialize_string_uses_field_str_decimals():
+    schema_class = type(
+        "S",
+        (Schema,),
+        {"rate": RateField(representation="string", str_decimals=2)},
+    )
+    result = schema_class().load({"rate": "5.25% a"})
+    assert result["rate"]._str_decimals == 2
+    assert str(result["rate"]) == "5.25% annually"
+
+
+def test_rate_field_deserialize_string_uses_field_abbrev_labels():
+    labels = {CompoundingFrequency.MONTHLY: "a.m"}
+    schema_class = type(
+        "S",
+        (Schema,),
+        {"rate": RateField(representation="string", abbrev_labels=labels)},
+    )
+    result = schema_class().load({"rate": "5% a.m."})
+    assert str(result["rate"]) == "5.000% a.m"
+
+
+def test_interest_rate_field_roundtrip_dict_with_formatting():
+    labels = {CompoundingFrequency.ANNUALLY: "a.a"}
+    original = InterestRate(
+        Decimal("0.0525"),
+        CompoundingFrequency.ANNUALLY,
+        str_style="abbrev",
+        str_decimals=2,
+        abbrev_labels=labels,
+    )
+    serialized = DictInterestRateSchema().dump({"rate": original})
+    loaded = DictInterestRateSchema().load(serialized)
+    assert isinstance(loaded["rate"], InterestRate)
+    assert str(loaded["rate"]) == "5.25% a.a"

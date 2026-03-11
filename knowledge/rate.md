@@ -42,6 +42,17 @@ Conversion methods use `self.__class__(...)` so `InterestRate.to_monthly()` retu
 
 Since `InterestRate` IS-A `Rate`, any function that accepts `Rate` also accepts `InterestRate`. Comparisons work across types: `Rate("-1% annual") < InterestRate("1% annual")`.
 
+## Display Formatting
+
+Both types support configurable display formatting via two constructor parameters:
+
+- **`str_decimals: int = 3`** — controls the number of decimal places in `__str__`. Default 3 gives `"5.250%"`, use 2 for `"5.25%"`, etc.
+- **`abbrev_labels: Optional[Dict[CompoundingFrequency, str]] = None`** — partial or full override of the default abbreviation map (`_ABBREV_MAP`). Merged with the defaults so you only pass keys you want to change. Example: `{CompoundingFrequency.MONTHLY: "a.m"}` drops the trailing dot for monthly.
+
+Both parameters propagate through `to_daily()`, `to_monthly()`, and `to_annual()`. They are display-only and do not affect arithmetic, conversions, or equality.
+
+The extensions (SQLAlchemy `RateType`/`InterestRateType` and Marshmallow `RateField`/`InterestRateField`) accept these parameters as column-type / field-level defaults and include them in JSON/dict round-trips.
+
 ## Enums and Shared Constants
 
 `YearSize`, `CompoundingFrequency`, and abbreviation maps are defined in `rate.py` and re-exported from `interest_rate.py` for backward compatibility. Imports from either module work.

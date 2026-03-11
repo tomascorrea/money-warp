@@ -388,6 +388,70 @@ print(monthly)  # "0.487% a.m."
 print(daily)    # "0.016% a.d."
 ```
 
+## Configurable Display Formatting
+
+You can control the number of decimal places and the abbreviation labels used by `__str__`:
+
+### Decimal places (`str_decimals`)
+
+```python
+# Default: 3 decimal places
+rate = InterestRate("3.99% a.m.")
+print(rate)  # "3.990% a.m."
+
+# 2 decimal places
+rate = InterestRate("3.99% a.m.", str_decimals=2)
+print(rate)  # "3.99% a.m."
+
+# 0 decimal places
+rate = InterestRate("3.99% a.m.", str_decimals=0)
+print(rate)  # "4% a.m."
+```
+
+### Custom abbreviation labels (`abbrev_labels`)
+
+Override any subset of the default abbreviation map. Unspecified keys keep their defaults:
+
+```python
+from money_warp import InterestRate, CompoundingFrequency
+
+# Drop the trailing dot on monthly only
+rate = InterestRate(
+    "3.99% a.m.",
+    abbrev_labels={CompoundingFrequency.MONTHLY: "a.m"},
+)
+print(rate)  # "3.990% a.m"
+
+# Combine both for the old-style output: "3.99% a.m"
+rate = InterestRate(
+    "3.99% a.m.",
+    str_decimals=2,
+    abbrev_labels={CompoundingFrequency.MONTHLY: "a.m"},
+)
+print(rate)  # "3.99% a.m"
+
+# Override all abbreviations at once
+no_dots = {
+    CompoundingFrequency.ANNUALLY: "a.a",
+    CompoundingFrequency.MONTHLY: "a.m",
+    CompoundingFrequency.DAILY: "a.d",
+    CompoundingFrequency.QUARTERLY: "a.t",
+    CompoundingFrequency.SEMI_ANNUALLY: "a.s",
+}
+rate = InterestRate("5.25% a.a.", abbrev_labels=no_dots)
+print(rate)  # "5.250% a.a"
+```
+
+### Display settings propagate through conversions
+
+```python
+labels = {CompoundingFrequency.MONTHLY: "a.m", CompoundingFrequency.ANNUALLY: "a.a"}
+rate = InterestRate("12% a.a.", str_decimals=2, abbrev_labels=labels)
+
+print(rate)             # "12.00% a.a"
+print(rate.to_monthly())  # "0.95% a.m"
+```
+
 ## Year Size (Day-Count Convention)
 
 Financial markets use different day-count conventions when converting between daily and annual rates. MoneyWarp supports two conventions through the `YearSize` enum:

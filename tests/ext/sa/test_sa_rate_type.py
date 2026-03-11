@@ -149,6 +149,90 @@ def test_interest_rate_type_roundtrip_json(session):
 
 
 # ===========================================================================
+# RateType — str_decimals and abbrev_labels
+# ===========================================================================
+
+
+def test_rate_type_string_respects_str_decimals(session):
+    original = Rate("5.25% a", str_decimals=2)
+    session.add(RateStringModel(id=1, rate=original))
+    session.flush()
+    raw = session.execute(text("SELECT rate FROM rate_string WHERE id = 1")).scalar()
+    assert raw == "5.25% annual"
+
+
+def test_rate_type_string_respects_abbrev_labels(session):
+    labels = {CompoundingFrequency.MONTHLY: "a.m"}
+    original = Rate("1.5% a.m.", abbrev_labels=labels)
+    session.add(RateStringModel(id=1, rate=original))
+    session.flush()
+    raw = session.execute(text("SELECT rate FROM rate_string WHERE id = 1")).scalar()
+    assert raw == "1.500% a.m"
+
+
+def test_rate_type_json_roundtrip_with_str_decimals(session):
+    original = Rate(
+        Decimal("0.0525"),
+        CompoundingFrequency.ANNUALLY,
+        str_decimals=2,
+    )
+    session.add(RateJsonModel(id=1, rate=original))
+    session.flush()
+    session.expire_all()
+    loaded = session.get(RateJsonModel, 1)
+    assert loaded.rate._str_decimals == 2
+    assert str(loaded.rate) == "5.25% annually"
+
+
+def test_rate_type_json_roundtrip_with_abbrev_labels(session):
+    labels = {CompoundingFrequency.MONTHLY: "a.m"}
+    original = Rate(
+        Decimal("0.01"),
+        CompoundingFrequency.MONTHLY,
+        str_style="abbrev",
+        abbrev_labels=labels,
+    )
+    session.add(RateJsonModel(id=1, rate=original))
+    session.flush()
+    session.expire_all()
+    loaded = session.get(RateJsonModel, 1)
+    assert str(loaded.rate) == "1.000% a.m"
+
+
+def test_rate_type_json_roundtrip_with_both_formatting_params(session):
+    labels = {CompoundingFrequency.ANNUALLY: "a.a"}
+    original = Rate(
+        Decimal("0.0525"),
+        CompoundingFrequency.ANNUALLY,
+        str_style="abbrev",
+        str_decimals=2,
+        abbrev_labels=labels,
+    )
+    session.add(RateJsonModel(id=1, rate=original))
+    session.flush()
+    session.expire_all()
+    loaded = session.get(RateJsonModel, 1)
+    assert str(loaded.rate) == "5.25% a.a"
+
+
+def test_interest_rate_type_json_roundtrip_with_formatting(session):
+    labels = {CompoundingFrequency.ANNUALLY: "a.a"}
+    original = InterestRate(
+        Decimal("0.0525"),
+        CompoundingFrequency.ANNUALLY,
+        str_style="abbrev",
+        str_decimals=2,
+        abbrev_labels=labels,
+    )
+    session.add(InterestRateJsonModel(id=1, rate=original))
+    session.flush()
+    session.expire_all()
+    loaded = session.get(InterestRateJsonModel, 1)
+    assert isinstance(loaded.rate, InterestRate)
+    assert str(loaded.rate) == "5.25% a.a"
+
+
+# ===========================================================================
 # RateType — abbreviated string round-trips
 # ===========================================================================
 
