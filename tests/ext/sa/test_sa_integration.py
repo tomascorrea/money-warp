@@ -6,7 +6,6 @@ persists to SA models, and verifies balance_at against settlement data.
 
 import copy
 from datetime import datetime, timezone
-from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
@@ -209,7 +208,7 @@ def test_balance_at_sql_matches_python_various_mora_rate_periods(session, mora_r
         interest_rate=InterestRate("6% a"),
         mora_interest_rate=InterestRate(mora_rate_str),
         mora_strategy="COMPOUND",
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
         grace_period_days=0,
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
         due_dates=[d.isoformat() for d in _LATE_PAYMENT_DUE_DATES],
@@ -272,7 +271,7 @@ def test_string_repr_balance_at_sql_matches_python_mora(session, mora_rate_str):
         interest_rate=InterestRate("6% a"),
         mora_interest_rate=InterestRate(mora_rate_str),
         mora_strategy="COMPOUND",
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
         grace_period_days=0,
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
         due_dates=[d.isoformat() for d in _LATE_PAYMENT_DUE_DATES],
@@ -337,7 +336,7 @@ def test_string_repr_abbrev_balance_at_sql_matches_python_mora(session, mora_rat
         interest_rate=InterestRate("6% a.a."),
         mora_interest_rate=InterestRate(mora_rate_str),
         mora_strategy="COMPOUND",
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
         grace_period_days=0,
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
         due_dates=[d.isoformat() for d in _LATE_PAYMENT_DUE_DATES],

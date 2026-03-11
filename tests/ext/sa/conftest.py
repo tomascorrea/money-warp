@@ -2,12 +2,11 @@
 """Shared models, fixtures, and factories for SQLAlchemy extension tests."""
 
 from datetime import datetime, timezone
-from decimal import Decimal
 
 import factory
 import factory.alchemy
 import pytest
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, Numeric, String, create_engine
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, relationship
 
 from money_warp import Loan, MoraStrategy
@@ -20,7 +19,6 @@ from money_warp.ext.sa import (
 )
 from money_warp.interest_rate import InterestRate
 from money_warp.money import Money
-from money_warp.rate import CompoundingFrequency
 
 # ---------------------------------------------------------------------------
 # Base & models
@@ -99,7 +97,7 @@ class LoanRecord(Base):
     interest_rate = Column(InterestRateType(representation="json"), nullable=True)
     disbursement_date = Column(DateTime, nullable=True)
     due_dates = Column(JSON, nullable=True)
-    fine_rate = Column(Numeric(), nullable=True)
+    fine_rate = Column(InterestRateType(representation="json"), nullable=True)
     grace_period_days = Column(Integer(), nullable=True)
     mora_interest_rate = Column(InterestRateType(representation="json"), nullable=True)
     mora_strategy = Column(String(), nullable=True)
@@ -126,7 +124,7 @@ class StringLoanRecord(Base):
     interest_rate = Column(InterestRateType(representation="string"), nullable=True)
     disbursement_date = Column(DateTime, nullable=True)
     due_dates = Column(JSON, nullable=True)
-    fine_rate = Column(Numeric(), nullable=True)
+    fine_rate = Column(InterestRateType(representation="string"), nullable=True)
     grace_period_days = Column(Integer(), nullable=True)
     mora_interest_rate = Column(InterestRateType(representation="string"), nullable=True)
     mora_strategy = Column(String(), nullable=True)
@@ -177,16 +175,12 @@ def _build_late_payment_settlements(obj, create, extracted, **kwargs):
 
     due_dates_dt = [datetime.fromisoformat(d) for d in obj.due_dates]
 
-    fine_rate_val = obj.fine_rate
-    if fine_rate_val is not None and not isinstance(fine_rate_val, InterestRate):
-        fine_rate_val = InterestRate(fine_rate_val, period=CompoundingFrequency.ANNUALLY)
-
     loan = Loan(
         obj.principal,
         obj.interest_rate,
         due_dates_dt,
         disbursement_date=obj.disbursement_date,
-        fine_rate=fine_rate_val,
+        fine_rate=obj.fine_rate,
         grace_period_days=obj.grace_period_days,
         mora_interest_rate=obj.mora_interest_rate,
         mora_strategy=MoraStrategy[obj.mora_strategy],
@@ -243,7 +237,7 @@ class LoanRecordFactory(factory.alchemy.SQLAlchemyModelFactory):
             interest_rate=factory.LazyFunction(lambda: InterestRate("6% a")),
             disbursement_date=factory.LazyFunction(lambda: datetime(2025, 1, 1, tzinfo=timezone.utc)),
             due_dates=factory.LazyFunction(lambda: [d.isoformat() for d in _LATE_PAYMENT_DUE_DATES]),
-            fine_rate=Decimal("0.02"),
+            fine_rate=factory.LazyFunction(lambda: InterestRate("2% annual")),
             grace_period_days=0,
             mora_interest_rate=factory.LazyFunction(lambda: InterestRate("12% a")),
             mora_strategy="COMPOUND",
