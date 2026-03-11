@@ -11,7 +11,7 @@ The `Loan` class is a state machine that models a personal loan with daily-compo
 | `due_dates` | `List[datetime]` | required | Sorted automatically |
 | `disbursement_date` | `Optional[datetime]` | now | When funds are released; must be strictly before first due date |
 | `scheduler` | `Optional[Type[BaseScheduler]]` | `PriceScheduler` | Amortization strategy |
-| `fine_rate` | `Optional[Decimal]` | `0.02` (2%) | Fine as fraction of expected payment |
+| `fine_rate` | `Optional[InterestRate]` | `InterestRate("2% annual")` | Fine rate applied to expected payment |
 | `grace_period_days` | `int` | `0` | Days after due date before fines apply |
 | `mora_interest_rate` | `Optional[InterestRate]` | `interest_rate` | Rate used for mora (late) interest; defaults to the base rate |
 | `mora_strategy` | `MoraStrategy` | `COMPOUND` | How mora interest is computed (see Mora Strategy below) |

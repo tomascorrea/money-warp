@@ -151,7 +151,6 @@ Most of the time you want the grossed-up `Loan` directly. The `grossup_loan()` f
 
 ```python
 from money_warp import grossup_loan, Money, InterestRate, PriceScheduler, IndividualIOF
-from decimal import Decimal
 
 iof = IndividualIOF()
 due_dates = generate_monthly_dates(datetime(2024, 2, 1), 12)
@@ -163,7 +162,7 @@ loan = grossup_loan(
     disbursement_date=datetime(2024, 1, 1),
     scheduler=PriceScheduler,
     taxes=[iof],
-    fine_rate=Decimal("0.05"),   # forwarded to Loan
+    fine_rate=InterestRate("5% annual"),   # forwarded to Loan
     grace_period_days=3,         # forwarded to Loan
 )
 

@@ -84,7 +84,7 @@ class LoanRecord(Base):
     interest_rate = Column(InterestRateType(representation="json"))
     disbursement_date = Column(DateTime)
     due_dates = Column(JSON)
-    fine_rate = Column(Numeric(), nullable=True)
+    fine_rate = Column(Numeric(), nullable=True)  # auto-converted to InterestRate by bridge
     grace_period_days = Column(Integer(), nullable=True)
     mora_interest_rate = Column(InterestRateType(representation="json"), nullable=True)
     mora_strategy = Column(String(), nullable=True)

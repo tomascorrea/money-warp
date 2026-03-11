@@ -58,8 +58,6 @@ loan.record_payment(Money("856.07"), datetime(2024, 3, 1), "March payment")
 Configure fines and grace periods when creating a loan:
 
 ```python
-from decimal import Decimal
-
 # Default: 2% fine, no grace period
 loan = Loan(
     Money("10000"),
@@ -72,14 +70,14 @@ loan = Loan(
     Money("10000"),
     InterestRate("5% a"),
     generate_monthly_dates(datetime(2024, 2, 1), 12),
-    fine_rate=Decimal("0.05"),
+    fine_rate=InterestRate("5% annual"),
     grace_period_days=7,
 )
 ```
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `fine_rate` | `0.02` (2%) | Fine as a fraction of the expected installment amount |
+| `fine_rate` | `InterestRate("2% annual")` | Fine rate applied to the expected installment amount |
 | `grace_period_days` | `0` | Days after the due date before fines are applied |
 
 ## How Fines Work

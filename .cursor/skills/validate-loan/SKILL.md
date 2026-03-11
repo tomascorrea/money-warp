@@ -369,7 +369,7 @@ getcontext().prec = 50
 
 principal = Decimal("PRINCIPAL")
 monthly_rate = Decimal("MONTHLY_RATE")
-fine_rate = Decimal("0.02")  # default 2%
+fine_rate = Decimal("0.02")  # default 2% (InterestRate.as_decimal)
 num_installments = NUM_INSTALLMENTS
 
 annual_rate = (1 + monthly_rate) ** 12 - 1
@@ -467,7 +467,7 @@ print(json.dumps(results, indent=2))
 
 **Key conventions** (from `knowledge/loan.md`):
 - Allocation order: fines first, then interest, then mora, then principal.
-- Fine = `fine_rate * expected_payment` from the **original** schedule. One fine per missed due date, never duplicated.
+- Fine = `fine_rate.as_decimal * expected_payment` from the **original** schedule. One fine per missed due date, never duplicated.
 - Mora strategy defaults to COMPOUND: mora rate is applied to `balance + regular_interest`.
 - If `mora_interest_rate` is not specified, it defaults to `interest_rate`.
 - Anticipation: `interest_date = payment_date` (discount for fewer days).
