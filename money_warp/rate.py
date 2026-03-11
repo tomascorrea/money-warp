@@ -69,6 +69,8 @@ class Rate:
         rounding: str = ROUND_HALF_UP,
         str_style: str = "long",
         year_size: YearSize = YearSize.commercial,
+        str_decimals: int = 3,
+        abbrev_labels: Optional[Dict[CompoundingFrequency, str]] = None,
     ) -> None:
         """
         Create a rate.
@@ -88,6 +90,13 @@ class Rate:
                        abbreviated form (e.g. "a.a.").
             year_size: Day-count convention for daily conversions.
                        YearSize.commercial (365) or YearSize.banker (360).
+            str_decimals: Number of decimal places for the percentage in
+                          __str__. Default 3 gives "5.250%".
+            abbrev_labels: Partial or full override of the default abbreviation
+                           map. Merged with _ABBREV_MAP so you only need to
+                           pass the keys you want to change. Example:
+                           ``{CompoundingFrequency.MONTHLY: "a.m"}`` removes
+                           the trailing dot for monthly only.
         """
         if str_style not in _VALID_STR_STYLES:
             raise ValueError(f"Invalid str_style: '{str_style}'. Expected one of {_VALID_STR_STYLES}")
@@ -96,6 +105,9 @@ class Rate:
         self._rounding = rounding
         self._str_style = str_style
         self._year_size = year_size
+        self._str_decimals = str_decimals
+        self._abbrev_labels = abbrev_labels
+        self._abbrev_map: Dict[CompoundingFrequency, str] = {**_ABBREV_MAP, **(abbrev_labels or {})}
 
         if isinstance(rate, str):
             parsed_rate = self._parse_rate_string(rate)
@@ -252,6 +264,8 @@ class Rate:
             rounding=self._rounding,
             str_style=self._str_style,
             year_size=self._year_size,
+            str_decimals=self._str_decimals,
+            abbrev_labels=self._abbrev_labels,
         )
 
     def to_monthly(self) -> "Rate":
@@ -269,6 +283,8 @@ class Rate:
             rounding=self._rounding,
             str_style=self._str_style,
             year_size=self._year_size,
+            str_decimals=self._str_decimals,
+            abbrev_labels=self._abbrev_labels,
         )
 
     def to_annual(self) -> "Rate":
@@ -283,6 +299,8 @@ class Rate:
             rounding=self._rounding,
             str_style=self._str_style,
             year_size=self._year_size,
+            str_decimals=self._str_decimals,
+            abbrev_labels=self._abbrev_labels,
         )
 
     def to_periodic_rate(self, num_periods: int) -> Decimal:
@@ -320,8 +338,8 @@ class Rate:
 
     def __str__(self) -> str:
         """Clear string representation."""
-        label = _ABBREV_MAP[self.period] if self._str_style == "abbrev" else self.period.name.lower()
-        return f"{self._percentage_rate:.3f}% {label}"
+        label = self._abbrev_map[self.period] if self._str_style == "abbrev" else self.period.name.lower()
+        return f"{self._percentage_rate:.{self._str_decimals}f}% {label}"
 
     def __repr__(self) -> str:
         """Developer representation."""

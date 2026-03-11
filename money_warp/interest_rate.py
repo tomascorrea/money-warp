@@ -7,7 +7,7 @@ like IRR and MIRR, use Rate instead.
 """
 
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Optional, Union
+from typing import Dict, Optional, Union
 
 from money_warp.money import Money
 from money_warp.rate import (
@@ -49,6 +49,8 @@ class InterestRate(Rate):
         rounding: str = ROUND_HALF_UP,
         str_style: str = "long",
         year_size: YearSize = YearSize.commercial,
+        str_decimals: int = 3,
+        abbrev_labels: Optional[Dict[CompoundingFrequency, str]] = None,
     ) -> None:
         """
         Create a non-negative interest rate.
@@ -69,6 +71,11 @@ class InterestRate(Rate):
                        abbreviated form (e.g. "a.a.").
             year_size: Day-count convention for daily conversions.
                        YearSize.commercial (365) or YearSize.banker (360).
+            str_decimals: Number of decimal places for the percentage in
+                          __str__. Default 3 gives "5.250%".
+            abbrev_labels: Partial or full override of the default abbreviation
+                           map. Merged with _ABBREV_MAP so you only need to
+                           pass the keys you want to change.
 
         Raises:
             ValueError: If the rate is negative.
@@ -81,6 +88,8 @@ class InterestRate(Rate):
             rounding=rounding,
             str_style=str_style,
             year_size=year_size,
+            str_decimals=str_decimals,
+            abbrev_labels=abbrev_labels,
         )
 
         if self._decimal_rate < 0:
