@@ -8,7 +8,7 @@ from sqlalchemy.types import TypeDecorator
 
 from money_warp.interest_rate import InterestRate
 from money_warp.money import Money
-from money_warp.rate import CompoundingFrequency, Rate, YearSize
+from money_warp.rate import _ABBREV_MAP, CompoundingFrequency, Rate, YearSize
 
 _VALID_MONEY_REPRESENTATIONS = ("raw", "real", "cents")
 _VALID_RATE_REPRESENTATIONS = ("string", "json")
@@ -114,7 +114,8 @@ class RateType(TypeDecorator):
             return None
 
         if self.representation == "string":
-            token = _FREQUENCY_TOKEN[value.period]
+            is_abbrev = getattr(value, "_str_style", "long") == "abbrev"
+            token = _ABBREV_MAP[value.period] if is_abbrev else _FREQUENCY_TOKEN[value.period]
             return f"{value.as_percentage:.3f}% {token}"
 
         return {

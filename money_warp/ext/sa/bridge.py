@@ -13,7 +13,7 @@ from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 
 from money_warp.ext.sa.types import _FREQUENCY_TOKEN
 from money_warp.loan import Loan, MoraStrategy
-from money_warp.rate import CompoundingFrequency
+from money_warp.rate import _ABBREV_MAP, CompoundingFrequency
 from money_warp.tz import ensure_aware, now
 from money_warp.warp import Warp, WarpedTime
 
@@ -185,10 +185,11 @@ def _load_money_warp_loan_impl(self):
 # ---------------------------------------------------------------------------
 
 # Period-name lookups derived from CompoundingFrequency, keyed by representation.
-# JSON uses freq.name.lower(); string uses the tokens from types._FREQUENCY_TOKEN.
-_PERIOD_NAMES: dict[str, dict[CompoundingFrequency, str]] = {
-    "json": {freq: freq.name.lower() for freq in CompoundingFrequency},
-    "string": {freq: token for freq, token in _FREQUENCY_TOKEN.items()},
+# JSON uses freq.name.lower(); string accepts both long tokens from
+# _FREQUENCY_TOKEN ("annual") and abbreviated tokens from _ABBREV_MAP ("a.a.").
+_PERIOD_NAMES: dict[str, dict[CompoundingFrequency, list[str]]] = {
+    "json": {freq: [freq.name.lower()] for freq in CompoundingFrequency},
+    "string": {freq: [_FREQUENCY_TOKEN[freq], _ABBREV_MAP[freq]] for freq in _FREQUENCY_TOKEN},
 }
 
 
@@ -225,27 +226,30 @@ def _periods_per_year_expr(period, year_size, representation):
 
     Generated from :class:`CompoundingFrequency` — no hardcoded magic numbers.
     ``CONTINUOUS`` is excluded (handled separately via ``exp()``).
+    Each frequency may have multiple recognized tokens (long and abbreviated).
     """
     names = _PERIOD_NAMES[representation]
     branches = []
     for freq in CompoundingFrequency:
         if freq == CompoundingFrequency.CONTINUOUS:
             continue
-        name = names.get(freq)
-        if name is None:
+        freq_names = names.get(freq)
+        if not freq_names:
             continue
         n = year_size if freq == CompoundingFrequency.DAILY else float(freq.value)
-        branches.append((period == name, n))
+        for name in freq_names:
+            branches.append((period == name, n))
     return case(*branches, else_=1.0)
 
 
-def _effective_annual_from_params(rate, period, n):
+def _effective_annual_from_params(rate, period, n, representation):
     """Apply the effective-annual formula to pre-extracted SQL params.
 
     Mirrors :meth:`Rate._to_effective_annual`.
     """
+    continuous_names = _PERIOD_NAMES[representation].get(CompoundingFrequency.CONTINUOUS, [])
     return case(
-        (period == "continuous", func.exp(rate) - 1.0),
+        (period.in_(continuous_names), func.exp(rate) - 1.0),
         else_=func.pow(1.0 + rate, n) - 1.0,
     )
 
@@ -254,7 +258,7 @@ def _effective_annual_expr(rate_col, representation, default_year_size):
     """SQL expression converting any stored rate to effective annual."""
     rate, period, year_size = _extract_rate_params(rate_col, representation, default_year_size)
     n = _periods_per_year_expr(period, year_size, representation)
-    return _effective_annual_from_params(rate, period, n)
+    return _effective_annual_from_params(rate, period, n, representation)
 
 
 def _daily_rate_expr(rate_col, representation, default_year_size):
@@ -266,10 +270,11 @@ def _daily_rate_expr(rate_col, representation, default_year_size):
     """
     rate, period, year_size = _extract_rate_params(rate_col, representation, default_year_size)
     n = _periods_per_year_expr(period, year_size, representation)
-    eff_annual = _effective_annual_from_params(rate, period, n)
+    eff_annual = _effective_annual_from_params(rate, period, n, representation)
 
+    daily_names = _PERIOD_NAMES[representation].get(CompoundingFrequency.DAILY, [])
     return case(
-        (period == "daily", rate),
+        (period.in_(daily_names), rate),
         else_=func.pow(1.0 + eff_annual, 1.0 / year_size) - 1.0,
     )
 
