@@ -467,7 +467,7 @@ def test_current_balance_reflects_mora_rate_when_past_due():
         [due_date],
         disbursement_date=disbursement,
         mora_interest_rate=mora_rate,
-        fine_rate=Decimal("0"),
+        fine_rate=InterestRate("0% annual"),
     )
 
     with Warp(loan, check_date) as warped:

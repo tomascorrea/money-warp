@@ -148,8 +148,8 @@ def test_loan_with_grossup_to_loan_forwards_extra_kwargs(standard_iof, interest_
         scheduler=PriceScheduler,
         taxes=[standard_iof],
     )
-    loan = result.to_loan(fine_rate=Decimal("0.05"), grace_period_days=7)
-    assert loan.fine_rate == Decimal("0.05")
+    loan = result.to_loan(fine_rate=InterestRate("5% annual"), grace_period_days=7)
+    assert loan.fine_rate == InterestRate("5% annual")
 
 
 def test_loan_with_grossup_to_loan_grace_period(standard_iof, interest_rate, due_dates, disbursement_date):

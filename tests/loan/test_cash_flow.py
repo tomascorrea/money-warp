@@ -112,7 +112,7 @@ def test_loan_get_actual_cash_flow_includes_fines():
         rate,
         due_dates,
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
         grace_period_days=3,
     )
 

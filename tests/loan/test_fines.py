@@ -18,10 +18,10 @@ def test_loan_creation_with_fine_parameters():
         rate,
         due_dates,
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.03"),
+        fine_rate=InterestRate("3% annual"),
         grace_period_days=5,
     )
-    assert loan.fine_rate == Decimal("0.03")
+    assert loan.fine_rate == InterestRate("3% annual")
     assert loan.grace_period_days == 5
 
 
@@ -31,7 +31,7 @@ def test_loan_creation_with_default_fine_parameters():
     due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
-    assert loan.fine_rate == Decimal("0.02")  # Default 2%
+    assert loan.fine_rate == InterestRate("2% annual")  # Default 2%
     assert loan.grace_period_days == 0  # Default no grace period
 
 
@@ -40,13 +40,13 @@ def test_loan_creation_negative_fine_rate_raises_error():
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
 
-    with pytest.raises(ValueError, match="Fine rate must be non-negative"):
+    with pytest.raises(ValueError, match="Interest rate cannot be negative"):
         Loan(
             principal,
             rate,
             due_dates,
             disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
-            fine_rate=Decimal("-0.01"),
+            fine_rate=InterestRate("-1% annual"),
         )
 
 
@@ -142,7 +142,7 @@ def test_loan_calculate_late_fines_applies_fine():
         rate,
         due_dates,
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
         grace_period_days=0,
     )
     late_date = datetime(2024, 2, 5, tzinfo=timezone.utc)  # 4 days late
@@ -162,7 +162,7 @@ def test_loan_calculate_late_fines_correct_amount():
         rate,
         due_dates,
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.05"),
+        fine_rate=InterestRate("5% annual"),
     )  # 5% fine
     expected_payment = loan.get_expected_payment_amount(datetime(2024, 2, 1, tzinfo=timezone.utc))
     expected_fine = Money(expected_payment.raw_amount * Decimal("0.05"))
@@ -181,7 +181,7 @@ def test_loan_calculate_late_fines_only_once_per_due_date():
         rate,
         due_dates,
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
     )
 
     # Apply fines twice for same due date
@@ -202,7 +202,7 @@ def test_loan_calculate_late_fines_multiple_due_dates():
         rate,
         due_dates,
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
     )
 
     # Both payments are late
@@ -223,7 +223,7 @@ def test_loan_record_payment_allocates_to_fines_first():
         rate,
         due_dates,
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
     )
 
     # Apply fines first
@@ -250,7 +250,7 @@ def test_loan_record_payment_allocates_fines_then_principal():
         rate,
         due_dates,
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.10"),
+        fine_rate=InterestRate("10% annual"),
     )  # 10% fine
 
     # Apply fines
@@ -281,7 +281,7 @@ def test_loan_current_balance_includes_outstanding_fines():
         rate,
         due_dates,
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
     )
     initial_balance = loan.current_balance
 
@@ -303,7 +303,7 @@ def test_loan_is_paid_off_considers_fines():
         rate,
         due_dates,
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.05"),
+        fine_rate=InterestRate("5% annual"),
     )
 
     # Make partial payment that doesn't cover full installment
@@ -321,9 +321,9 @@ def test_loan_is_paid_off_considers_fines():
 @pytest.mark.parametrize(
     "fine_rate,expected_multiplier",
     [
-        (Decimal("0.01"), Decimal("0.01")),  # 1%
-        (Decimal("0.05"), Decimal("0.05")),  # 5%
-        (Decimal("0.10"), Decimal("0.10")),  # 10%
+        (InterestRate("1% annual"), Decimal("0.01")),  # 1%
+        (InterestRate("5% annual"), Decimal("0.05")),  # 5%
+        (InterestRate("10% annual"), Decimal("0.10")),  # 10%
     ],
 )
 def test_loan_fine_calculation_with_different_rates(fine_rate, expected_multiplier):
@@ -381,7 +381,7 @@ def test_pay_installment_late_triggers_fines_and_extra_interest():
         rate,
         [due_date],
         disbursement_date=disbursement,
-        fine_rate=Decimal("0.05"),
+        fine_rate=InterestRate("5% annual"),
     )
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
@@ -422,7 +422,7 @@ def test_late_overpayment_fine_equals_two_percent_of_scheduled_payment():
             datetime(2025, 4, 1, tzinfo=timezone.utc),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
     )
 
     scheduled_payment = loan.get_expected_payment_amount(datetime(2025, 2, 1, tzinfo=timezone.utc))
@@ -446,7 +446,7 @@ def test_late_overpayment_total_interest_for_45_days():
             datetime(2025, 4, 1, tzinfo=timezone.utc),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
     )
 
     daily_rate = InterestRate("6% a").to_daily().as_decimal
@@ -471,7 +471,7 @@ def test_late_overpayment_principal_is_remainder_after_fine_and_interest():
             datetime(2025, 4, 1, tzinfo=timezone.utc),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
     )
 
     scheduled_payment = loan.get_expected_payment_amount(datetime(2025, 2, 1, tzinfo=timezone.utc))
@@ -498,7 +498,7 @@ def test_late_overpayment_ending_balance_in_actual_entry():
             datetime(2025, 4, 1, tzinfo=timezone.utc),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
     )
 
     scheduled_payment = loan.get_expected_payment_amount(datetime(2025, 2, 1, tzinfo=timezone.utc))
@@ -526,7 +526,7 @@ def test_late_overpayment_covers_two_installments():
             datetime(2025, 4, 1, tzinfo=timezone.utc),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
     )
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
@@ -547,7 +547,7 @@ def test_late_overpayment_projected_entry_closes_loan():
             datetime(2025, 4, 1, tzinfo=timezone.utc),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
     )
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
