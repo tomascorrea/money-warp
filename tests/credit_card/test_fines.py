@@ -13,7 +13,7 @@ def _make_card(**kwargs):
         "billing_cycle": MonthlyBillingCycle(closing_day=28, payment_due_days=15),
         "minimum_payment_rate": Decimal("0.10"),
         "minimum_payment_floor": Money("25.00"),
-        "fine_rate": Decimal("0.02"),
+        "fine_rate": InterestRate("2% annual"),
         "opening_date": datetime(2024, 1, 1, tzinfo=timezone.utc),
     }
     defaults.update(kwargs)
