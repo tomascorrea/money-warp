@@ -30,23 +30,34 @@ class MoneyType(TypeDecorator):
             ``"raw"`` (default) -- ``Numeric`` column storing ``raw_amount``.
             ``"real"`` -- ``Numeric`` column storing ``real_amount``.
             ``"cents"`` -- ``Integer`` column storing cents.
+        precision: Total number of digits for the ``Numeric`` column
+            (ignored when *representation* is ``"cents"``).
+        scale: Number of fractional digits for the ``Numeric`` column
+            (ignored when *representation* is ``"cents"``).
     """
 
     impl = Numeric
     cache_ok = True
 
-    def __init__(self, representation: str = "raw") -> None:
+    def __init__(
+        self,
+        representation: str = "raw",
+        precision: int = 20,
+        scale: int = 10,
+    ) -> None:
         if representation not in _VALID_MONEY_REPRESENTATIONS:
             raise ValueError(
                 f"Invalid representation: '{representation}'. Expected one of {_VALID_MONEY_REPRESENTATIONS}"
             )
         self.representation = representation
+        self.precision = precision
+        self.scale = scale
         super().__init__()
 
     def load_dialect_impl(self, dialect):
         if self.representation == "cents":
             return dialect.type_descriptor(Integer())
-        return dialect.type_descriptor(Numeric(precision=20, scale=10))
+        return dialect.type_descriptor(Numeric(precision=self.precision, scale=self.scale))
 
     def process_bind_param(self, value, dialect) -> Any:
         if value is None:
