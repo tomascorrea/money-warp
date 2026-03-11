@@ -1,7 +1,6 @@
 """Shared fixtures for late payment settlement tests."""
 
 from datetime import datetime, timezone
-from decimal import Decimal
 
 import pytest
 
@@ -20,5 +19,5 @@ def loan_with_fine():
             datetime(2025, 4, 1, tzinfo=timezone.utc),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
     )

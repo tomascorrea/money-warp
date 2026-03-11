@@ -286,6 +286,19 @@ def _has_rate(rate_col, representation):
     return rate_col
 
 
+def _fine_rate_decimal_expr(cls, meta_key):
+    """SQL expression extracting the fine rate's decimal value.
+
+    The ``fine_rate`` column is expected to be an ``InterestRateType``
+    (string or JSON).  The decimal rate is extracted with the same
+    helpers used for ``interest_rate`` and ``mora_interest_rate``.
+    """
+    col = getattr(cls, meta_key)
+    repr_, default_ys = _get_rate_col_info(cls, meta_key)
+    rate, _period, _year_size = _extract_rate_params(col, repr_, default_ys)
+    return rate
+
+
 # ---------------------------------------------------------------------------
 # SQL expression (CTE-based)
 # ---------------------------------------------------------------------------
@@ -305,7 +318,7 @@ def _build_sql_balance_expression(cls, as_of, meta):
     ir_col = getattr(cls, meta["interest_rate"])
     dd_col = getattr(cls, meta["due_dates"])
     db_col = getattr(cls, meta["disbursement_date"])
-    fr_col = getattr(cls, meta["fine_rate"])
+    fr_col = _fine_rate_decimal_expr(cls, meta["fine_rate"])
     gp_col = getattr(cls, meta["grace_period_days"])
     mir_col = getattr(cls, meta["mora_interest_rate"])
     ms_col = getattr(cls, meta["mora_strategy"])

@@ -31,7 +31,7 @@ The returned `GrossupResult` carries all the parameters needed to construct a Lo
 ```python
 result = grossup(requested_amount=Money("10000"), ...)
 loan = result.to_loan()                          # default loan settings
-loan = result.to_loan(fine_rate=Decimal("0.05"))  # with custom settings
+loan = result.to_loan(fine_rate=InterestRate("5% annual"))  # with custom settings
 ```
 
 This keeps each piece focused on one job:
@@ -173,7 +173,7 @@ loan = grossup_loan(
     disbursement_date=disbursement,
     scheduler=PriceScheduler,
     taxes=[iof],
-    fine_rate=Decimal("0.05"),
+    fine_rate=InterestRate("5% annual"),
 )
 ```
 

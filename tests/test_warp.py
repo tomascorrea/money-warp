@@ -1,7 +1,6 @@
 """Tests for Warp time machine context manager."""
 
 from datetime import date, datetime, timezone
-from decimal import Decimal
 
 import pytest
 
@@ -203,7 +202,7 @@ def test_warp_to_future_keeps_all_past_payments():
         InterestRate("5% annual"),
         [datetime(2024, 1, 15, tzinfo=timezone.utc), datetime(2024, 2, 15, tzinfo=timezone.utc)],
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0"),
+        fine_rate=InterestRate("0% annual"),
     )
 
     loan.record_payment(Money("500"), datetime(2024, 1, 10, tzinfo=timezone.utc), description="Payment 1")

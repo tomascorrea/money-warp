@@ -47,10 +47,10 @@ def test_credit_card_creation_invalid_minimum_payment_rate():
 
 
 def test_credit_card_creation_negative_fine_rate():
-    with pytest.raises(ValueError, match="fine_rate must be non-negative"):
+    with pytest.raises(ValueError, match="Interest rate cannot be negative"):
         CreditCard(
             interest_rate=InterestRate("24% a"),
-            fine_rate=Decimal("-0.01"),
+            fine_rate=InterestRate("-1% annual"),
             opening_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
         )
 

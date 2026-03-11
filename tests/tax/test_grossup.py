@@ -246,9 +246,9 @@ def test_grossup_loan_forwards_fine_rate(standard_iof, interest_rate, three_due_
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
-        fine_rate=Decimal("0.05"),
+        fine_rate=InterestRate("5% annual"),
     )
-    assert loan.fine_rate == Decimal("0.05")
+    assert loan.fine_rate == InterestRate("5% annual")
 
 
 def test_grossup_loan_forwards_grace_period(standard_iof, interest_rate, three_due_dates, disbursement_date):

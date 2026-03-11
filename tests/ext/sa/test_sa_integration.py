@@ -6,7 +6,6 @@ persists to SA models, and verifies balance_at against settlement data.
 
 import copy
 from datetime import datetime, timezone
-from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
@@ -36,7 +35,7 @@ def loan_with_payments():
         _LOAN_RATE,
         _LATE_PAYMENT_DUE_DATES,
         disbursement_date=_LOAN_DISBURSEMENT,
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
         grace_period_days=0,
         mora_interest_rate=InterestRate("12% a"),
         mora_strategy=MoraStrategy.COMPOUND,
@@ -87,7 +86,7 @@ def test_late_payment_remaining_balance_higher_than_on_time(loan_with_payments):
         _LOAN_RATE,
         _LATE_PAYMENT_DUE_DATES,
         disbursement_date=_LOAN_DISBURSEMENT,
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
         mora_interest_rate=InterestRate("12% a"),
     )
     schedule = on_time_loan.get_original_schedule()
@@ -209,7 +208,7 @@ def test_balance_at_sql_matches_python_various_mora_rate_periods(session, mora_r
         interest_rate=InterestRate("6% a"),
         mora_interest_rate=InterestRate(mora_rate_str),
         mora_strategy="COMPOUND",
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
         grace_period_days=0,
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
         due_dates=[d.isoformat() for d in _LATE_PAYMENT_DUE_DATES],
@@ -272,7 +271,7 @@ def test_string_repr_balance_at_sql_matches_python_mora(session, mora_rate_str):
         interest_rate=InterestRate("6% a"),
         mora_interest_rate=InterestRate(mora_rate_str),
         mora_strategy="COMPOUND",
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
         grace_period_days=0,
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
         due_dates=[d.isoformat() for d in _LATE_PAYMENT_DUE_DATES],
@@ -337,7 +336,7 @@ def test_string_repr_abbrev_balance_at_sql_matches_python_mora(session, mora_rat
         interest_rate=InterestRate("6% a.a."),
         mora_interest_rate=InterestRate(mora_rate_str),
         mora_strategy="COMPOUND",
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
         grace_period_days=0,
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
         due_dates=[d.isoformat() for d in _LATE_PAYMENT_DUE_DATES],

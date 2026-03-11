@@ -1,7 +1,6 @@
 """Tests for Loan balance properties, accrued interest, and balance composition."""
 
 from datetime import datetime, timezone
-from decimal import Decimal
 
 from money_warp import InterestRate, Loan, Money, Warp
 
@@ -161,7 +160,7 @@ def test_loan_current_balance_composition():
         rate,
         due_dates,
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
     )
 
     # Let interest accrue and apply fines
@@ -215,7 +214,7 @@ def test_loan_balance_components_with_fines_and_payments():
         rate,
         due_dates,
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
-        fine_rate=Decimal("0.03"),
+        fine_rate=InterestRate("3% annual"),
     )
 
     # Let payment become late and apply fine

@@ -1,7 +1,6 @@
 """Simplified Loan class that delegates calculations to configurable scheduler."""
 
 from datetime import datetime, timedelta
-from decimal import Decimal
 from enum import Enum
 from typing import Dict, List, Optional, Type
 
@@ -82,7 +81,7 @@ class Loan:
         due_dates: List[datetime],
         disbursement_date: Optional[datetime] = None,
         scheduler: Optional[Type[BaseScheduler]] = None,
-        fine_rate: Optional[Decimal] = None,
+        fine_rate: Optional[InterestRate] = None,
         grace_period_days: int = 0,
         mora_interest_rate: Optional[InterestRate] = None,
         mora_strategy: MoraStrategy = MoraStrategy.COMPOUND,
@@ -98,7 +97,7 @@ class Loan:
             due_dates: List of payment due dates (flexible scheduling)
             disbursement_date: When the loan was disbursed (defaults to now). Must be before the first due date.
             scheduler: Scheduler class to use for calculations (defaults to PriceScheduler)
-            fine_rate: Fine as decimal fraction of missed payment (defaults to 0.02 for 2%)
+            fine_rate: Fine rate applied to missed payments (defaults to 2% annual)
             grace_period_days: Days after due date before fines apply (defaults to 0)
             mora_interest_rate: Interest rate for mora (late) interest (defaults to interest_rate)
             mora_strategy: How mora interest is computed (defaults to COMPOUND)
@@ -115,7 +114,7 @@ class Loan:
             >>> # Loan with custom 5% fine and 3-day grace period
             >>> loan = Loan(Money("10000"), InterestRate("5% annual"),
             ...            [datetime(2024, 2, 1)],
-            ...            fine_rate=Decimal("0.05"), grace_period_days=3)
+            ...            fine_rate=InterestRate("5% annual"), grace_period_days=3)
             >>>
             >>> # Loan with separate mora interest rate
             >>> loan = Loan(Money("10000"), InterestRate("5% annual"),
@@ -127,8 +126,6 @@ class Loan:
             raise ValueError("At least one due date is required")
         if principal.is_negative() or principal.is_zero():
             raise ValueError("Principal must be positive")
-        if fine_rate is not None and fine_rate < 0:
-            raise ValueError("Fine rate must be non-negative")
         if grace_period_days < 0:
             raise ValueError("Grace period days must be non-negative")
 
@@ -143,7 +140,7 @@ class Loan:
         if self.disbursement_date >= self.due_dates[0]:
             raise ValueError("disbursement_date must be before the first due date")
         self.scheduler = scheduler or PriceScheduler
-        self.fine_rate = fine_rate if fine_rate is not None else Decimal("0.02")
+        self.fine_rate = fine_rate if fine_rate is not None else InterestRate("2% annual")
         self.grace_period_days = grace_period_days
         self.taxes: List[BaseTax] = taxes or []
         self.is_grossed_up = is_grossed_up
@@ -363,7 +360,7 @@ class Loan:
             if not payment_made:
                 # Apply fine: percentage of expected payment amount
                 expected_payment = self.get_expected_payment_amount(due_date)
-                fine_amount = Money(expected_payment.raw_amount * self.fine_rate)
+                fine_amount = Money(expected_payment.raw_amount * self.fine_rate.as_decimal)
 
                 # Record the fine
                 self.fines_applied[due_date] = fine_amount

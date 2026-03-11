@@ -6,7 +6,6 @@ This tests the money-warp library integration without the Jupyter widgets.
 
 import sys
 from datetime import datetime, timedelta
-from decimal import Decimal
 
 from money_warp import InterestRate, Loan, Money, Warp
 
@@ -36,7 +35,7 @@ def test_loan_creation():
         principal=principal,
         interest_rate=interest_rate,
         due_dates=due_dates,
-        fine_rate=Decimal("0.02"),  # 2%
+        fine_rate=InterestRate("2% annual"),
         grace_period_days=0,
     )
 
@@ -44,7 +43,7 @@ def test_loan_creation():
     print(f"   Principal: ${loan.principal.real_amount:,.2f}")
     print(f"   Interest Rate: {loan.interest_rate}")
     print(f"   Payments: {len(loan.due_dates)}")
-    print(f"   Fine Rate: {float(loan.fine_rate * 100):.1f}%")
+    print(f"   Fine Rate: {loan.fine_rate}")
     print(f"   Current Balance: ${loan.current_balance.real_amount:,.2f}")
 
     return loan
@@ -164,7 +163,7 @@ def test_late_payment_scenario(loan):
         print(f"   Outstanding fines: ${warped_loan.outstanding_fines.real_amount:,.2f}")
 
         if new_fines.is_positive():
-            print(f"   Fine rate applied: {float(loan.fine_rate * 100):.1f}%")
+            print(f"   Fine rate applied: {loan.fine_rate}")
 
 
 def main():
