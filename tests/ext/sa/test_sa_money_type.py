@@ -38,6 +38,20 @@ def test_money_type_custom_precision_and_scale():
     assert col_type.scale == 4
 
 
+def test_money_type_positional_precision_and_scale():
+    col_type = MoneyType(12, 4)
+    assert col_type.precision == 12
+    assert col_type.scale == 4
+    assert col_type.representation == "raw"
+
+
+def test_money_type_positional_representation_third():
+    col_type = MoneyType(12, 4, "real")
+    assert col_type.precision == 12
+    assert col_type.scale == 4
+    assert col_type.representation == "real"
+
+
 def test_money_type_cents_ignores_precision_and_scale(session):
     col_type = MoneyType(representation="cents", precision=8, scale=3)
     assert col_type.precision == 8

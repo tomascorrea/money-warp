@@ -57,7 +57,7 @@ All public symbols are re-exported from `__init__.py`, so `from money_warp.ext.s
 `TypeDecorator` storing `Money` instances. Constructor signature:
 
 ```python
-MoneyType(representation="raw", precision=20, scale=10)
+MoneyType(precision=20, scale=10, representation="raw")
 ```
 
 - `representation` controls the storage format (see table below).

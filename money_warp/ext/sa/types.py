@@ -26,14 +26,14 @@ class MoneyType(TypeDecorator):
     """SQLAlchemy column type for :class:`~money_warp.money.Money`.
 
     Args:
-        representation: Controls storage format.
-            ``"raw"`` (default) -- ``Numeric`` column storing ``raw_amount``.
-            ``"real"`` -- ``Numeric`` column storing ``real_amount``.
-            ``"cents"`` -- ``Integer`` column storing cents.
         precision: Total number of digits for the ``Numeric`` column
             (ignored when *representation* is ``"cents"``).
         scale: Number of fractional digits for the ``Numeric`` column
             (ignored when *representation* is ``"cents"``).
+        representation: Controls storage format.
+            ``"raw"`` (default) -- ``Numeric`` column storing ``raw_amount``.
+            ``"real"`` -- ``Numeric`` column storing ``real_amount``.
+            ``"cents"`` -- ``Integer`` column storing cents.
     """
 
     impl = Numeric
@@ -41,9 +41,9 @@ class MoneyType(TypeDecorator):
 
     def __init__(
         self,
-        representation: str = "raw",
         precision: int = 20,
         scale: int = 10,
+        representation: str = "raw",
     ) -> None:
         if representation not in _VALID_MONEY_REPRESENTATIONS:
             raise ValueError(

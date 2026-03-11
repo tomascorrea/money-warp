@@ -15,7 +15,7 @@ pip install money-warp[sa]
 Stores `Money` instances:
 
 ```python
-MoneyType(representation="raw", precision=20, scale=10)
+MoneyType(precision=20, scale=10, representation="raw")
 ```
 
 - `representation` controls the storage format (see table below).
