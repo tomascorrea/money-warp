@@ -70,8 +70,10 @@ All public symbols are re-exported from `__init__.py`, so `from money_warp.ext.s
 
 | Representation | Column type | Example stored value |
 |----------------|-------------|--------------------------------------|
-| `"string"` (default) | `String` | `"5.250% annual"` |
+| `"string"` (default) | `String` | `"5.250% annual"` or `"5.250% a.a."` |
 | `"json"` | `JSON` | `{"rate": "0.0525", "period": "annually", ...}` |
+
+String serialization respects the Rate's `str_style`: rates with `str_style="abbrev"` are stored with abbreviated tokens (e.g., `"5.250% a.a."`), while `str_style="long"` (the default) uses long tokens (e.g., `"5.250% annual"`). Deserialization handles both formats transparently since `Rate(...)` parses both.
 
 Same deserialization knobs as the Marshmallow `RateField`: `year_size`, `precision`, `rounding`, `str_style`.
 
@@ -152,7 +154,7 @@ Private helpers in `bridge.py` convert stored rates to daily rates in SQL, mirro
 - JSON: uses `json_extract` for all three values.
 - String: parses `"5.250% annual"` via `SUBSTR`/`INSTR`, divides the percentage by 100; uses the column type's `default_year_size` since the string format does not embed year size.
 
-**Period mapping:** `_periods_per_year_expr(period, year_size, representation)` builds a SQL `CASE` generated from `CompoundingFrequency` — no hardcoded magic numbers. Period names differ by representation (JSON: `"annually"`, `"semi_annually"`; string: `"annual"`, `"semi-annual"` via `_FREQUENCY_TOKEN`). `CONTINUOUS` is excluded (handled separately via `exp()`). `DAILY` uses `year_size` instead of a fixed value.
+**Period mapping:** `_periods_per_year_expr(period, year_size, representation)` builds a SQL `CASE` generated from `CompoundingFrequency` — no hardcoded magic numbers. Period names differ by representation (JSON: `"annually"`, `"semi_annually"`; string: both long tokens like `"annual"`, `"semi-annual"` and abbreviated tokens like `"a.a."`, `"a.s."` from `_ABBREV_MAP`). Each frequency generates CASE branches for all its recognized tokens. `CONTINUOUS` is excluded (handled separately via `exp()`). `DAILY` uses `year_size` instead of a fixed value.
 
 **Conversion:** `_effective_annual_expr(rate_col, representation, default_year_size)` and `_daily_rate_expr(rate_col, representation, default_year_size)` combine the above. Both are used by the `daily_rates` CTE for `interest_rate` and `mora_interest_rate` columns. The `continuous` period uses `func.exp()` which requires the SQLite math extension (available in Python 3.11+ / SQLite 3.35+).
 
@@ -161,7 +163,7 @@ Private helpers in `bridge.py` convert stored rates to daily rates in SQL, mirro
 ## Design Decisions
 
 - **`RATE_CLASS` pattern:** Both Marshmallow and SA extensions use `RATE_CLASS` on the Rate field/type. `InterestRateField`/`InterestRateType` override this to `InterestRate`, avoiding code duplication.
-- **Parseable string serialization:** String mode uses `_FREQUENCY_TOKEN` mapping instead of `str(rate)` because `Rate.__str__()` outputs `"annually"` / `"semi_annually"` which the Rate parser does not accept. The mapping outputs parser-compatible tokens like `"annual"` and `"semi-annual"`. Both extensions duplicate this mapping (each is self-contained).
+- **Parseable string serialization:** String mode uses `_FREQUENCY_TOKEN` (long tokens) or `_ABBREV_MAP` (abbreviated tokens) depending on the Rate's `str_style`. This avoids using `str(rate)` directly because `Rate.__str__()` outputs `"annually"` / `"semi_annually"` which the Rate parser does not accept. The mapping outputs parser-compatible tokens like `"annual"` / `"semi-annual"` or `"a.a."` / `"a.s."`. Both extensions duplicate the long-token mapping (each is self-contained); `_ABBREV_MAP` is imported from `money_warp.rate`.
 - **Private attribute access:** Dict/JSON serialization reads `value._precision`, `value._rounding`, `value._str_style` since there are no public getters. Acceptable because these are first-party extensions.
 - **Optional dependencies:** Each extension is declared optional in `pyproject.toml` under `[tool.poetry.extras]`. Importing without the dependency installed raises `ImportError`.
 - **Two-decorator bridge pattern:** `@settlement_bridge` stores metadata, `@loan_bridge` reads it. Both store `_money_warp_bridge_meta` (namespaced to avoid collisions). This keeps each model self-describing and avoids passing settlement column names through the loan decorator.
@@ -184,6 +186,6 @@ Private helpers in `bridge.py` convert stored rates to daily rates in SQL, mirro
 - **SQL vs Python precision:** The SQL CTE expression uses float64 arithmetic while Python uses `Decimal`. For exact comparisons in tests, use approximate matching (e.g., `pytest.approx`) when comparing SQL results against Python `balance_at`.
 - **JSON NULL vs SQL NULL:** SQLAlchemy's `JSON` type stores Python `None` as the string `'null'` rather than SQL `NULL`. For JSON representation, the NULL guard checks `json_extract(interest_rate, '$.rate') IS NULL` which correctly handles both cases since `json_extract('null', '$.rate')` returns NULL.
 - **Mora rate NULL handling:** When `mora_interest_rate` is NULL, the helper functions cascade NULL through `pow()`. The `daily_rates` CTE coalesces the mora daily rate to 0.0 to prevent this from nullifying the entire expression.
-- **Data-driven period mapping:** The SQL `CASE` branches in `_periods_per_year_expr` are generated from the `CompoundingFrequency` enum and `_FREQUENCY_TOKEN` mapping. Adding a new `CompoundingFrequency` member and its token automatically extends both JSON and string SQL support.
+- **Data-driven period mapping:** The SQL `CASE` branches in `_periods_per_year_expr` are generated from the `CompoundingFrequency` enum, `_FREQUENCY_TOKEN`, and `_ABBREV_MAP`. Each frequency maps to a list of recognized tokens (long and abbreviated). Adding a new `CompoundingFrequency` member and its tokens automatically extends both JSON and string SQL support.
 - **String representation year_size limitation:** The string format (e.g., `"5.250% annual"`) does not embed `year_size`. The SQL helpers use the `rate_year_size` default from the column's `InterestRateType` definition. If different rates on the same column need different year sizes, use JSON representation instead.
 - **Continuous compounding in string format:** `CompoundingFrequency.CONTINUOUS` is not in `_FREQUENCY_TOKEN` and cannot be serialized as a string. Use JSON representation for continuous rates.
