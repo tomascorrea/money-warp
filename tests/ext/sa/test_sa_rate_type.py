@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import text
 
 from money_warp.ext.sa import RateType
 from money_warp.interest_rate import InterestRate
@@ -143,5 +144,57 @@ def test_interest_rate_type_roundtrip_json(session):
     session.flush()
     session.expire_all()
     loaded = session.get(InterestRateJsonModel, 1)
+    assert isinstance(loaded.rate, InterestRate)
+    assert loaded.rate == original
+
+
+# ===========================================================================
+# RateType — abbreviated string round-trips
+# ===========================================================================
+
+
+@pytest.mark.parametrize(
+    "rate_string,expected_stored_token",
+    [
+        ("5.25% a.a.", "a.a."),
+        ("1.5% a.m.", "a.m."),
+        ("0.03% a.d.", "a.d."),
+        ("2.5% a.t.", "a.t."),
+        ("3.0% a.s.", "a.s."),
+    ],
+    ids=["annually", "monthly", "daily", "quarterly", "semi_annually"],
+)
+def test_rate_type_roundtrip_string_abbreviated(session, rate_string, expected_stored_token):
+    original = Rate(rate_string)
+    session.add(RateStringModel(id=1, rate=original))
+    session.flush()
+
+    raw = session.execute(text("SELECT rate FROM rate_string WHERE id = 1")).scalar()
+    assert raw.endswith(expected_stored_token)
+
+    session.expire_all()
+    loaded = session.get(RateStringModel, 1)
+    assert loaded.rate == original
+
+
+def test_rate_type_abbreviated_preserves_str_style(session):
+    original = Rate("5.25% a.a.")
+    session.add(RateStringModel(id=1, rate=original))
+    session.flush()
+    session.expire_all()
+    loaded = session.get(RateStringModel, 1)
+    assert loaded.rate._str_style == "abbrev"
+
+
+def test_interest_rate_type_roundtrip_string_abbreviated(session):
+    original = InterestRate("5.25% a.a.")
+    session.add(InterestRateStringModel(id=1, rate=original))
+    session.flush()
+
+    raw = session.execute(text("SELECT rate FROM interest_rate_string WHERE id = 1")).scalar()
+    assert raw == "5.250% a.a."
+
+    session.expire_all()
+    loaded = session.get(InterestRateStringModel, 1)
     assert isinstance(loaded.rate, InterestRate)
     assert loaded.rate == original
