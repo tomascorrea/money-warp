@@ -36,7 +36,7 @@ def loan_with_payments():
         _LOAN_RATE,
         _LATE_PAYMENT_DUE_DATES,
         disbursement_date=_LOAN_DISBURSEMENT,
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
         grace_period_days=0,
         mora_interest_rate=InterestRate("12% a"),
         mora_strategy=MoraStrategy.COMPOUND,
@@ -87,7 +87,7 @@ def test_late_payment_remaining_balance_higher_than_on_time(loan_with_payments):
         _LOAN_RATE,
         _LATE_PAYMENT_DUE_DATES,
         disbursement_date=_LOAN_DISBURSEMENT,
-        fine_rate=Decimal("0.02"),
+        fine_rate=InterestRate("2% annual"),
         mora_interest_rate=InterestRate("12% a"),
     )
     schedule = on_time_loan.get_original_schedule()

@@ -20,6 +20,7 @@ from money_warp.ext.sa import (
 )
 from money_warp.interest_rate import InterestRate
 from money_warp.money import Money
+from money_warp.rate import CompoundingFrequency
 
 # ---------------------------------------------------------------------------
 # Base & models
@@ -176,12 +177,16 @@ def _build_late_payment_settlements(obj, create, extracted, **kwargs):
 
     due_dates_dt = [datetime.fromisoformat(d) for d in obj.due_dates]
 
+    fine_rate_val = obj.fine_rate
+    if fine_rate_val is not None and not isinstance(fine_rate_val, InterestRate):
+        fine_rate_val = InterestRate(fine_rate_val, period=CompoundingFrequency.ANNUALLY)
+
     loan = Loan(
         obj.principal,
         obj.interest_rate,
         due_dates_dt,
         disbursement_date=obj.disbursement_date,
-        fine_rate=obj.fine_rate,
+        fine_rate=fine_rate_val,
         grace_period_days=obj.grace_period_days,
         mora_interest_rate=obj.mora_interest_rate,
         mora_strategy=MoraStrategy[obj.mora_strategy],
