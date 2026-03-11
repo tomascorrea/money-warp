@@ -6,6 +6,7 @@ Requires the ``marshmallow`` extra::
 """
 
 from decimal import Decimal
+from typing import Dict, Optional
 
 from marshmallow import fields
 
@@ -87,6 +88,8 @@ class RateField(fields.Field):
         precision: Default precision for string deserialization.
         rounding: Default rounding mode for string deserialization.
         str_style: Default str_style for string deserialization.
+        str_decimals: Default decimal places for string serialization.
+        abbrev_labels: Default abbreviation label overrides for deserialization.
     """
 
     RATE_CLASS = Rate
@@ -103,6 +106,8 @@ class RateField(fields.Field):
         precision: int | None = None,
         rounding: str = "ROUND_HALF_UP",
         str_style: str = "long",
+        str_decimals: int = 3,
+        abbrev_labels: Optional[Dict[CompoundingFrequency, str]] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -115,6 +120,8 @@ class RateField(fields.Field):
         self.rate_precision = precision
         self.rate_rounding = rounding
         self.rate_str_style = str_style
+        self.rate_str_decimals = str_decimals
+        self.rate_abbrev_labels = abbrev_labels
 
     def _serialize(self, value, attr, obj, **kwargs):
         if value is None:
@@ -124,8 +131,11 @@ class RateField(fields.Field):
 
         if self.representation == "string":
             token = _FREQUENCY_TOKEN[value.period]
-            return f"{value.as_percentage():.3f}% {token}"
+            decimals = getattr(value, "_str_decimals", 3)
+            return f"{value.as_percentage():.{decimals}f}% {token}"
 
+        abbrev_labels = getattr(value, "_abbrev_labels", None)
+        serialized_labels = {k.name.lower(): v for k, v in abbrev_labels.items()} if abbrev_labels else None
         return {
             "rate": str(value.as_decimal()),
             "period": value.period.name.lower(),
@@ -133,6 +143,8 @@ class RateField(fields.Field):
             "precision": value._precision,
             "rounding": value._rounding,
             "str_style": value._str_style,
+            "str_decimals": getattr(value, "_str_decimals", 3),
+            "abbrev_labels": serialized_labels,
         }
 
     def _deserialize(self, value, attr, data, **kwargs):
@@ -151,6 +163,8 @@ class RateField(fields.Field):
                 precision=self.rate_precision,
                 rounding=self.rate_rounding,
                 str_style=self.rate_str_style,
+                str_decimals=self.rate_str_decimals,
+                abbrev_labels=self.rate_abbrev_labels,
             )
         except Exception as exc:
             raise self.make_error("invalid") from exc
@@ -172,6 +186,13 @@ class RateField(fields.Field):
             precision = value.get("precision", self.rate_precision)
             rounding = value.get("rounding", self.rate_rounding)
             str_style = value.get("str_style", self.rate_str_style)
+            str_decimals = value.get("str_decimals", self.rate_str_decimals)
+
+            raw_labels = value.get("abbrev_labels")
+            if raw_labels:
+                abbrev_labels = {CompoundingFrequency[k.upper()]: v for k, v in raw_labels.items()}
+            else:
+                abbrev_labels = self.rate_abbrev_labels
 
             result = self.RATE_CLASS(
                 rate,
@@ -180,6 +201,8 @@ class RateField(fields.Field):
                 precision=precision,
                 rounding=rounding,
                 str_style=str_style,
+                str_decimals=str_decimals,
+                abbrev_labels=abbrev_labels,
             )
         except Exception as exc:
             raise self.make_error("invalid") from exc

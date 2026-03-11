@@ -1,14 +1,14 @@
 """SQLAlchemy TypeDecorators for Money, Rate, and InterestRate."""
 
 from decimal import Decimal
-from typing import Any, Optional, Type
+from typing import Any, Dict, Optional, Type
 
 from sqlalchemy import JSON, Integer, Numeric, String
 from sqlalchemy.types import TypeDecorator
 
 from money_warp.interest_rate import InterestRate
 from money_warp.money import Money
-from money_warp.rate import _ABBREV_MAP, CompoundingFrequency, Rate, YearSize
+from money_warp.rate import CompoundingFrequency, Rate, YearSize
 
 _VALID_MONEY_REPRESENTATIONS = ("raw", "real", "cents")
 _VALID_RATE_REPRESENTATIONS = ("string", "json")
@@ -89,6 +89,9 @@ class RateType(TypeDecorator):
         precision: Default precision for string deserialization.
         rounding: Default rounding mode for string deserialization.
         str_style: Default str_style for string deserialization.
+        str_decimals: Default decimal places for string serialization.
+        abbrev_labels: Default abbreviation label overrides for string
+            deserialization.
     """
 
     RATE_CLASS: Type[Rate] = Rate
@@ -103,6 +106,8 @@ class RateType(TypeDecorator):
         precision: int | None = None,
         rounding: str = "ROUND_HALF_UP",
         str_style: str = "long",
+        str_decimals: int = 3,
+        abbrev_labels: Optional[Dict[CompoundingFrequency, str]] = None,
     ) -> None:
         if representation not in _VALID_RATE_REPRESENTATIONS:
             raise ValueError(
@@ -113,6 +118,8 @@ class RateType(TypeDecorator):
         self.rate_precision = precision
         self.rate_rounding = rounding
         self.rate_str_style = str_style
+        self.rate_str_decimals = str_decimals
+        self.rate_abbrev_labels = abbrev_labels
         super().__init__()
 
     def load_dialect_impl(self, dialect):
@@ -126,9 +133,13 @@ class RateType(TypeDecorator):
 
         if self.representation == "string":
             is_abbrev = getattr(value, "_str_style", "long") == "abbrev"
-            token = _ABBREV_MAP[value.period] if is_abbrev else _FREQUENCY_TOKEN[value.period]
-            return f"{value.as_percentage():.3f}% {token}"
+            abbrev_map = getattr(value, "_abbrev_map", {})
+            token = abbrev_map[value.period] if is_abbrev else _FREQUENCY_TOKEN[value.period]
+            decimals = getattr(value, "_str_decimals", 3)
+            return f"{value.as_percentage():.{decimals}f}% {token}"
 
+        abbrev_labels = getattr(value, "_abbrev_labels", None)
+        serialized_labels = {k.name.lower(): v for k, v in abbrev_labels.items()} if abbrev_labels else None
         return {
             "rate": str(value.as_decimal()),
             "period": value.period.name.lower(),
@@ -136,6 +147,8 @@ class RateType(TypeDecorator):
             "precision": value._precision,
             "rounding": value._rounding,
             "str_style": value._str_style,
+            "str_decimals": getattr(value, "_str_decimals", 3),
+            "abbrev_labels": serialized_labels,
         }
 
     def process_result_value(self, value: Any, dialect) -> Optional[Rate]:
@@ -153,6 +166,8 @@ class RateType(TypeDecorator):
             precision=self.rate_precision,
             rounding=self.rate_rounding,
             str_style=self.rate_str_style,
+            str_decimals=self.rate_str_decimals,
+            abbrev_labels=self.rate_abbrev_labels,
         )
 
     def _from_dict(self, value: dict) -> Rate:
@@ -162,6 +177,13 @@ class RateType(TypeDecorator):
         precision = value.get("precision", self.rate_precision)
         rounding = value.get("rounding", self.rate_rounding)
         str_style = value.get("str_style", self.rate_str_style)
+        str_decimals = value.get("str_decimals", self.rate_str_decimals)
+
+        raw_labels = value.get("abbrev_labels")
+        if raw_labels:
+            abbrev_labels = {CompoundingFrequency[k.upper()]: v for k, v in raw_labels.items()}
+        else:
+            abbrev_labels = self.rate_abbrev_labels
 
         return self.RATE_CLASS(
             rate,
@@ -170,6 +192,8 @@ class RateType(TypeDecorator):
             precision=precision,
             rounding=rounding,
             str_style=str_style,
+            str_decimals=str_decimals,
+            abbrev_labels=abbrev_labels,
         )
 
 
