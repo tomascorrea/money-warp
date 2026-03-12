@@ -19,6 +19,7 @@ Serializes `Money` instances. The `representation` parameter controls the format
 | `"raw"` (default) | `str` | `str(money.raw_amount)` | `Money(value)` |
 | `"real"` | `str` | `str(money.real_amount)` | `Money(value)` |
 | `"cents"` | `int` | `money.cents` | `Money.from_cents(value)` |
+| `"float"` | `float` | `float(money.real_amount)` | `Money(str(value))` |
 
 ### RateField
 
@@ -96,6 +97,20 @@ class PaymentSchema(Schema):
 schema = PaymentSchema()
 data = schema.dump({"amount": Money("123.45")})
 # {"amount": 12345}
+
+result = schema.load(data)
+# {"amount": Money("123.45")}
+```
+
+### Float representation for JSON-friendly APIs
+
+```python
+class ApiSchema(Schema):
+    amount = MoneyField(representation="float")
+
+schema = ApiSchema()
+data = schema.dump({"amount": Money("123.45")})
+# {"amount": 123.45}
 
 result = schema.load(data)
 # {"amount": Money("123.45")}

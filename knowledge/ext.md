@@ -17,6 +17,7 @@ Serializes/deserializes `Money` instances. Configurable `representation` paramet
 | `"raw"` (default) | `str`       | `str(money.raw_amount)`   | `Money(value)`         |
 | `"real"`       | `str`           | `str(money.real_amount)`  | `Money(value)`         |
 | `"cents"`      | `int`           | `money.cents`             | `Money.from_cents(value)` |
+| `"float"`      | `float`         | `float(money.real_amount)` | `Money(str(value))`   |
 
 ### RateField
 

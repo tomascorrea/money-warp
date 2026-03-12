@@ -20,7 +20,7 @@ __all__ = [
     "InterestRateField",
 ]
 
-_VALID_MONEY_REPRESENTATIONS = ("raw", "real", "cents")
+_VALID_MONEY_REPRESENTATIONS = ("raw", "real", "cents", "float")
 _VALID_RATE_REPRESENTATIONS = ("string", "dict")
 
 _FREQUENCY_TOKEN = {
@@ -40,6 +40,7 @@ class MoneyField(fields.Field):
             ``"raw"`` (default) -- full-precision ``raw_amount`` as string.
             ``"real"`` -- rounded ``real_amount`` as string.
             ``"cents"`` -- integer cents.
+            ``"float"`` -- rounded ``real_amount`` as a Python float.
     """
 
     default_error_messages = {
@@ -64,13 +65,20 @@ class MoneyField(fields.Field):
             return str(value.raw_amount)
         if self.representation == "real":
             return str(value.real_amount)
+        if self.representation == "float":
+            return float(value.real_amount)
         return value.cents
 
     def _deserialize(self, value, attr, data, **kwargs):
         if value is None:
             return None
         try:
-            result = Money.from_cents(int(value)) if self.representation == "cents" else Money(value)
+            if self.representation == "cents":
+                result = Money.from_cents(int(value))
+            elif self.representation == "float":
+                result = Money(str(value))
+            else:
+                result = Money(value)
         except Exception as exc:
             raise self.make_error("invalid") from exc
         else:

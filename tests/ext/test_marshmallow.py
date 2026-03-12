@@ -27,6 +27,10 @@ class CentsMoneySchema(Schema):
     amount = MoneyField(representation="cents")
 
 
+class FloatMoneySchema(Schema):
+    amount = MoneyField(representation="float")
+
+
 class StringRateSchema(Schema):
     rate = RateField(representation="string")
 
@@ -53,7 +57,7 @@ def test_money_field_invalid_representation_raises():
         MoneyField(representation="unknown")
 
 
-@pytest.mark.parametrize("representation", ["raw", "real", "cents"])
+@pytest.mark.parametrize("representation", ["raw", "real", "cents", "float"])
 def test_money_field_valid_representation_accepted(representation):
     field = MoneyField(representation=representation)
     assert field.representation == representation
@@ -204,6 +208,86 @@ def test_money_field_very_large_amount():
     big = Money("99999999999.99")
     loaded = RawMoneySchema().load(RawMoneySchema().dump({"amount": big}))
     assert loaded["amount"].raw_amount == big.raw_amount
+
+
+# ===========================================================================
+# MoneyField — float representation
+# ===========================================================================
+
+
+@pytest.mark.parametrize(
+    "amount_str,expected",
+    [
+        ("100.50", 100.50),
+        ("0", 0.0),
+        ("999.99", 999.99),
+        ("-50.25", -50.25),
+    ],
+)
+def test_money_field_serialize_float(amount_str, expected):
+    result = FloatMoneySchema().dump({"amount": Money(amount_str)})
+    assert result["amount"] == expected
+    assert isinstance(result["amount"], float)
+
+
+@pytest.mark.parametrize(
+    "amount_str,expected",
+    [
+        ("100.125", 100.13),
+        ("0.001", 0.0),
+        ("-50.255", -50.26),
+    ],
+)
+def test_money_field_serialize_float_rounds_to_two_decimals(amount_str, expected):
+    result = FloatMoneySchema().dump({"amount": Money(amount_str)})
+    assert result["amount"] == expected
+
+
+def test_money_field_serialize_float_none_returns_none():
+    result = FloatMoneySchema().dump({"amount": None})
+    assert result["amount"] is None
+
+
+@pytest.mark.parametrize(
+    "input_val,expected_real",
+    [
+        (100.50, Decimal("100.50")),
+        (0.0, Decimal("0.00")),
+        (999.99, Decimal("999.99")),
+        (-25.99, Decimal("-25.99")),
+    ],
+)
+def test_money_field_deserialize_float(input_val, expected_real):
+    result = FloatMoneySchema().load({"amount": input_val})
+    assert result["amount"].real_amount == expected_real
+
+
+@pytest.mark.parametrize(
+    "input_val,expected_real",
+    [
+        (100, Decimal("100.00")),
+        (0, Decimal("0.00")),
+    ],
+)
+def test_money_field_deserialize_float_from_int(input_val, expected_real):
+    result = FloatMoneySchema().load({"amount": input_val})
+    assert result["amount"].real_amount == expected_real
+
+
+def test_money_field_deserialize_float_invalid_raises():
+    with pytest.raises(ValidationError):
+        FloatMoneySchema().load({"amount": "not-a-number"})
+
+
+@pytest.mark.parametrize(
+    "amount_str",
+    ["100.50", "0.01", "0", "-25.99"],
+)
+def test_money_field_roundtrip_float(amount_str):
+    original = Money(amount_str)
+    serialized = FloatMoneySchema().dump({"amount": original})
+    loaded = FloatMoneySchema().load(serialized)
+    assert loaded["amount"].real_amount == original.real_amount
 
 
 # ===========================================================================
