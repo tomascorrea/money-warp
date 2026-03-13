@@ -304,14 +304,28 @@ def _fine_rate_decimal_expr(cls, meta_key):
 # ---------------------------------------------------------------------------
 
 
-def _build_sql_balance_expression(cls, as_of, meta):
-    """Build a CTE-based SQL expression for ``balance_at``.
+_COMPONENT_ALL = "all"
+_COMPONENT_PRINCIPAL = "principal"
+_COMPONENT_INTEREST = "interest"
+_COMPONENT_MORA = "mora_interest"
+_COMPONENT_FINES = "fines"
+
+
+def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
+    """Build a CTE-based SQL expression for a balance component.
 
     Uses nested CTEs (``nesting=True``) inside a single scalar subquery
     so that each computation step is named and readable.  Falls back to
-    ``COALESCE(remaining_balance, principal)`` when the interest rate
-    is NULL (defensive guard for data that was stored without full
-    loan parameters).
+    ``COALESCE(remaining_balance, principal)`` for the principal component
+    or ``0`` for other components when the interest rate is NULL.
+
+    Args:
+        cls: The SQLAlchemy model class.
+        as_of: The date expression to compute the balance at.
+        meta: Bridge metadata dict mapping logical names to column names.
+        component: Which balance component to return.  One of
+            ``_COMPONENT_ALL`` (sum, default), ``_COMPONENT_PRINCIPAL``,
+            ``_COMPONENT_INTEREST``, ``_COMPONENT_MORA``, ``_COMPONENT_FINES``.
     """
     info = _resolve_settlement_info(cls, meta["settlements"])
     pr_col = getattr(cls, meta["principal"])
@@ -327,8 +341,6 @@ def _build_sql_balance_expression(cls, as_of, meta):
     mir_repr, mir_ys = _get_rate_col_info(cls, meta["mora_interest_rate"])
 
     # -- CTE 1: loan_state -------------------------------------------------
-    # Uses scalar subqueries so this always returns exactly 1 row even
-    # when there are no settlements before as_of.
     last_balance_sq = (
         select(info["balance_col"])
         .where(info["fk_col"] == info["pk_col"])
@@ -356,7 +368,7 @@ def _build_sql_balance_expression(cls, as_of, meta):
         .cte("loan_state", nesting=True)
     )
 
-    # -- CTE 3: daily_rates ------------------------------------------------
+    # -- CTE 2: daily_rates ------------------------------------------------
     daily_rates = (
         select(
             _daily_rate_expr(ir_col, ir_repr, ir_ys).label("daily_rate"),
@@ -366,7 +378,7 @@ def _build_sql_balance_expression(cls, as_of, meta):
         .cte("daily_rates", nesting=True)
     )
 
-    # -- CTE 4: time_split -------------------------------------------------
+    # -- CTE 3: time_split -------------------------------------------------
     je_next = func.json_each(dd_col).table_valued(column("value", String))
     next_due_sq = (
         select(func.min(je_next.c.value))
@@ -390,7 +402,7 @@ def _build_sql_balance_expression(cls, as_of, meta):
         .cte("time_split", nesting=True)
     )
 
-    # -- CTE 5: day_split --------------------------------------------------
+    # -- CTE 4: day_split --------------------------------------------------
     regular_days_expr = case(
         (time_split.c.next_due.is_(None), time_split.c.total_days),
         (
@@ -412,7 +424,7 @@ def _build_sql_balance_expression(cls, as_of, meta):
         .cte("day_split", nesting=True)
     )
 
-    # -- CTE 6: accrued ----------------------------------------------------
+    # -- CTE 5: accrued ----------------------------------------------------
     reg_interest = loan_state.c.principal_balance * (
         func.pow(1.0 + daily_rates.c.daily_rate, day_split.c.regular_days) - 1.0
     )
@@ -437,7 +449,7 @@ def _build_sql_balance_expression(cls, as_of, meta):
         .cte("accrued", nesting=True)
     )
 
-    # -- CTE 7: late_fines -------------------------------------------------
+    # -- CTE 6: late_fines -------------------------------------------------
     settlement_count = (
         select(func.count())
         .where(info["fk_col"] == info["pk_col"])
@@ -476,28 +488,38 @@ def _build_sql_balance_expression(cls, as_of, meta):
         .cte("late_fines", nesting=True)
     )
 
-    # -- Final SELECT combining all CTEs -----------------------------------
-    full_balance_sq = (
-        select(
-            (
-                loan_state.c.principal_balance
-                + accrued.c.regular_interest
-                + accrued.c.mora_interest
-                + late_fines.c.total_fines
-            ).label("balance")
-        )
+    # -- Final SELECT: pick requested component ----------------------------
+    _component_expr = {
+        _COMPONENT_PRINCIPAL: loan_state.c.principal_balance,
+        _COMPONENT_INTEREST: accrued.c.regular_interest,
+        _COMPONENT_MORA: accrued.c.mora_interest,
+        _COMPONENT_FINES: late_fines.c.total_fines,
+        _COMPONENT_ALL: (
+            loan_state.c.principal_balance
+            + accrued.c.regular_interest
+            + accrued.c.mora_interest
+            + late_fines.c.total_fines
+        ),
+    }
+
+    target_expr = _component_expr[component]
+
+    full_sq = (
+        select(target_expr.label("result"))
         .select_from(loan_state.join(accrued, literal(True)).join(late_fines, literal(True)))
         .correlate(cls)
         .scalar_subquery()
     )
 
-    # -- Simple fallback (defensive: rate is NULL) -------------------------
-    simple_balance = func.coalesce(last_balance_sq, pr_col)
+    # -- Fallback when rate is NULL ----------------------------------------
+    simple_fallback = (
+        func.coalesce(last_balance_sq, pr_col) if component in (_COMPONENT_ALL, _COMPONENT_PRINCIPAL) else literal(0.0)
+    )
 
     rate_present = _has_rate(ir_col, ir_repr)
     return case(
-        (rate_present.is_(None), simple_balance),
-        else_=full_balance_sq,
+        (rate_present.is_(None), simple_fallback),
+        else_=full_sq,
     )
 
 
