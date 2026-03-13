@@ -11,6 +11,14 @@ from typing import List
 from sqlalchemy import Float, String, case, cast, column, func, literal, select
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 
+from money_warp.ext.sa.compat import (
+    mw_greatest,
+    mw_instr,
+    mw_json_array_length,
+    mw_json_array_values,
+    mw_json_extract,
+    mw_julianday,
+)
 from money_warp.ext.sa.types import _FREQUENCY_TOKEN
 from money_warp.loan import Loan, MoraStrategy
 from money_warp.rate import _ABBREV_MAP, CompoundingFrequency
@@ -210,11 +218,11 @@ def _extract_rate_params(rate_col, representation, default_year_size):
     *default_year_size* since the string format does not embed year size.
     """
     if representation == "json":
-        rate = cast(func.json_extract(rate_col, "$.rate"), Float)
-        period = func.json_extract(rate_col, "$.period")
-        year_size = cast(func.json_extract(rate_col, "$.year_size"), Float)
+        rate = cast(mw_json_extract(rate_col, "rate"), Float)
+        period = mw_json_extract(rate_col, "period")
+        year_size = cast(mw_json_extract(rate_col, "year_size"), Float)
     else:
-        pct_pos = func.instr(rate_col, "%")
+        pct_pos = mw_instr(rate_col, "%")
         rate = cast(func.substr(rate_col, 1, pct_pos - 1), Float) / 100.0
         period = func.trim(func.substr(rate_col, pct_pos + 1))
         year_size = default_year_size
@@ -282,7 +290,7 @@ def _daily_rate_expr(rate_col, representation, default_year_size):
 def _has_rate(rate_col, representation):
     """SQL expression that is NULL when no parseable rate is present."""
     if representation == "json":
-        return cast(func.json_extract(rate_col, "$.rate"), Float)
+        return cast(mw_json_extract(rate_col, "rate"), Float)
     return rate_col
 
 
@@ -379,17 +387,17 @@ def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
     )
 
     # -- CTE 3: time_split -------------------------------------------------
-    je_next = func.json_each(dd_col).table_valued(column("value", String))
+    je_next = mw_json_array_values(dd_col).table_valued(column("value", String))
     next_due_sq = (
         select(func.min(je_next.c.value))
-        .where(func.julianday(je_next.c.value) > func.julianday(loan_state.c.last_pay_date))
+        .where(mw_julianday(je_next.c.value) > mw_julianday(loan_state.c.last_pay_date))
         .correlate(cls)
         .scalar_subquery()
     )
 
-    total_days_expr = func.max(
+    total_days_expr = mw_greatest(
         0,
-        func.julianday(as_of) - func.julianday(loan_state.c.last_pay_date),
+        mw_julianday(as_of) - mw_julianday(loan_state.c.last_pay_date),
     )
 
     time_split = (
@@ -406,19 +414,19 @@ def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
     regular_days_expr = case(
         (time_split.c.next_due.is_(None), time_split.c.total_days),
         (
-            func.julianday(time_split.c.next_due) >= func.julianday(as_of),
+            mw_julianday(time_split.c.next_due) >= mw_julianday(as_of),
             time_split.c.total_days,
         ),
-        else_=func.max(
+        else_=mw_greatest(
             0,
-            func.julianday(time_split.c.next_due) - func.julianday(time_split.c.last_pay_date),
+            mw_julianday(time_split.c.next_due) - mw_julianday(time_split.c.last_pay_date),
         ),
     )
 
     day_split = (
         select(
             regular_days_expr.label("regular_days"),
-            func.max(0, time_split.c.total_days - regular_days_expr).label("mora_days"),
+            mw_greatest(0, time_split.c.total_days - regular_days_expr).label("mora_days"),
         )
         .correlate(cls)
         .cte("day_split", nesting=True)
@@ -458,26 +466,26 @@ def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
         .scalar_subquery()
     )
 
-    je_grace = func.json_each(dd_col).table_valued(column("value", String))
+    je_grace = mw_json_array_values(dd_col).table_valued(column("value", String))
     past_grace_count = (
         select(func.count())
-        .where(func.julianday(je_grace.c.value) + func.coalesce(gp_col, 0) < func.julianday(as_of))
+        .where(mw_julianday(je_grace.c.value) + func.coalesce(gp_col, 0) < mw_julianday(as_of))
         .correlate(cls)
         .scalar_subquery()
     )
 
-    num_inst = cast(func.json_array_length(dd_col), Float)
+    num_inst = cast(mw_json_array_length(dd_col), Float)
 
-    je_max = func.json_each(dd_col).table_valued(column("value", String))
+    je_max = mw_json_array_values(dd_col).table_valued(column("value", String))
     max_due_sq = select(func.max(je_max.c.value)).correlate(cls).scalar_subquery()
 
     avg_period = case(
         (num_inst <= 1, 30.0),
-        else_=(func.julianday(max_due_sq) - func.julianday(db_col)) / num_inst,
+        else_=(mw_julianday(max_due_sq) - mw_julianday(db_col)) / num_inst,
     )
     periodic_rate = func.pow(1.0 + daily_rates.c.daily_rate, avg_period) - 1.0
     pmt = pr_col * periodic_rate / (1.0 - func.pow(1.0 + periodic_rate, -num_inst))
-    late_count = func.max(0, past_grace_count - settlement_count)
+    late_count = mw_greatest(0, past_grace_count - settlement_count)
 
     late_fines = (
         select(
