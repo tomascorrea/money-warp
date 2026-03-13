@@ -1,13 +1,12 @@
 # ruff: noqa: A003
 """Shared models, fixtures, and factories for SQLAlchemy extension tests."""
 
-import os
-import shutil
 from datetime import datetime, timezone
 
 import factory
 import factory.alchemy
 import pytest
+from pytest_postgresql import factories as pg_factories
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, relationship
 
@@ -137,30 +136,19 @@ class StringLoanRecord(Base):
 
 
 # ---------------------------------------------------------------------------
-# PostgreSQL detection: pg_ctl on PATH + env var opt-in
+# PostgreSQL fixtures (pytest-postgresql starts its own PG process)
 # ---------------------------------------------------------------------------
 
-_PG_ENABLED = (
-    os.environ.get("MONEY_WARP_TEST_PG", "").lower() in ("1", "true", "yes") and shutil.which("pg_ctl") is not None
-)
-
-if _PG_ENABLED:
-    from pytest_postgresql import factories as pg_factories
-
-    postgresql_proc = pg_factories.postgresql_proc()
-    postgresql_conn = pg_factories.postgresql("postgresql_proc")
+postgresql_proc = pg_factories.postgresql_proc()
+postgresql_conn = pg_factories.postgresql("postgresql_proc")
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
-_engine_params = [pytest.param("sqlite", id="sqlite")]
-if _PG_ENABLED:
-    _engine_params.append(pytest.param("postgresql", id="postgresql"))
 
-
-@pytest.fixture(params=_engine_params)
+@pytest.fixture(params=[pytest.param("sqlite", id="sqlite"), pytest.param("postgresql", id="postgresql")])
 def engine(request):
     if request.param == "sqlite":
         eng = create_engine("sqlite:///:memory:")

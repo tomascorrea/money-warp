@@ -39,6 +39,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends postgresql libpq-dev
+          echo "$(pg_config --bindir)" >> $GITHUB_PATH
 
       - name: Set up python
         uses: actions/setup-python@v5
@@ -61,8 +62,6 @@ jobs:
 
       - name: Test with tox
         run: tox
-        env:
-          MONEY_WARP_TEST_PG: "1"
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5

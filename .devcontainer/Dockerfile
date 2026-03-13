@@ -28,6 +28,7 @@ RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends \
     postgresql \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
+ENV PATH="/usr/lib/postgresql/14/bin:${PATH}"
 RUN curl -sfL https://direnv.net/install.sh | bash
 
 
