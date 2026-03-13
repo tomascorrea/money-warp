@@ -524,6 +524,41 @@ def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
 
 
 # ---------------------------------------------------------------------------
+# Hybrid method/property factory
+# ---------------------------------------------------------------------------
+
+
+def _attach_balance_hybrid(cls, meta, name, loan_attr, component):
+    """Attach a ``{name}_at`` hybrid_method and ``{name}`` hybrid_property to *cls*.
+
+    Python side: reconstruct Loan via Warp, read *loan_attr*.
+    SQL side: delegate to ``_build_sql_balance_expression`` with *component*.
+    """
+
+    @hybrid_method
+    def _at_method(self, as_of):
+        loan = self._load_money_warp_loan()
+        loan.fines_applied = {}
+        with Warp(loan, as_of) as warped:
+            return getattr(warped, loan_attr)
+
+    @_at_method.expression
+    def _at_method(cls, as_of):
+        return _build_sql_balance_expression(cls, as_of, meta, component)
+
+    @hybrid_property
+    def _prop(self):
+        return getattr(self, f"{name}_at")(now())
+
+    @_prop.expression
+    def _prop(cls):
+        return getattr(cls, f"{name}_at")(func.now())
+
+    setattr(cls, f"{name}_at", _at_method)
+    setattr(cls, name, _prop)
+
+
+# ---------------------------------------------------------------------------
 # loan_bridge
 # ---------------------------------------------------------------------------
 
@@ -539,26 +574,29 @@ def loan_bridge(
     mora_interest_rate: str = "mora_interest_rate",
     mora_strategy: str = "mora_strategy",
 ):
-    """Add ``balance_at(date)``, ``balance``, and ``_load_money_warp_loan``
-    to a loan model.
+    """Add balance hybrid methods/properties to a loan model.
+
+    Adds the following to the decorated class:
 
     ``_load_money_warp_loan()``
         Reconstructs a :class:`~money_warp.loan.Loan` from the model's
-        stored fields and replays settlements (warping the loan's time
-        context to each payment date for accurate replay).  Raises
-        ``ValueError`` if any required field is ``None``.
+        stored fields and replays settlements.
 
-    ``balance_at(date)``
-        Uses ``_load_money_warp_loan()`` + :class:`~money_warp.Warp` to
-        return the balance at a specific date.  SQL side uses a
-        CTE-based expression that approximates the same computation.
+    **Total balance:**
 
-    ``balance``
-        Convenience property equivalent to ``balance_at(now())``.
+    - ``balance_at(date)`` -- total outstanding balance at *date*.
+    - ``balance`` -- convenience property for ``balance_at(now())``.
 
-    All parameter names default to conventional column names.  If your
-    model follows the naming convention, ``@loan_bridge()`` with no
-    arguments works.
+    **Component balances (each has an ``_at(date)`` method and a property):**
+
+    - ``principal_balance_at`` / ``principal_balance``
+    - ``interest_balance_at`` / ``interest_balance``
+    - ``mora_interest_balance_at`` / ``mora_interest_balance``
+    - ``fine_balance_at`` / ``fine_balance``
+
+    On the Python side each method reconstructs the Loan via Warp and
+    reads the corresponding property.  On the SQL side each delegates to
+    ``_build_sql_balance_expression`` with the matching component.
 
     The settlement model **must** be decorated with
     :func:`settlement_bridge`.
@@ -588,29 +626,21 @@ def loan_bridge(
             "mora_strategy": mora_strategy,
         }
 
-        @hybrid_method
-        def balance_at(self, as_of):
-            loan = self._load_money_warp_loan()
-            loan.fines_applied = {}
-            with Warp(loan, as_of) as warped:
-                return warped.current_balance
+        # -- total balance (special: reads current_balance) ----------------
+        _attach_balance_hybrid(cls, _meta, "balance", "current_balance", _COMPONENT_ALL)
 
-        @balance_at.expression
-        def balance_at(cls, as_of):
-            return _build_sql_balance_expression(cls, as_of, _meta)
-
-        @hybrid_property
-        def balance(self):
-            return self.balance_at(now())
-
-        @balance.expression
-        def balance(cls):
-            return cls.balance_at(func.now())
+        # -- component balances --------------------------------------------
+        _COMPONENTS = [
+            ("principal_balance", _COMPONENT_PRINCIPAL),
+            ("interest_balance", _COMPONENT_INTEREST),
+            ("mora_interest_balance", _COMPONENT_MORA),
+            ("fine_balance", _COMPONENT_FINES),
+        ]
+        for name, comp in _COMPONENTS:
+            _attach_balance_hybrid(cls, _meta, name, name, comp)
 
         cls._money_warp_bridge_meta = _meta
         cls._load_money_warp_loan = _load_money_warp_loan_impl
-        cls.balance_at = balance_at
-        cls.balance = balance
         return cls
 
     return decorator
