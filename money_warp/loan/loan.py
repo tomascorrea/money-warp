@@ -70,7 +70,7 @@ class Loan:
         >>>
         >>> # Make payment (automatically allocated to fines first)
         >>> loan.record_payment(Money("500"), datetime(2024, 2, 11))
-        >>> print(f"Outstanding fines: {loan.outstanding_fines}")
+        >>> print(f"Outstanding fines: {loan.fine_balance}")
     """
 
     @tz_aware
@@ -175,12 +175,11 @@ class Loan:
 
         return balance
 
-    @property
-    def accrued_interest(self) -> Money:
-        """Get the current accrued interest since last payment.
+    def _accrued_interest_components(self) -> tuple:
+        """Return ``(regular, mora)`` accrued interest since last payment.
 
-        Respects ``mora_interest_rate`` and ``mora_strategy`` when the
-        borrower is past the next unpaid due date.
+        Shared computation used by :pyattr:`interest_balance` and
+        :pyattr:`mora_interest_balance`.
         """
         days = self.days_since_last_payment()
         principal_bal = self.principal_balance
@@ -190,15 +189,32 @@ class Loan:
                 due_date = self._next_unpaid_due_date()
             except ValueError:
                 due_date = None
-            regular, mora = self._compute_accrued_interest(days, principal_bal, due_date, self.last_payment_date)
-            return regular + mora
-        else:
-            return Money.zero()
+            return self._compute_accrued_interest(days, principal_bal, due_date, self.last_payment_date)
+
+        return Money.zero(), Money.zero()
+
+    @property
+    def interest_balance(self) -> Money:
+        """Regular (non-mora) accrued interest since last payment."""
+        return self._accrued_interest_components()[0]
+
+    @property
+    def mora_interest_balance(self) -> Money:
+        """Mora accrued interest since last payment.
+
+        Respects ``mora_interest_rate`` and ``mora_strategy`` when the
+        borrower is past the next unpaid due date.
+        """
+        return self._accrued_interest_components()[1]
 
     @property
     def current_balance(self) -> Money:
-        """Get the current outstanding balance including principal, accrued interest, and fines."""
-        return self.principal_balance + self.accrued_interest + self.outstanding_fines
+        """Get the current outstanding balance.
+
+        Equal to ``principal_balance + interest_balance +
+        mora_interest_balance + fine_balance``.
+        """
+        return self.principal_balance + self.interest_balance + self.mora_interest_balance + self.fine_balance
 
     @property
     def is_paid_off(self) -> bool:
@@ -220,11 +236,10 @@ class Loan:
         return Money(sum(fine.raw_amount for fine in self.fines_applied.values()))
 
     @property
-    def outstanding_fines(self) -> Money:
-        """Get the current unpaid fine amount."""
+    def fine_balance(self) -> Money:
+        """Unpaid fine amount (total fines applied minus fines paid)."""
         total_fines = self.total_fines
 
-        # Calculate how much of the fines have been paid
         fines_paid = Money.zero()
         for payment in self._actual_payments:
             if payment.category == "actual_fine":
@@ -670,9 +685,9 @@ class Loan:
         label = description or f"Payment on {payment_date.date()}"
 
         fine_paid = Money.zero()
-        outstanding_fines = self.outstanding_fines
-        if outstanding_fines.is_positive() and remaining.is_positive():
-            fine_paid = Money(min(outstanding_fines.raw_amount, remaining.raw_amount))
+        current_fines = self.fine_balance
+        if current_fines.is_positive() and remaining.is_positive():
+            fine_paid = Money(min(current_fines.raw_amount, remaining.raw_amount))
             self._all_payments.append(
                 CashFlowItem(
                     fine_paid, payment_date, f"Fine payment - {label}", "actual_fine", time_context=self._time_ctx
@@ -1380,7 +1395,7 @@ class Loan:
 
     def __str__(self) -> str:
         """String representation of the loan."""
-        fine_info = f", fines={self.outstanding_fines}" if self.outstanding_fines.is_positive() else ""
+        fine_info = f", fines={self.fine_balance}" if self.fine_balance.is_positive() else ""
         return (
             f"Loan(principal={self.principal}, rate={self.interest_rate}, "
             f"payments={len(self.due_dates)}, balance={self.current_balance}{fine_info})"

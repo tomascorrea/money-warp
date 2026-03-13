@@ -108,7 +108,7 @@ print(f"Late? {is_late}")  # True — no payment was made
 new_fines = loan.calculate_late_fines(as_of_date=datetime(2024, 3, 15))
 print(f"New fines applied: {new_fines}")
 print(f"Total fines: {loan.total_fines}")
-print(f"Outstanding fines: {loan.outstanding_fines}")
+print(f"Fine balance: {loan.fine_balance}")
 ```
 
 ### Fine Amounts Come from the Original Schedule
@@ -140,7 +140,7 @@ loan = Loan(
 #   4. The remaining amount reduces principal
 with Warp(loan, datetime(2024, 2, 15)) as warped:
     warped.pay_installment(Money("3600.00"), "Late payment")
-    print(f"Outstanding fines: {warped.outstanding_fines}")
+    print(f"Fine balance: {warped.fine_balance}")
     print(f"Remaining balance: {warped.current_balance}")
 ```
 
@@ -278,7 +278,7 @@ Settlements are not stored as separate state — they are reconstructed by query
 | Property | Type | Meaning |
 |---|---|---|
 | `total_fines` | `Money` | Sum of all fines ever applied |
-| `outstanding_fines` | `Money` | Unpaid fines (total minus what's been paid off) |
+| `fine_balance` | `Money` | Unpaid fines (total minus what's been paid off) |
 | `fines_applied` | `Dict[datetime, Money]` | Fine amount applied per due date |
 | `is_paid_off` | `bool` | True only when principal **and** fines are zero |
 | `installments` | `List[Installment]` | Repayment plan with expected/actual amounts (Warp-aware) |

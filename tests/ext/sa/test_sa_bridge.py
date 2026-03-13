@@ -254,6 +254,150 @@ def test_balance_filter_paid_off(session):
 
 
 # ===========================================================================
+# Component balance hybrid_methods (Python side)
+# ===========================================================================
+
+
+def test_principal_balance_at_matches_loan(session):
+    loan = LoanRecordFactory()
+    session.expire_all()
+    loaded = session.get(LoanRecord, loan.id)
+    as_of = datetime(2024, 2, 15, tzinfo=timezone.utc)
+
+    mw_loan = loaded._load_money_warp_loan()
+    with Warp(mw_loan, as_of) as warped:
+        expected = warped.principal_balance
+    assert loaded.principal_balance_at(as_of) == expected
+
+
+def test_interest_balance_at_matches_loan(session):
+    loan = LoanRecordFactory()
+    session.expire_all()
+    loaded = session.get(LoanRecord, loan.id)
+    as_of = datetime(2024, 2, 15, tzinfo=timezone.utc)
+
+    mw_loan = loaded._load_money_warp_loan()
+    with Warp(mw_loan, as_of) as warped:
+        expected = warped.interest_balance
+    assert loaded.interest_balance_at(as_of) == expected
+
+
+def test_mora_interest_balance_at_zero_before_due_date(session):
+    loan = LoanRecordFactory()
+    session.expire_all()
+    loaded = session.get(LoanRecord, loan.id)
+    as_of = datetime(2024, 1, 15, tzinfo=timezone.utc)
+
+    assert loaded.mora_interest_balance_at(as_of) == Money.zero()
+
+
+def test_fine_balance_at_zero_without_late_payments(session):
+    loan = LoanRecordFactory()
+    session.expire_all()
+    loaded = session.get(LoanRecord, loan.id)
+    as_of = datetime(2024, 1, 15, tzinfo=timezone.utc)
+
+    assert loaded.fine_balance_at(as_of) == Money.zero()
+
+
+def test_component_balances_sum_to_balance_at(session):
+    loan = LoanRecordFactory()
+    session.expire_all()
+    loaded = session.get(LoanRecord, loan.id)
+    as_of = datetime(2024, 2, 15, tzinfo=timezone.utc)
+
+    total = loaded.balance_at(as_of)
+    components = (
+        loaded.principal_balance_at(as_of)
+        + loaded.interest_balance_at(as_of)
+        + loaded.mora_interest_balance_at(as_of)
+        + loaded.fine_balance_at(as_of)
+    )
+    assert total == components
+
+
+def test_component_properties_delegate_to_at_methods(session):
+    loan = LoanRecordFactory()
+    session.expire_all()
+    loaded = session.get(LoanRecord, loan.id)
+    now_dt = datetime.now(tz=timezone.utc)
+
+    assert loaded.principal_balance == loaded.principal_balance_at(now_dt)
+    assert loaded.interest_balance == loaded.interest_balance_at(now_dt)
+    assert loaded.mora_interest_balance == loaded.mora_interest_balance_at(now_dt)
+    assert loaded.fine_balance == loaded.fine_balance_at(now_dt)
+
+
+# ===========================================================================
+# Component balance hybrid_methods (SQL side)
+# ===========================================================================
+
+
+def test_principal_balance_at_sql_filter(session):
+    LoanRecordFactory(principal=Money("10000"))
+    LoanRecordFactory(principal=Money("500"))
+
+    results = (
+        session.execute(
+            select(LoanRecord).where(LoanRecord.principal_balance_at(datetime(2024, 1, 15)) > Decimal("5000"))
+        )
+        .scalars()
+        .all()
+    )
+    assert len(results) == 1
+
+
+def test_principal_balance_at_sql_with_settlement(session):
+    loan = LoanRecordFactory()
+    SettlementRecordFactory(
+        loan_id=loan.id,
+        amount=Money("7500"),
+        payment_date=datetime(2024, 2, 1, tzinfo=timezone.utc),
+        remaining_balance=Money("3000"),
+    )
+
+    results = (
+        session.execute(
+            select(LoanRecord).where(LoanRecord.principal_balance_at(datetime(2024, 2, 15)) < Decimal("5000"))
+        )
+        .scalars()
+        .all()
+    )
+    assert len(results) == 1
+
+
+def test_interest_balance_at_sql_positive_before_due(session):
+    LoanRecordFactory()
+
+    results = (
+        session.execute(select(LoanRecord).where(LoanRecord.interest_balance_at(datetime(2024, 1, 15)) > Decimal("0")))
+        .scalars()
+        .all()
+    )
+    assert len(results) == 1
+
+
+def test_fine_balance_at_sql_zero_without_late(session):
+    LoanRecordFactory()
+
+    results = (
+        session.execute(select(LoanRecord).where(LoanRecord.fine_balance_at(datetime(2024, 1, 15)) <= Decimal("0")))
+        .scalars()
+        .all()
+    )
+    assert len(results) == 1
+
+
+def test_principal_balance_sql_order_by(session):
+    loan1 = LoanRecordFactory(principal=Money("5000"))
+    loan2 = LoanRecordFactory(principal=Money("20000"))
+
+    results = session.execute(select(LoanRecord).order_by(LoanRecord.principal_balance.desc())).scalars().all()
+    assert results[0].id == loan2.id
+    assert results[1].id == loan1.id
+
+
+# ===========================================================================
 # Error when settlement_bridge missing
 # ===========================================================================
 

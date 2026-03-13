@@ -128,7 +128,7 @@ A late payment incurs two costs, both handled automatically by `pay_installment`
 
 - `calculate_late_fines(as_of_date)` scans all due dates up to `as_of_date`, applies one fine per missed due date (never duplicated), and stores them in `fines_applied: Dict[datetime, Money]`.
 - `is_payment_late(due_date, as_of_date)` respects `grace_period_days`.
-- `is_paid_off` requires zero principal **and** zero outstanding fines.
+- `is_paid_off` requires zero `current_balance` (principal, interest, mora, and fines all zero).
 - Fine amounts are calculated from the **original** schedule (`get_original_schedule`), not the rebuilt schedule.
 
 ### Mora Interest
@@ -158,7 +158,21 @@ The mora rate is applied independently to the outstanding principal. Regular int
 
 With the same rates, COMPOUND always produces more mora than SIMPLE because it applies the mora rate to a larger base. When `mora_interest_rate` equals `interest_rate` and strategy is `COMPOUND`, the result is identical to a single continuous compounding period — preserving the original behaviour before the mora strategy feature was introduced.
 
-The `accrued_interest` property also respects `mora_interest_rate` and `mora_strategy`. When the borrower is past the next unpaid due date, accrued interest is split internally into regular and mora components using `_compute_accrued_interest`, so `current_balance` reflects the true outstanding amount under the configured mora terms.
+The `interest_balance` and `mora_interest_balance` properties respect `mora_interest_rate` and `mora_strategy`. When the borrower is past the next unpaid due date, `_accrued_interest_components()` splits interest into regular and mora via `_compute_accrued_interest`. `current_balance = principal_balance + interest_balance + mora_interest_balance + fine_balance`.
+
+## Balance Properties
+
+The loan's outstanding amount is decomposed into four canonical components:
+
+| Property | Type | Meaning |
+|---|---|---|
+| `principal_balance` | `Money` | Outstanding principal (original minus principal payments) |
+| `interest_balance` | `Money` | Regular accrued interest since last payment |
+| `mora_interest_balance` | `Money` | Mora accrued interest (days beyond due date) |
+| `fine_balance` | `Money` | Unpaid fines (total applied minus fines paid) |
+| `current_balance` | `Money` | Sum of all four components |
+
+`_accrued_interest_components()` is the shared private helper that returns `(regular, mora)` — both `interest_balance` and `mora_interest_balance` delegate to it.
 
 ### Late Overpayment
 

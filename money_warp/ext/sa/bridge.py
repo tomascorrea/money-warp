@@ -304,14 +304,28 @@ def _fine_rate_decimal_expr(cls, meta_key):
 # ---------------------------------------------------------------------------
 
 
-def _build_sql_balance_expression(cls, as_of, meta):
-    """Build a CTE-based SQL expression for ``balance_at``.
+_COMPONENT_ALL = "all"
+_COMPONENT_PRINCIPAL = "principal"
+_COMPONENT_INTEREST = "interest"
+_COMPONENT_MORA = "mora_interest"
+_COMPONENT_FINES = "fines"
+
+
+def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
+    """Build a CTE-based SQL expression for a balance component.
 
     Uses nested CTEs (``nesting=True``) inside a single scalar subquery
     so that each computation step is named and readable.  Falls back to
-    ``COALESCE(remaining_balance, principal)`` when the interest rate
-    is NULL (defensive guard for data that was stored without full
-    loan parameters).
+    ``COALESCE(remaining_balance, principal)`` for the principal component
+    or ``0`` for other components when the interest rate is NULL.
+
+    Args:
+        cls: The SQLAlchemy model class.
+        as_of: The date expression to compute the balance at.
+        meta: Bridge metadata dict mapping logical names to column names.
+        component: Which balance component to return.  One of
+            ``_COMPONENT_ALL`` (sum, default), ``_COMPONENT_PRINCIPAL``,
+            ``_COMPONENT_INTEREST``, ``_COMPONENT_MORA``, ``_COMPONENT_FINES``.
     """
     info = _resolve_settlement_info(cls, meta["settlements"])
     pr_col = getattr(cls, meta["principal"])
@@ -327,8 +341,6 @@ def _build_sql_balance_expression(cls, as_of, meta):
     mir_repr, mir_ys = _get_rate_col_info(cls, meta["mora_interest_rate"])
 
     # -- CTE 1: loan_state -------------------------------------------------
-    # Uses scalar subqueries so this always returns exactly 1 row even
-    # when there are no settlements before as_of.
     last_balance_sq = (
         select(info["balance_col"])
         .where(info["fk_col"] == info["pk_col"])
@@ -356,7 +368,7 @@ def _build_sql_balance_expression(cls, as_of, meta):
         .cte("loan_state", nesting=True)
     )
 
-    # -- CTE 3: daily_rates ------------------------------------------------
+    # -- CTE 2: daily_rates ------------------------------------------------
     daily_rates = (
         select(
             _daily_rate_expr(ir_col, ir_repr, ir_ys).label("daily_rate"),
@@ -366,7 +378,7 @@ def _build_sql_balance_expression(cls, as_of, meta):
         .cte("daily_rates", nesting=True)
     )
 
-    # -- CTE 4: time_split -------------------------------------------------
+    # -- CTE 3: time_split -------------------------------------------------
     je_next = func.json_each(dd_col).table_valued(column("value", String))
     next_due_sq = (
         select(func.min(je_next.c.value))
@@ -390,7 +402,7 @@ def _build_sql_balance_expression(cls, as_of, meta):
         .cte("time_split", nesting=True)
     )
 
-    # -- CTE 5: day_split --------------------------------------------------
+    # -- CTE 4: day_split --------------------------------------------------
     regular_days_expr = case(
         (time_split.c.next_due.is_(None), time_split.c.total_days),
         (
@@ -412,7 +424,7 @@ def _build_sql_balance_expression(cls, as_of, meta):
         .cte("day_split", nesting=True)
     )
 
-    # -- CTE 6: accrued ----------------------------------------------------
+    # -- CTE 5: accrued ----------------------------------------------------
     reg_interest = loan_state.c.principal_balance * (
         func.pow(1.0 + daily_rates.c.daily_rate, day_split.c.regular_days) - 1.0
     )
@@ -437,7 +449,7 @@ def _build_sql_balance_expression(cls, as_of, meta):
         .cte("accrued", nesting=True)
     )
 
-    # -- CTE 7: late_fines -------------------------------------------------
+    # -- CTE 6: late_fines -------------------------------------------------
     settlement_count = (
         select(func.count())
         .where(info["fk_col"] == info["pk_col"])
@@ -476,29 +488,74 @@ def _build_sql_balance_expression(cls, as_of, meta):
         .cte("late_fines", nesting=True)
     )
 
-    # -- Final SELECT combining all CTEs -----------------------------------
-    full_balance_sq = (
-        select(
-            (
-                loan_state.c.principal_balance
-                + accrued.c.regular_interest
-                + accrued.c.mora_interest
-                + late_fines.c.total_fines
-            ).label("balance")
-        )
+    # -- Final SELECT: pick requested component ----------------------------
+    _component_expr = {
+        _COMPONENT_PRINCIPAL: loan_state.c.principal_balance,
+        _COMPONENT_INTEREST: accrued.c.regular_interest,
+        _COMPONENT_MORA: accrued.c.mora_interest,
+        _COMPONENT_FINES: late_fines.c.total_fines,
+        _COMPONENT_ALL: (
+            loan_state.c.principal_balance
+            + accrued.c.regular_interest
+            + accrued.c.mora_interest
+            + late_fines.c.total_fines
+        ),
+    }
+
+    target_expr = _component_expr[component]
+
+    full_sq = (
+        select(target_expr.label("result"))
         .select_from(loan_state.join(accrued, literal(True)).join(late_fines, literal(True)))
         .correlate(cls)
         .scalar_subquery()
     )
 
-    # -- Simple fallback (defensive: rate is NULL) -------------------------
-    simple_balance = func.coalesce(last_balance_sq, pr_col)
+    # -- Fallback when rate is NULL ----------------------------------------
+    simple_fallback = (
+        func.coalesce(last_balance_sq, pr_col) if component in (_COMPONENT_ALL, _COMPONENT_PRINCIPAL) else literal(0.0)
+    )
 
     rate_present = _has_rate(ir_col, ir_repr)
     return case(
-        (rate_present.is_(None), simple_balance),
-        else_=full_balance_sq,
+        (rate_present.is_(None), simple_fallback),
+        else_=full_sq,
     )
+
+
+# ---------------------------------------------------------------------------
+# Hybrid method/property factory
+# ---------------------------------------------------------------------------
+
+
+def _attach_balance_hybrid(cls, meta, name, loan_attr, component):
+    """Attach a ``{name}_at`` hybrid_method and ``{name}`` hybrid_property to *cls*.
+
+    Python side: reconstruct Loan via Warp, read *loan_attr*.
+    SQL side: delegate to ``_build_sql_balance_expression`` with *component*.
+    """
+
+    @hybrid_method
+    def _at_method(self, as_of):
+        loan = self._load_money_warp_loan()
+        loan.fines_applied = {}
+        with Warp(loan, as_of) as warped:
+            return getattr(warped, loan_attr)
+
+    @_at_method.expression
+    def _at_method(cls, as_of):
+        return _build_sql_balance_expression(cls, as_of, meta, component)
+
+    @hybrid_property
+    def _prop(self):
+        return getattr(self, f"{name}_at")(now())
+
+    @_prop.expression
+    def _prop(cls):
+        return getattr(cls, f"{name}_at")(func.now())
+
+    setattr(cls, f"{name}_at", _at_method)
+    setattr(cls, name, _prop)
 
 
 # ---------------------------------------------------------------------------
@@ -517,26 +574,29 @@ def loan_bridge(
     mora_interest_rate: str = "mora_interest_rate",
     mora_strategy: str = "mora_strategy",
 ):
-    """Add ``balance_at(date)``, ``balance``, and ``_load_money_warp_loan``
-    to a loan model.
+    """Add balance hybrid methods/properties to a loan model.
+
+    Adds the following to the decorated class:
 
     ``_load_money_warp_loan()``
         Reconstructs a :class:`~money_warp.loan.Loan` from the model's
-        stored fields and replays settlements (warping the loan's time
-        context to each payment date for accurate replay).  Raises
-        ``ValueError`` if any required field is ``None``.
+        stored fields and replays settlements.
 
-    ``balance_at(date)``
-        Uses ``_load_money_warp_loan()`` + :class:`~money_warp.Warp` to
-        return the balance at a specific date.  SQL side uses a
-        CTE-based expression that approximates the same computation.
+    **Total balance:**
 
-    ``balance``
-        Convenience property equivalent to ``balance_at(now())``.
+    - ``balance_at(date)`` -- total outstanding balance at *date*.
+    - ``balance`` -- convenience property for ``balance_at(now())``.
 
-    All parameter names default to conventional column names.  If your
-    model follows the naming convention, ``@loan_bridge()`` with no
-    arguments works.
+    **Component balances (each has an ``_at(date)`` method and a property):**
+
+    - ``principal_balance_at`` / ``principal_balance``
+    - ``interest_balance_at`` / ``interest_balance``
+    - ``mora_interest_balance_at`` / ``mora_interest_balance``
+    - ``fine_balance_at`` / ``fine_balance``
+
+    On the Python side each method reconstructs the Loan via Warp and
+    reads the corresponding property.  On the SQL side each delegates to
+    ``_build_sql_balance_expression`` with the matching component.
 
     The settlement model **must** be decorated with
     :func:`settlement_bridge`.
@@ -566,29 +626,21 @@ def loan_bridge(
             "mora_strategy": mora_strategy,
         }
 
-        @hybrid_method
-        def balance_at(self, as_of):
-            loan = self._load_money_warp_loan()
-            loan.fines_applied = {}
-            with Warp(loan, as_of) as warped:
-                return warped.current_balance
+        # -- total balance (special: reads current_balance) ----------------
+        _attach_balance_hybrid(cls, _meta, "balance", "current_balance", _COMPONENT_ALL)
 
-        @balance_at.expression
-        def balance_at(cls, as_of):
-            return _build_sql_balance_expression(cls, as_of, _meta)
-
-        @hybrid_property
-        def balance(self):
-            return self.balance_at(now())
-
-        @balance.expression
-        def balance(cls):
-            return cls.balance_at(func.now())
+        # -- component balances --------------------------------------------
+        _COMPONENTS = [
+            ("principal_balance", _COMPONENT_PRINCIPAL),
+            ("interest_balance", _COMPONENT_INTEREST),
+            ("mora_interest_balance", _COMPONENT_MORA),
+            ("fine_balance", _COMPONENT_FINES),
+        ]
+        for name, comp in _COMPONENTS:
+            _attach_balance_hybrid(cls, _meta, name, name, comp)
 
         cls._money_warp_bridge_meta = _meta
         cls._load_money_warp_loan = _load_money_warp_loan_impl
-        cls.balance_at = balance_at
-        cls.balance = balance
         return cls
 
     return decorator

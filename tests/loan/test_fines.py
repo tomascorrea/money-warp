@@ -72,7 +72,7 @@ def test_loan_initial_fine_properties():
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     assert loan.total_fines == Money.zero()
-    assert loan.outstanding_fines == Money.zero()
+    assert loan.fine_balance == Money.zero()
     assert len(loan.fines_applied) == 0
 
 
@@ -228,7 +228,7 @@ def test_loan_record_payment_allocates_to_fines_first():
 
     # Apply fines first
     loan.calculate_late_fines(datetime(2024, 2, 5, tzinfo=timezone.utc))
-    initial_fines = loan.outstanding_fines
+    initial_fines = loan.fine_balance
 
     # Make payment smaller than fines
     payment_amount = Money(initial_fines.raw_amount / 2)
@@ -255,7 +255,7 @@ def test_loan_record_payment_allocates_fines_then_principal():
 
     # Apply fines
     loan.calculate_late_fines(datetime(2024, 2, 5, tzinfo=timezone.utc))
-    total_fines = loan.outstanding_fines
+    total_fines = loan.fine_balance
 
     # Make payment that covers fines + some principal
     payment_amount = total_fines + Money("200")
@@ -271,7 +271,7 @@ def test_loan_record_payment_allocates_fines_then_principal():
     assert principal_payments[0].amount == Money("200")
 
 
-def test_loan_current_balance_includes_outstanding_fines():
+def test_loan_current_balance_includes_fine_balance():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
@@ -285,12 +285,11 @@ def test_loan_current_balance_includes_outstanding_fines():
     )
     initial_balance = loan.current_balance
 
-    # Apply fines
     loan.calculate_late_fines(datetime(2024, 2, 5, tzinfo=timezone.utc))
     balance_with_fines = loan.current_balance
 
     assert balance_with_fines > initial_balance
-    assert balance_with_fines == initial_balance + loan.outstanding_fines
+    assert balance_with_fines == initial_balance + loan.fine_balance
 
 
 def test_loan_is_paid_off_considers_fines():
@@ -314,7 +313,7 @@ def test_loan_is_paid_off_considers_fines():
     loan.calculate_late_fines(datetime(2024, 2, 5, tzinfo=timezone.utc))
 
     # Should have fines and still not be paid off
-    assert loan.outstanding_fines > Money.zero()
+    assert loan.fine_balance > Money.zero()
     assert not loan.is_paid_off  # Should not be paid off due to outstanding balance and fines
 
 
