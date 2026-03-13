@@ -1,7 +1,15 @@
 """MoneyWarp - Bend time. Model cash."""
 
 from money_warp.billing_cycle import BaseBillingCycle, MonthlyBillingCycle
-from money_warp.cash_flow import CashFlow, CashFlowEntry, CashFlowItem, CashFlowQuery
+from money_warp.cash_flow import (
+    CashFlow,
+    CashFlowEntry,
+    CashFlowItem,
+    CashFlowQuery,
+    CashFlowType,
+    ExpectedCashFlowEntry,
+    HappenedCashFlowEntry,
+)
 from money_warp.credit_card import CreditCard, Statement
 from money_warp.date_utils import (
     generate_annual_dates,
@@ -61,6 +69,9 @@ __all__ = [
     "CashFlowEntry",
     "CashFlowItem",
     "CashFlowQuery",
+    "CashFlowType",
+    "ExpectedCashFlowEntry",
+    "HappenedCashFlowEntry",
     "AnticipationResult",
     "Loan",
     "MoraStrategy",

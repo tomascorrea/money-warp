@@ -110,8 +110,10 @@ print(f"Days since last payment: {loan.days_since_last_payment()}")
 
 # Compare expected vs actual cash flow
 actual_cf = loan.get_actual_cash_flow()
-actual_payments = actual_cf.query.filter_by(category__in=["actual_interest", "actual_principal"])
-print(f"Total actual payments so far: {actual_payments.sum()}")
+actual_payments = actual_cf.query.happened.filter_by(
+    predicate=lambda e: e.category in ("interest", "principal")
+)
+print(f"Total actual payments so far: {actual_payments.sum_amounts()}")
 ```
 
 ## Cash Flow Analysis

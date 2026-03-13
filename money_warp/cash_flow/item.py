@@ -7,7 +7,12 @@ from typing import List, Optional, Tuple, Union
 from ..money import Money
 from ..time_context import TimeContext
 from ..tz import default_time_source, tz_aware
-from .entry import CashFlowEntry
+from .entry import (
+    CashFlowEntry,
+    CashFlowType,
+    ExpectedCashFlowEntry,
+    HappenedCashFlowEntry,
+)
 
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -34,6 +39,7 @@ class CashFlowItem:
         description: Optional[str] = None,
         category: Optional[str] = None,
         *,
+        kind: CashFlowType = CashFlowType.HAPPENED,
         entry: Optional[CashFlowEntry] = None,
         time_context: Optional[TimeContext] = None,
         effective_date: Optional["datetime"] = None,
@@ -44,7 +50,8 @@ class CashFlowItem:
             initial = amount
         elif amount is not _SENTINEL and datetime is not None:
             money = amount if isinstance(amount, Money) else Money(amount)
-            initial = CashFlowEntry(
+            entry_cls = ExpectedCashFlowEntry if kind is CashFlowType.EXPECTED else HappenedCashFlowEntry
+            initial = entry_cls(
                 amount=money,
                 datetime=datetime,
                 description=description,
@@ -108,6 +115,11 @@ class CashFlowItem:
         entry = self._require_resolved()
         return entry.category
 
+    @property
+    def kind(self) -> CashFlowType:
+        entry = self._require_resolved()
+        return entry.kind
+
     # ------------------------------------------------------------------
     # Delegated helpers
     # ------------------------------------------------------------------
@@ -137,7 +149,8 @@ class CashFlowItem:
             return "CashFlowItem(deleted)"
         return (
             f"CashFlowItem(amount={entry.amount!r}, datetime={entry.datetime!r}, "
-            f"description={entry.description!r}, category={entry.category!r})"
+            f"description={entry.description!r}, category={entry.category!r}, "
+            f"kind={entry.kind!r})"
         )
 
     def __eq__(self, other: object) -> bool:

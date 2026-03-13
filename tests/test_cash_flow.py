@@ -5,7 +5,8 @@ from decimal import Decimal
 
 import pytest
 
-from money_warp import CashFlow, CashFlowItem, CashFlowQuery, Money
+from money_warp import CashFlow, CashFlowItem, CashFlowQuery, CashFlowType, Money
+from money_warp.cash_flow.entry import CashFlowEntry, ExpectedCashFlowEntry, HappenedCashFlowEntry
 
 
 # CashFlowItem Creation Tests
@@ -116,7 +117,8 @@ def test_cash_flow_item_repr_representation():
     item = CashFlowItem(Money("100.50"), datetime(2024, 1, 15, 10, 30, tzinfo=timezone.utc), "Payment", "loan")
     expected = (
         "CashFlowItem(amount=Money(100.50), datetime=datetime.datetime(2024, 1, 15, 10, 30,"
-        " tzinfo=datetime.timezone.utc), description='Payment', category='loan')"
+        " tzinfo=datetime.timezone.utc), description='Payment', category='loan',"
+        " kind=<CashFlowType.HAPPENED: 'happened'>)"
     )
     assert repr(item) == expected
 
@@ -727,3 +729,150 @@ def test_cash_flow_query_comparison_operators(filter_kwargs, expected_count):
 
     filtered_items = cf.query.filter_by(**filter_kwargs).all()
     assert len(filtered_items) == expected_count
+
+
+# CashFlowEntry Abstract Base / Subclass Tests
+
+
+def test_cash_flow_entry_is_abstract():
+    with pytest.raises(TypeError):
+        CashFlowEntry(
+            amount=Money("100.00"),
+            datetime=datetime(2024, 1, 15, 10, 0, tzinfo=timezone.utc),
+        )
+
+
+def test_expected_entry_kind():
+    entry = ExpectedCashFlowEntry(
+        amount=Money("100.00"),
+        datetime=datetime(2024, 1, 15, 10, 0, tzinfo=timezone.utc),
+    )
+    assert entry.kind == CashFlowType.EXPECTED
+
+
+def test_happened_entry_kind():
+    entry = HappenedCashFlowEntry(
+        amount=Money("100.00"),
+        datetime=datetime(2024, 1, 15, 10, 0, tzinfo=timezone.utc),
+    )
+    assert entry.kind == CashFlowType.HAPPENED
+
+
+def test_expected_and_happened_entries_not_equal():
+    dt = datetime(2024, 1, 15, 10, 0, tzinfo=timezone.utc)
+    expected = ExpectedCashFlowEntry(amount=Money("100.00"), datetime=dt)
+    happened = HappenedCashFlowEntry(amount=Money("100.00"), datetime=dt)
+    assert expected != happened
+
+
+def test_same_subclass_entries_equal():
+    dt = datetime(2024, 1, 15, 10, 0, tzinfo=timezone.utc)
+    entry1 = ExpectedCashFlowEntry(amount=Money("100.00"), datetime=dt, category="interest")
+    entry2 = ExpectedCashFlowEntry(amount=Money("100.00"), datetime=dt, category="interest")
+    assert entry1 == entry2
+
+
+# CashFlowItem Kind Tests
+
+
+def test_cash_flow_item_default_kind_is_happened():
+    item = CashFlowItem(Money("100.00"), datetime(2024, 1, 15, 10, 0, tzinfo=timezone.utc))
+    assert item.kind == CashFlowType.HAPPENED
+    assert isinstance(item.resolve(), HappenedCashFlowEntry)
+
+
+def test_cash_flow_item_expected_kind():
+    item = CashFlowItem(
+        Money("100.00"),
+        datetime(2024, 1, 15, 10, 0, tzinfo=timezone.utc),
+        kind=CashFlowType.EXPECTED,
+    )
+    assert item.kind == CashFlowType.EXPECTED
+    assert isinstance(item.resolve(), ExpectedCashFlowEntry)
+
+
+def test_cash_flow_item_from_entry_preserves_kind():
+    entry = ExpectedCashFlowEntry(
+        amount=Money("100.00"),
+        datetime=datetime(2024, 1, 15, 10, 0, tzinfo=timezone.utc),
+    )
+    item = CashFlowItem(entry=entry)
+    assert item.kind == CashFlowType.EXPECTED
+
+
+def test_cash_flow_items_different_kinds_not_equal():
+    dt = datetime(2024, 1, 15, 10, 0, tzinfo=timezone.utc)
+    happened = CashFlowItem(Money("100.00"), dt)
+    expected = CashFlowItem(Money("100.00"), dt, kind=CashFlowType.EXPECTED)
+    assert happened != expected
+
+
+# CashFlow Kind Filtering Tests
+
+
+def test_cash_flow_filter_by_kind():
+    dt = datetime(2024, 1, 15, 10, 0, tzinfo=timezone.utc)
+    cf = CashFlow(
+        [
+            CashFlowItem(Money("1000.00"), dt, "Disbursement", "disbursement", kind=CashFlowType.EXPECTED),
+            CashFlowItem(Money("-100.00"), dt, "Interest", "interest", kind=CashFlowType.EXPECTED),
+            CashFlowItem(Money("-95.00"), dt, "Interest paid", "interest"),
+        ]
+    )
+    expected_cf = cf.filter_by_kind(CashFlowType.EXPECTED)
+    happened_cf = cf.filter_by_kind(CashFlowType.HAPPENED)
+
+    assert len(expected_cf) == 2
+    assert len(happened_cf) == 1
+
+
+def test_cash_flow_query_filter_by_kind():
+    dt = datetime(2024, 1, 15, 10, 0, tzinfo=timezone.utc)
+    cf = CashFlow(
+        [
+            CashFlowItem(Money("1000.00"), dt, "Disbursement", "disbursement", kind=CashFlowType.EXPECTED),
+            CashFlowItem(Money("-100.00"), dt, "Interest", "interest", kind=CashFlowType.EXPECTED),
+            CashFlowItem(Money("-95.00"), dt, "Interest paid", "interest"),
+        ]
+    )
+    expected_items = cf.query.filter_by(kind=CashFlowType.EXPECTED).all()
+    assert len(expected_items) == 2
+    assert all(item.kind == CashFlowType.EXPECTED for item in expected_items)
+
+
+def test_cash_flow_query_expected_shortcut():
+    dt = datetime(2024, 1, 15, 10, 0, tzinfo=timezone.utc)
+    cf = CashFlow(
+        [
+            CashFlowItem(Money("1000.00"), dt, kind=CashFlowType.EXPECTED),
+            CashFlowItem(Money("-100.00"), dt),
+        ]
+    )
+    assert cf.query.expected.count() == 1
+    assert cf.query.happened.count() == 1
+
+
+def test_cash_flow_query_kind_combined_with_category():
+    dt = datetime(2024, 1, 15, 10, 0, tzinfo=timezone.utc)
+    cf = CashFlow(
+        [
+            CashFlowItem(Money("-100.00"), dt, category="interest", kind=CashFlowType.EXPECTED),
+            CashFlowItem(Money("-95.00"), dt, category="interest"),
+            CashFlowItem(Money("-50.00"), dt, category="principal", kind=CashFlowType.EXPECTED),
+        ]
+    )
+    expected_interest = cf.query.expected.filter_by(category="interest").sum_amounts()
+    assert expected_interest == Money("-100.00")
+
+
+def test_cash_flow_add_with_kind():
+    cf = CashFlow.empty()
+    cf.add(
+        Money("1000.00"),
+        datetime(2024, 1, 15, 10, 0, tzinfo=timezone.utc),
+        "Disbursement",
+        "disbursement",
+        kind=CashFlowType.EXPECTED,
+    )
+    assert cf[0].kind == CashFlowType.EXPECTED
+    assert cf[0].category == "disbursement"

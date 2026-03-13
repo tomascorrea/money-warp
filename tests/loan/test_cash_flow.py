@@ -14,7 +14,7 @@ def test_loan_generate_expected_cash_flow_includes_disbursement():
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     cash_flow = loan.generate_expected_cash_flow()
 
-    disbursement_items = cash_flow.query.filter_by(category="expected_disbursement").all()
+    disbursement_items = cash_flow.query.filter_by(category="disbursement").all()
     assert len(disbursement_items) == 1
     assert disbursement_items[0].amount == principal
 
@@ -27,8 +27,8 @@ def test_loan_generate_expected_cash_flow_has_payment_breakdown():
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     cash_flow = loan.generate_expected_cash_flow()
 
-    interest_items = cash_flow.query.filter_by(category="expected_interest").all()
-    principal_items = cash_flow.query.filter_by(category="expected_principal").all()
+    interest_items = cash_flow.query.filter_by(category="interest").all()
+    principal_items = cash_flow.query.filter_by(category="principal").all()
 
     assert len(interest_items) == 1
     assert len(principal_items) == 1
@@ -49,8 +49,8 @@ def test_loan_generate_expected_cash_flow_multiple_payments():
     # Should have 1 disbursement + 3 interest + 3 principal = 7 items
     assert len(cash_flow) == 7
 
-    interest_items = cash_flow.query.filter_by(category="expected_interest").all()
-    principal_items = cash_flow.query.filter_by(category="expected_principal").all()
+    interest_items = cash_flow.query.filter_by(category="interest").all()
+    principal_items = cash_flow.query.filter_by(category="principal").all()
     assert len(interest_items) == 3
     assert len(principal_items) == 3
 
@@ -76,12 +76,12 @@ def test_loan_get_actual_cash_flow_empty_initially():
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     actual_cf = loan.get_actual_cash_flow()
 
-    # Should have disbursement + expected payments, but no actual payments yet
-    disbursement_items = actual_cf.query.filter_by(category="expected_disbursement").all()
-    actual_payment_items = actual_cf.query.filter_by(category="actual_interest").all()
+    # Should have disbursement + expected payments, but no actual (happened) payments yet
+    disbursement_items = actual_cf.query.filter_by(category="disbursement").all()
+    happened_interest = actual_cf.query.happened.filter_by(category="interest").all()
 
     assert len(disbursement_items) == 1
-    assert len(actual_payment_items) == 0
+    assert len(happened_interest) == 0
 
 
 def test_loan_get_actual_cash_flow_includes_payments():
@@ -94,12 +94,12 @@ def test_loan_get_actual_cash_flow_includes_payments():
 
     actual_cf = loan.get_actual_cash_flow()
 
-    # Should have expected payments + actual payments
-    actual_interest_items = actual_cf.query.filter_by(category="actual_interest").all()
-    actual_principal_items = actual_cf.query.filter_by(category="actual_principal").all()
+    # Should have expected payments + actual (happened) payments
+    happened_interest = actual_cf.query.happened.filter_by(category="interest").all()
+    happened_principal = actual_cf.query.happened.filter_by(category="principal").all()
 
-    assert len(actual_interest_items) >= 1
-    assert len(actual_principal_items) >= 1
+    assert len(happened_interest) >= 1
+    assert len(happened_principal) >= 1
 
 
 def test_loan_get_actual_cash_flow_includes_fines():
@@ -122,9 +122,9 @@ def test_loan_get_actual_cash_flow_includes_fines():
 
     actual_cf = loan.get_actual_cash_flow()
 
-    # Check for fine application and fine payment items
-    fine_applied_items = actual_cf.query.filter_by(category="fine_applied").all()
-    fine_payment_items = actual_cf.query.filter_by(category="actual_fine").all()
+    fine_items = actual_cf.query.filter_by(category="fine").all()
+    fine_applied_items = [i for i in fine_items if i.is_inflow()]
+    fine_payment_items = [i for i in fine_items if i.is_outflow()]
 
     assert len(fine_applied_items) == 1
     assert len(fine_payment_items) >= 1
