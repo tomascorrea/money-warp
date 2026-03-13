@@ -9,7 +9,7 @@ from money_warp import InterestRate, Loan, Money, MoraStrategy, Warp
 
 
 def test_late_payment_produces_separate_mora_interest_item():
-    """Paying after the due date should produce both actual_interest and actual_mora_interest items."""
+    """Paying after the due date should produce both interest and mora_interest items."""
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
@@ -19,8 +19,8 @@ def test_late_payment_produces_separate_mora_interest_item():
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("10500.00"))
-        interest_items = [p for p in warped._all_payments if p.category == "actual_interest"]
-        mora_items = [p for p in warped._all_payments if p.category == "actual_mora_interest"]
+        interest_items = [p for p in warped._all_payments if p.category == "interest"]
+        mora_items = [p for p in warped._all_payments if p.category == "mora_interest"]
 
     assert len(interest_items) == 1
     assert len(mora_items) == 1
@@ -42,8 +42,8 @@ def test_mora_interest_equals_difference_between_total_and_regular():
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("10500.00"))
-        interest_items = [p for p in warped._all_payments if p.category == "actual_interest"]
-        mora_items = [p for p in warped._all_payments if p.category == "actual_mora_interest"]
+        interest_items = [p for p in warped._all_payments if p.category == "interest"]
+        mora_items = [p for p in warped._all_payments if p.category == "mora_interest"]
 
     assert interest_items[0].amount == Money(regular_interest)
     assert mora_items[0].amount == Money(expected_mora)
@@ -62,7 +62,7 @@ def test_regular_interest_matches_scheduled_interest():
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("10500.00"))
-        interest_items = [p for p in warped._all_payments if p.category == "actual_interest"]
+        interest_items = [p for p in warped._all_payments if p.category == "interest"]
 
     assert interest_items[0].amount == scheduled_interest
 
@@ -87,14 +87,14 @@ def test_total_interest_on_late_payment_matches_manual_calculation(late_days):
 
     with Warp(loan, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
-        all_interest = [p for p in warped._all_payments if p.category in ("actual_interest", "actual_mora_interest")]
+        all_interest = [p for p in warped._all_payments if p.category in ("interest", "mora_interest")]
         total_interest = sum((p.amount for p in all_interest), Money.zero())
 
     assert total_interest == Money(expected_total)
 
 
 def test_on_time_payment_produces_no_mora_interest_item():
-    """On-time payment should only produce actual_interest, no mora."""
+    """On-time payment should only produce interest, no mora."""
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
@@ -104,8 +104,8 @@ def test_on_time_payment_produces_no_mora_interest_item():
 
     with Warp(loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("10500.00"))
-        interest_items = [p for p in warped._all_payments if p.category == "actual_interest"]
-        mora_items = [p for p in warped._all_payments if p.category == "actual_mora_interest"]
+        interest_items = [p for p in warped._all_payments if p.category == "interest"]
+        mora_items = [p for p in warped._all_payments if p.category == "mora_interest"]
 
     assert len(interest_items) == 1
     assert len(mora_items) == 0
@@ -122,7 +122,7 @@ def test_early_payment_produces_no_mora_interest_item():
 
     with Warp(loan, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
         warped.anticipate_payment(Money("5000.00"))
-        mora_items = [p for p in warped._all_payments if p.category == "actual_mora_interest"]
+        mora_items = [p for p in warped._all_payments if p.category == "mora_interest"]
 
     assert len(mora_items) == 0
 
@@ -142,7 +142,7 @@ def test_on_time_interest_unchanged():
 
     with Warp(loan, due_date) as warped:
         warped.pay_installment(Money("10500.00"))
-        interest_items = [p for p in warped._all_payments if p.category == "actual_interest"]
+        interest_items = [p for p in warped._all_payments if p.category == "interest"]
 
     assert interest_items[0].amount == Money(expected_interest)
 
@@ -196,8 +196,8 @@ def test_on_time_payment_unaffected_by_custom_mora_rate():
 
     with Warp(loan, due_date) as warped:
         warped.pay_installment(Money("10500.00"))
-        interest_items = [p for p in warped._all_payments if p.category == "actual_interest"]
-        mora_items = [p for p in warped._all_payments if p.category == "actual_mora_interest"]
+        interest_items = [p for p in warped._all_payments if p.category == "interest"]
+        mora_items = [p for p in warped._all_payments if p.category == "mora_interest"]
 
     assert interest_items[0].amount == Money(expected_interest)
     assert len(mora_items) == 0
@@ -233,7 +233,7 @@ def test_mora_with_custom_rate_compound_strategy():
 
     with Warp(loan, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
-        mora_items = [p for p in warped._all_payments if p.category == "actual_mora_interest"]
+        mora_items = [p for p in warped._all_payments if p.category == "mora_interest"]
 
     assert mora_items[0].amount == Money(expected_mora)
 
@@ -262,7 +262,7 @@ def test_mora_with_custom_rate_simple_strategy():
 
     with Warp(loan, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
-        mora_items = [p for p in warped._all_payments if p.category == "actual_mora_interest"]
+        mora_items = [p for p in warped._all_payments if p.category == "mora_interest"]
 
     assert mora_items[0].amount == Money(expected_mora)
 
@@ -295,11 +295,11 @@ def test_simple_vs_compound_mora_compound_produces_more():
 
     with Warp(loan_compound, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
-        mora_compound = [p for p in warped._all_payments if p.category == "actual_mora_interest"][0].amount
+        mora_compound = [p for p in warped._all_payments if p.category == "mora_interest"][0].amount
 
     with Warp(loan_simple, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
-        mora_simple = [p for p in warped._all_payments if p.category == "actual_mora_interest"][0].amount
+        mora_simple = [p for p in warped._all_payments if p.category == "mora_interest"][0].amount
 
     assert mora_compound > mora_simple
 
@@ -326,7 +326,7 @@ def test_regular_interest_unchanged_regardless_of_mora_rate():
 
     with Warp(loan, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
-        interest_items = [p for p in warped._all_payments if p.category == "actual_interest"]
+        interest_items = [p for p in warped._all_payments if p.category == "interest"]
 
     assert interest_items[0].amount == Money(expected_regular)
 
@@ -377,7 +377,7 @@ def test_total_interest_with_custom_mora_rate_matches_manual(mora_rate_str, stra
 
     with Warp(loan, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
-        all_interest = [p for p in warped._all_payments if p.category in ("actual_interest", "actual_mora_interest")]
+        all_interest = [p for p in warped._all_payments if p.category in ("interest", "mora_interest")]
         total_interest = sum((p.amount for p in all_interest), Money.zero())
 
     assert total_interest == Money(expected_total)

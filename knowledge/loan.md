@@ -135,8 +135,8 @@ A late payment incurs two costs, both handled automatically by `pay_installment`
 
 When `pay_installment` is called after the due date, `interest_date = max(self.now(), next_due_date)` causes interest to accrue beyond the due date up to the actual payment date. The interest is split into two separate `CashFlowItem` entries:
 
-- **Regular interest** (`"actual_interest"`) — accrued from last payment to the due date using `interest_rate`.
-- **Mora interest** (`"actual_mora_interest"`) — accrued from the due date to the payment date using `mora_interest_rate`.
+- **Regular interest** (`"interest"`, kind=HAPPENED) — accrued from last payment to the due date using `interest_rate`.
+- **Mora interest** (`"mora_interest"`, kind=HAPPENED) — accrued from the due date to the payment date using `mora_interest_rate`.
 
 On-time and early payments produce only a regular interest item (no mora). Regular interest is always computed with the base `interest_rate`; mora interest uses `mora_interest_rate` (which defaults to `interest_rate` when not provided).
 
@@ -182,23 +182,32 @@ Example: $10k loan, 3 monthly installments at 6%, borrower misses installment 1 
 
 ## Cash Flow Generation
 
-- `generate_expected_cash_flow()` — disbursement (positive, category `"expected_disbursement"`) plus original scheduled payments split into interest (`"expected_interest"`) and principal (`"expected_principal"`) items (negative). Uses `get_original_schedule()`.
-- `get_actual_cash_flow()` — expected items plus recorded payments (`"actual_interest"`, `"actual_mora_interest"`, `"actual_principal"`, `"actual_fine"`) and fine-application events (`"fine_applied"`).
+- `generate_expected_cash_flow()` — disbursement (positive, category `"disbursement"`, kind=EXPECTED) plus original scheduled payments split into interest (`"interest"`) and principal (`"principal"`) items (negative, kind=EXPECTED). Uses `get_original_schedule()`.
+- `get_actual_cash_flow()` — expected items plus recorded payments (kind=HAPPENED) and fine-application events.
+
+### CashFlowEntry Hierarchy
+
+`CashFlowEntry` is an abstract base class with two concrete subclasses:
+
+- **`ExpectedCashFlowEntry`** — projected items (e.g. loan schedule). `kind` property returns `CashFlowType.EXPECTED`.
+- **`HappenedCashFlowEntry`** — recorded facts (e.g. actual payments). `kind` property returns `CashFlowType.HAPPENED`.
+
+The `CashFlowItem` constructor accepts `kind=CashFlowType.EXPECTED` or `kind=CashFlowType.HAPPENED` (default) and instantiates the correct subclass. Filtering works via `entry.kind == CashFlowType.EXPECTED`, `isinstance(entry, ExpectedCashFlowEntry)`, or the query shortcuts `cf.query.expected` / `cf.query.happened`.
 
 ### CashFlowItem Categories
 
-All categories are explicitly prefixed to distinguish expected schedule items from actual recorded payments:
+Categories are clean domain names. The expected-vs-happened distinction is structural (subclass type), not encoded in the category string:
 
-| Category | Origin | Meaning |
+| Category | Kind | Meaning |
 |---|---|---|
-| `"expected_disbursement"` | Expected | Loan disbursement |
-| `"expected_interest"` | Expected | Scheduled interest payment |
-| `"expected_principal"` | Expected | Scheduled principal payment |
-| `"actual_interest"` | Actual | Regular interest paid (up to due date) |
-| `"actual_mora_interest"` | Actual | Mora interest paid (beyond due date) |
-| `"actual_principal"` | Actual | Principal paid |
-| `"actual_fine"` | Actual | Fine paid |
-| `"fine_applied"` | Event | Fine applied to loan (increases amount owed) |
+| `"disbursement"` | EXPECTED | Loan disbursement |
+| `"tax"` | EXPECTED | Tax deducted at disbursement |
+| `"interest"` | EXPECTED | Scheduled interest payment |
+| `"principal"` | EXPECTED | Scheduled principal payment |
+| `"interest"` | HAPPENED | Regular interest paid (up to due date) |
+| `"mora_interest"` | HAPPENED | Mora interest paid (beyond due date) |
+| `"principal"` | HAPPENED | Principal paid |
+| `"fine"` | HAPPENED | Fine paid or fine applied (distinguished by sign) |
 
 ## Installments and Settlements
 

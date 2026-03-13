@@ -115,7 +115,7 @@ for name, result in loan.tax_amounts.items():
     print(f"{name}: {result.total}")
 ```
 
-When taxes are present, `generate_expected_cash_flow()` includes an `"expected_tax"` item at the disbursement date, so IRR and present value calculations automatically account for the tax.
+When taxes are present, `generate_expected_cash_flow()` includes a `"tax"` item (kind=EXPECTED) at the disbursement date, so IRR and present value calculations automatically account for the tax.
 
 ## Grossup: Financed Tax
 
@@ -214,4 +214,4 @@ When taxes are attached to a loan, the expected cash flow includes:
 
 | Category | Meaning |
 |---|---|
-| `"expected_tax"` | Tax deducted at disbursement (negative from borrower's perspective) |
+| `"tax"` (kind=EXPECTED) | Tax deducted at disbursement (negative from borrower's perspective) |

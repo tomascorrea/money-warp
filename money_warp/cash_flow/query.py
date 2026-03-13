@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator, List, Optional, Union
 
 from ..money import Money
 from ..tz import ensure_aware
-from .entry import CashFlowEntry
+from .entry import CashFlowEntry, CashFlowType
 from .item import CashFlowItem
 
 if TYPE_CHECKING:
@@ -33,6 +33,7 @@ class CashFlowQuery:
         """Filter items using keyword arguments or a predicate function.
 
         Keyword arguments:
+        - kind: Filter by CashFlowType (EXPECTED or HAPPENED)
         - category: Filter by category
         - amount / amount__gt / amount__gte / amount__lt / amount__lte
         - datetime / datetime__gt / datetime__gte / datetime__lt / datetime__lte
@@ -48,7 +49,9 @@ class CashFlowQuery:
         return CashFlowQuery(filtered)
 
     def _apply_single_filter(self, items: List[FlowElement], key: str, value: Any) -> List[FlowElement]:
-        if key == "category":
+        if key == "kind":
+            return [i for i in items if i.kind == value]
+        elif key == "category":
             return [i for i in items if i.category == value]
         elif key == "description":
             return [i for i in items if i.description == value]
@@ -63,6 +66,16 @@ class CashFlowQuery:
                 return [i for i in items if i.is_outflow()]
         else:
             raise ValueError(f"Unknown filter argument: {key}")
+
+    @property
+    def expected(self) -> "CashFlowQuery":
+        """Shortcut for ``filter_by(kind=CashFlowType.EXPECTED)``."""
+        return self.filter_by(kind=CashFlowType.EXPECTED)
+
+    @property
+    def happened(self) -> "CashFlowQuery":
+        """Shortcut for ``filter_by(kind=CashFlowType.HAPPENED)``."""
+        return self.filter_by(kind=CashFlowType.HAPPENED)
 
     def _apply_amount_filter(self, items: List[FlowElement], key: str, value: Any) -> List[FlowElement]:
         value_money = value if isinstance(value, Money) else Money(value)

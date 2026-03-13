@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Dict, List, Optional, Type
 
-from ..cash_flow import CashFlow, CashFlowItem
+from ..cash_flow import CashFlow, CashFlowItem, CashFlowType
 from ..interest_rate import InterestRate
 from ..money import Money
 from ..rate import Rate
@@ -166,7 +166,7 @@ class Loan:
         # Apply all principal payments made up to current time (respecting warped time)
         current_time = self.now()
         for payment in self._all_payments:
-            if payment.datetime <= current_time and payment.category in ("actual_principal", "expected_principal"):
+            if payment.datetime <= current_time and payment.category == "principal":
                 balance = balance - payment.amount
 
         # Ensure balance doesn't go negative
@@ -242,7 +242,7 @@ class Loan:
 
         fines_paid = Money.zero()
         for payment in self._actual_payments:
-            if payment.category == "actual_fine":
+            if payment.category == "fine":
                 fines_paid = fines_paid + payment.amount
 
         outstanding = total_fines - fines_paid
@@ -400,7 +400,7 @@ class Loan:
             for payment in self._all_payments
             if payment.datetime.date() == due_date.date()
             and payment.datetime <= as_of_date
-            and payment.category in ("actual_principal", "actual_interest", "actual_fine")
+            and payment.category in ("principal", "interest", "fine")
         ]
 
         total_paid_on_due_date = sum((payment.amount for payment in exact_date_payments), Money.zero())
@@ -421,7 +421,7 @@ class Loan:
             for payment in self._all_payments
             if window_start <= payment.datetime <= window_end
             and payment.datetime <= as_of_date
-            and payment.category in ("actual_principal", "actual_interest", "actual_fine")
+            and payment.category in ("principal", "interest", "fine")
         ]
 
         total_paid_in_window = sum((payment.amount for payment in window_payments), Money.zero())
@@ -542,6 +542,7 @@ class Loan:
         """
         items = []
         ctx = self._time_ctx
+        expected = CashFlowType.EXPECTED
 
         total_tax = self.total_tax
         if total_tax.is_positive() and self.is_grossed_up:
@@ -550,7 +551,8 @@ class Loan:
                     self.net_disbursement,
                     self.disbursement_date,
                     "Loan disbursement",
-                    "expected_disbursement",
+                    "disbursement",
+                    kind=expected,
                     time_context=ctx,
                 )
             )
@@ -560,7 +562,8 @@ class Loan:
                     self.principal,
                     self.disbursement_date,
                     "Loan disbursement",
-                    "expected_disbursement",
+                    "disbursement",
+                    kind=expected,
                     time_context=ctx,
                 )
             )
@@ -569,7 +572,8 @@ class Loan:
                     Money(-total_tax.raw_amount),
                     self.disbursement_date,
                     "Tax deducted at disbursement",
-                    "expected_tax",
+                    "tax",
+                    kind=expected,
                     time_context=ctx,
                 )
             )
@@ -579,7 +583,8 @@ class Loan:
                     self.principal,
                     self.disbursement_date,
                     "Loan disbursement",
-                    "expected_disbursement",
+                    "disbursement",
+                    kind=expected,
                     time_context=ctx,
                 )
             )
@@ -592,7 +597,8 @@ class Loan:
                     Money(-entry.interest_payment.raw_amount),
                     entry.due_date,
                     f"Interest payment {entry.payment_number}",
-                    "expected_interest",
+                    "interest",
+                    kind=expected,
                     time_context=ctx,
                 )
             )
@@ -601,7 +607,8 @@ class Loan:
                     Money(-entry.principal_payment.raw_amount),
                     entry.due_date,
                     f"Principal payment {entry.payment_number}",
-                    "expected_principal",
+                    "principal",
+                    kind=expected,
                     time_context=ctx,
                 )
             )
@@ -623,7 +630,7 @@ class Loan:
 
         principal_balance = self.principal
         for p in self._all_payments:
-            if p.datetime <= payment_date and p.category in ("actual_principal", "expected_principal"):
+            if p.datetime <= payment_date and p.category == "principal":
                 principal_balance = principal_balance - p.amount
         if principal_balance.is_negative():
             principal_balance = Money.zero()
@@ -689,9 +696,7 @@ class Loan:
         if current_fines.is_positive() and remaining.is_positive():
             fine_paid = Money(min(current_fines.raw_amount, remaining.raw_amount))
             self._all_payments.append(
-                CashFlowItem(
-                    fine_paid, payment_date, f"Fine payment - {label}", "actual_fine", time_context=self._time_ctx
-                )
+                CashFlowItem(fine_paid, payment_date, f"Fine payment - {label}", "fine", time_context=self._time_ctx)
             )
             remaining = remaining - fine_paid
 
@@ -720,7 +725,7 @@ class Loan:
                             regular_amount,
                             payment_date,
                             f"Interest portion - {label}",
-                            "actual_interest",
+                            "interest",
                             time_context=self._time_ctx,
                         )
                     )
@@ -732,7 +737,7 @@ class Loan:
                             mora_amount,
                             payment_date,
                             f"Mora interest - {label}",
-                            "actual_mora_interest",
+                            "mora_interest",
                             time_context=self._time_ctx,
                         )
                     )
@@ -748,7 +753,7 @@ class Loan:
                     principal_paid,
                     payment_date,
                     f"Principal portion - {label}",
-                    "actual_principal",
+                    "principal",
                     time_context=self._time_ctx,
                 )
             )
@@ -987,7 +992,7 @@ class Loan:
             entry = item.resolve()
             if entry is None:
                 continue
-            if entry.category not in ("expected_interest", "expected_principal"):
+            if entry.category not in ("interest", "principal"):
                 continue
             desc = entry.description or ""
             for num in removed_set:
@@ -1002,7 +1007,7 @@ class Loan:
         _payment_item_offsets, so we slice _all_payments directly by position
         rather than relying on datetime boundaries.
         """
-        categories = ("actual_fine", "actual_interest", "actual_mora_interest", "actual_principal")
+        categories = ("fine", "interest", "mora_interest", "principal")
         result: Dict[str, Money] = {c: Money.zero() for c in categories}
 
         start = self._payment_item_offsets[entry_index]
@@ -1035,10 +1040,10 @@ class Loan:
         entry = self._actual_schedule_entries[entry_index]
         items = self._extract_payment_items(entry_index)
 
-        fine_paid = items["actual_fine"]
-        interest_paid = items["actual_interest"]
-        mora_paid = items["actual_mora_interest"]
-        principal_paid = items["actual_principal"]
+        fine_paid = items["fine"]
+        interest_paid = items["interest"]
+        mora_paid = items["mora_interest"]
+        principal_paid = items["principal"]
         payment_amount = fine_paid + interest_paid + mora_paid + principal_paid
 
         if entry_index == 0:
@@ -1309,7 +1314,7 @@ class Loan:
                     fine_amount,
                     due_date + timedelta(days=self.grace_period_days + 1),
                     f"Late payment fine applied for {due_date.date()}",
-                    "fine_applied",
+                    "fine",
                     time_context=self._time_ctx,
                 )
             )

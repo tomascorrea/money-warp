@@ -119,8 +119,8 @@ Fines are calculated as `fine_rate * expected_payment_amount`, where the expecte
 
 When a borrower pays late, they are charged extra interest for the days beyond the due date. The interest is automatically split into two separate cash flow items:
 
-- **Regular interest** (`"actual_interest"`) — accrued from the last payment to the due date
-- **Mora interest** (`"actual_mora_interest"`) — accrued from the due date to the payment date
+- **Regular interest** (`"interest"`, kind=HAPPENED) — accrued from the last payment to the due date
+- **Mora interest** (`"mora_interest"`, kind=HAPPENED) — accrued from the due date to the payment date
 
 On-time and early payments produce only a regular interest item (no mora).
 
@@ -184,29 +184,28 @@ All cash flow items use explicit category prefixes. Expected schedule items use 
 ```python
 actual_cf = loan.get_actual_cash_flow()
 
-# Query fine application events
-fines = actual_cf.query.filter_by(category="fine_applied").all()
+# Query fine events (positive = applied, negative = paid)
+fines = actual_cf.query.filter_by(category="fine").all()
 for fine in fines:
     print(f"{fine.datetime}: {fine.amount} — {fine.description}")
 
 # Query mora interest payments
-mora = actual_cf.query.filter_by(category="actual_mora_interest").all()
+mora = actual_cf.query.happened.filter_by(category="mora_interest").all()
 for item in mora:
     print(f"{item.datetime}: {item.amount} — {item.description}")
 ```
 
 ### Cash Flow Categories
 
-| Category | Meaning |
-|---|---|
-| `"expected_disbursement"` | Loan disbursement (expected schedule) |
-| `"expected_interest"` | Scheduled interest payment |
-| `"expected_principal"` | Scheduled principal payment |
-| `"actual_interest"` | Regular interest paid (up to due date) |
-| `"actual_mora_interest"` | Mora interest paid (beyond due date) |
-| `"actual_principal"` | Principal paid |
-| `"actual_fine"` | Fine paid |
-| `"fine_applied"` | Fine applied to loan |
+| Category | Kind | Meaning |
+|---|---|---|
+| `"disbursement"` | EXPECTED | Loan disbursement |
+| `"interest"` | EXPECTED | Scheduled interest payment |
+| `"principal"` | EXPECTED | Scheduled principal payment |
+| `"interest"` | HAPPENED | Regular interest paid (up to due date) |
+| `"mora_interest"` | HAPPENED | Mora interest paid (beyond due date) |
+| `"principal"` | HAPPENED | Principal paid |
+| `"fine"` | HAPPENED | Fine paid or applied (distinguished by sign) |
 
 ## Installments & Settlements
 

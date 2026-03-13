@@ -11,7 +11,7 @@ from money_warp import (
     Money,
     Warp,
 )
-from money_warp.cash_flow.entry import CashFlowEntry
+from money_warp.cash_flow.entry import HappenedCashFlowEntry
 from money_warp.time_context import TimeContext
 from money_warp.warp import WarpedTime
 
@@ -19,7 +19,7 @@ from money_warp.warp import WarpedTime
 
 
 def test_cashflow_item_resolve_returns_entry():
-    entry = CashFlowEntry(
+    entry = HappenedCashFlowEntry(
         amount=Money("100.00"),
         datetime=datetime(2024, 1, 15, tzinfo=timezone.utc),
     )
@@ -29,7 +29,7 @@ def test_cashflow_item_resolve_returns_entry():
 
 def test_cashflow_item_delete_returns_none_after_effective_date():
     ctx = TimeContext()
-    entry = CashFlowEntry(
+    entry = HappenedCashFlowEntry(
         amount=Money("100.00"),
         datetime=datetime(2024, 6, 15, tzinfo=timezone.utc),
     )
@@ -47,12 +47,12 @@ def test_cashflow_item_delete_returns_none_after_effective_date():
 
 def test_cashflow_item_update_changes_entry_after_effective_date():
     ctx = TimeContext()
-    old_entry = CashFlowEntry(
+    old_entry = HappenedCashFlowEntry(
         amount=Money("100.00"),
         datetime=datetime(2024, 6, 15, tzinfo=timezone.utc),
         description="original",
     )
-    new_entry = CashFlowEntry(
+    new_entry = HappenedCashFlowEntry(
         amount=Money("200.00"),
         datetime=datetime(2024, 6, 15, tzinfo=timezone.utc),
         description="updated",
@@ -71,7 +71,7 @@ def test_cashflow_item_update_changes_entry_after_effective_date():
 
 def test_cashflow_item_resolve_reflects_time_context_override():
     ctx = TimeContext()
-    entry = CashFlowEntry(
+    entry = HappenedCashFlowEntry(
         amount=Money("500.00"),
         datetime=datetime(2024, 6, 15, tzinfo=timezone.utc),
     )

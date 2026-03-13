@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Iterator, List, Optional, Union
 
 from ..money import Money
-from .entry import CashFlowEntry
+from .entry import CashFlowEntry, CashFlowType
 from .item import CashFlowItem
 from .query import CashFlowQuery
 
@@ -41,9 +41,11 @@ class CashFlow:
         datetime: datetime,
         description: Optional[str] = None,
         category: Optional[str] = None,
+        *,
+        kind: CashFlowType = CashFlowType.HAPPENED,
     ) -> None:
         """Add a cash flow item by specifying its components."""
-        item = CashFlowItem(amount, datetime, description, category)
+        item = CashFlowItem(amount, datetime, description, category, kind=kind)
         self.add_item(item)
 
     # ------------------------------------------------------------------
@@ -143,6 +145,10 @@ class CashFlow:
     def filter_by_category(self, category: str) -> "CashFlow":
         """New CashFlow containing only items with the specified category."""
         return self.query.filter_by(category=category).to_cash_flow()
+
+    def filter_by_kind(self, kind: CashFlowType) -> "CashFlow":
+        """New CashFlow containing only items with the specified kind."""
+        return self.query.filter_by(kind=kind).to_cash_flow()
 
     def filter_by_datetime_range(self, start_datetime: datetime, end_datetime: datetime) -> "CashFlow":
         """New CashFlow containing only items within the datetime range."""
