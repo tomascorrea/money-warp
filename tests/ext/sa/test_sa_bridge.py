@@ -32,6 +32,7 @@ def test_settlement_bridge_defaults():
         "amount": "amount",
         "interest_date": "interest_date",
         "processing_date": "processing_date",
+        "intention": "intention",
     }
 
 
@@ -42,6 +43,7 @@ def test_settlement_bridge_custom_names():
         amount="paid",
         interest_date="int_dt",
         processing_date="proc_dt",
+        intention="intent",
     )
     class Custom(Base):
         __tablename__ = "custom_settlements"
@@ -53,6 +55,7 @@ def test_settlement_bridge_custom_names():
         "amount": "paid",
         "interest_date": "int_dt",
         "processing_date": "proc_dt",
+        "intention": "intent",
     }
 
 
