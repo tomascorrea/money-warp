@@ -42,7 +42,9 @@ money_warp/
 
 ### Dual-Precision Money
 
-`Money` stores a `raw_amount: Decimal` at full precision for intermediate calculations and exposes a `real_amount: Decimal` rounded to 2 decimal places for display and comparison. All arithmetic returns new `Money` instances (immutable value object). Comparisons (`==`, `<`, `<=`, `>`, `>=`) use `real_amount`, so two values that round to the same cents are considered equal. Both `Money` and `Decimal` are accepted on the right-hand side, so `Money("100.50") == Decimal("100.50")` works directly without extracting `.real_amount`. `float(money)` returns `float(raw_amount)` — full internal precision, useful for interop with libraries that expect plain floats.
+`Money` stores a `raw_amount: Decimal` at full precision for intermediate calculations and exposes a `real_amount: Decimal` rounded to 2 decimal places for display and comparison. All arithmetic returns new `Money` instances (immutable value object). Comparisons (`==`, `<`, `<=`, `>`, `>=`) use `real_amount`, so two values that round to the same cents are considered equal. The right-hand side of comparisons accepts `Money`, `Decimal`, `int`, and `float`, so `Money("100.50") == Decimal("100.50")` and `Money("100") == 100` both work directly. `float(money)` returns `float(raw_amount)` — full internal precision, useful for interop with libraries that expect plain floats.
+
+Money is registered as `numbers.Real` (via `numbers.Real.register(Money)`) so it participates in Python's numeric tower. This enables `pytest.approx(Money(...))` and other numeric-protocol-aware code to recognise Money as a real number. Reflected operators (`__radd__`, `__rsub__`, `__rmul__`) accept `Decimal`, `int`, and `float` on the left-hand side, so expressions like `Decimal("200") - Money("100")` and `1.5 * Money("100")` return `Money`.
 
 ### Rate and InterestRate
 
