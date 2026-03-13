@@ -5,8 +5,8 @@
 properties that delegate to a reconstructed :class:`~money_warp.loan.Loan`.
 """
 
-from datetime import datetime
-from typing import List
+from datetime import date, datetime
+from typing import List, Union
 
 from sqlalchemy import Float, String, case, cast, column, func, literal, select
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
@@ -103,9 +103,22 @@ def _resolve_settlement_info(cls, settlements_attr):
     }
 
 
-def _parse_due_dates(raw: List[str]) -> List[datetime]:
-    """Convert a JSON list of ISO date strings to timezone-aware datetimes."""
-    return [ensure_aware(datetime.fromisoformat(d)) for d in raw]
+def _parse_due_dates(raw: List[Union[str, date, datetime]]) -> List[datetime]:
+    """Convert a list of due dates to timezone-aware datetimes.
+
+    Accepts ISO strings (raw ``JSON`` column), :class:`~datetime.date`
+    objects (from :class:`~money_warp.ext.sa.types.DueDatesType`), or
+    :class:`~datetime.datetime` objects.
+    """
+    result: List[datetime] = []
+    for d in raw:
+        if isinstance(d, datetime):
+            result.append(ensure_aware(d))
+        elif isinstance(d, date):
+            result.append(ensure_aware(datetime(d.year, d.month, d.day)))
+        else:
+            result.append(ensure_aware(datetime.fromisoformat(d)))
+    return result
 
 
 def _collect_optional_loan_kwargs(instance, meta):
