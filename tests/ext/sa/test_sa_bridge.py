@@ -8,9 +8,11 @@ import pytest
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, create_engine, select
 from sqlalchemy.orm import Session, relationship
 
-from money_warp import Warp
+from money_warp import Loan, Warp
 from money_warp.ext.sa import MoneyType, loan_bridge, settlement_bridge
+from money_warp.interest_rate import InterestRate
 from money_warp.money import Money
+from money_warp.warp import WarpedTime
 
 from .conftest import (
     Base,
@@ -32,6 +34,7 @@ def test_settlement_bridge_defaults():
         "amount": "amount",
         "interest_date": "interest_date",
         "processing_date": "processing_date",
+        "intention": "intention",
     }
 
 
@@ -42,6 +45,7 @@ def test_settlement_bridge_custom_names():
         amount="paid",
         interest_date="int_dt",
         processing_date="proc_dt",
+        intention="intent",
     )
     class Custom(Base):
         __tablename__ = "custom_settlements"
@@ -53,6 +57,7 @@ def test_settlement_bridge_custom_names():
         "amount": "paid",
         "interest_date": "int_dt",
         "processing_date": "proc_dt",
+        "intention": "intent",
     }
 
 
@@ -426,3 +431,145 @@ def test_loan_bridge_raises_without_settlement_bridge():
 
         with pytest.raises(TypeError, match="@settlement_bridge"):
             s.execute(select(BadLoan).where(BadLoan.balance > Decimal("0"))).scalars().all()
+
+
+# ===========================================================================
+# Intention-aware replay
+# ===========================================================================
+
+
+def _make_reference_loan():
+    """Build a fresh Loan matching LoanRecordFactory defaults."""
+    return Loan(
+        Money("10000"),
+        InterestRate("10% a"),
+        [datetime(2024, 2, 1, tzinfo=timezone.utc), datetime(2024, 3, 1, tzinfo=timezone.utc)],
+        disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+
+
+def _pay_via_override(loan, pay_date, method, amount, **kwargs):
+    """Make a payment by overriding the time context (same as _replay_settlements).
+
+    Persists on the loan directly — unlike Warp which creates a clone.
+    """
+    loan._time_ctx.override(WarpedTime(pay_date))
+    return getattr(loan, method)(amount, **kwargs)
+
+
+def test_pay_installment_intention_matches_direct_loan(session):
+    """Early pay_installment replayed via bridge produces the same balance."""
+    pay_date = datetime(2024, 1, 20, tzinfo=timezone.utc)
+    as_of = datetime(2024, 2, 15, tzinfo=timezone.utc)
+    amount = Money("5500")
+
+    ref = _make_reference_loan()
+    settlement = _pay_via_override(ref, pay_date, "pay_installment", amount)
+    with Warp(ref, as_of) as w:
+        expected = w.current_balance
+
+    loan_rec = LoanRecordFactory()
+    SettlementRecordFactory(
+        loan_id=loan_rec.id,
+        amount=settlement.payment_amount,
+        payment_date=pay_date,
+        remaining_balance=settlement.remaining_balance,
+        intention={"method": "pay_installment"},
+    )
+    session.expire_all()
+    loaded = session.get(LoanRecord, loan_rec.id)
+
+    assert loaded.balance_at(as_of) == expected
+
+
+def test_pay_installment_intention_differs_from_record_payment(session):
+    """Early pay_installment charges more interest than record_payment (no discount)."""
+    pay_date = datetime(2024, 1, 20, tzinfo=timezone.utc)
+    as_of = datetime(2024, 2, 15, tzinfo=timezone.utc)
+    amount = Money("5500")
+
+    ref_inst = _make_reference_loan()
+    s_inst = _pay_via_override(ref_inst, pay_date, "pay_installment", amount)
+
+    ref_rec = _make_reference_loan()
+    ref_rec.record_payment(amount, pay_date)
+
+    loan_inst = LoanRecordFactory()
+    SettlementRecordFactory(
+        loan_id=loan_inst.id,
+        amount=s_inst.payment_amount,
+        payment_date=pay_date,
+        remaining_balance=s_inst.remaining_balance,
+        intention={"method": "pay_installment"},
+    )
+
+    loan_rec = LoanRecordFactory()
+    SettlementRecordFactory(
+        loan_id=loan_rec.id,
+        amount=amount,
+        payment_date=pay_date,
+        remaining_balance=ref_rec.principal_balance,
+        intention={"method": "record_payment"},
+    )
+
+    session.expire_all()
+    loaded_inst = session.get(LoanRecord, loan_inst.id)
+    loaded_rec = session.get(LoanRecord, loan_rec.id)
+
+    assert loaded_inst.balance_at(as_of) != loaded_rec.balance_at(as_of)
+
+
+def test_anticipate_payment_intention_matches_direct_loan(session):
+    """anticipate_payment replayed via bridge produces the same balance."""
+    pay_date = datetime(2024, 1, 20, tzinfo=timezone.utc)
+    as_of = datetime(2024, 2, 15, tzinfo=timezone.utc)
+    amount = Money("5500")
+
+    ref = _make_reference_loan()
+    settlement = _pay_via_override(
+        ref,
+        pay_date,
+        "anticipate_payment",
+        amount,
+        installments=[1],
+    )
+    with Warp(ref, as_of) as w:
+        expected = w.current_balance
+
+    loan_rec = LoanRecordFactory()
+    SettlementRecordFactory(
+        loan_id=loan_rec.id,
+        amount=settlement.payment_amount,
+        payment_date=pay_date,
+        remaining_balance=settlement.remaining_balance,
+        intention={"method": "anticipate_payment", "installments": [1]},
+    )
+    session.expire_all()
+    loaded = session.get(LoanRecord, loan_rec.id)
+
+    assert loaded.balance_at(as_of) == expected
+
+
+def test_record_payment_intention_backward_compatible(session):
+    """Default record_payment intention preserves existing behavior."""
+    pay_date = datetime(2024, 2, 1, tzinfo=timezone.utc)
+    as_of = datetime(2024, 2, 15, tzinfo=timezone.utc)
+    amount = Money("3000")
+
+    ref = _make_reference_loan()
+    ref.record_payment(amount, pay_date)
+    with Warp(ref, as_of) as w:
+        expected = w.current_balance
+
+    loan_rec = LoanRecordFactory()
+    SettlementRecordFactory(
+        loan_id=loan_rec.id,
+        amount=amount,
+        payment_date=pay_date,
+        remaining_balance=ref.principal_balance,
+        intention={"method": "record_payment"},
+    )
+    session.expire_all()
+    loaded = session.get(LoanRecord, loan_rec.id)
+
+    assert loaded.balance_at(as_of) == expected

@@ -8,6 +8,7 @@ import factory.alchemy
 import pytest
 from pytest_postgresql import factories as pg_factories
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, create_engine
+from sqlalchemy.types import JSON
 from sqlalchemy.orm import DeclarativeBase, Session, relationship
 
 from money_warp import Loan, MoraStrategy
@@ -95,6 +96,7 @@ class SettlementRecord(Base):
     remaining_balance = Column(MoneyType())
     interest_date = Column(DateTime, nullable=True)
     processing_date = Column(DateTime, nullable=True)
+    intention = Column(JSON, nullable=False, default={"method": "record_payment"})
 
 
 @loan_bridge()
@@ -122,6 +124,7 @@ class StringSettlementRecord(Base):
     remaining_balance = Column(MoneyType())
     interest_date = Column(DateTime, nullable=True)
     processing_date = Column(DateTime, nullable=True)
+    intention = Column(JSON, nullable=False, default={"method": "record_payment"})
 
 
 @loan_bridge()
@@ -281,6 +284,7 @@ class SettlementRecordFactory(factory.alchemy.SQLAlchemyModelFactory):
     remaining_balance = factory.LazyFunction(lambda: Money("7000"))
     interest_date = None
     processing_date = None
+    intention = factory.LazyFunction(lambda: {"method": "record_payment"})
 
 
 class StringLoanRecordFactory(factory.alchemy.SQLAlchemyModelFactory):
@@ -308,3 +312,4 @@ class StringSettlementRecordFactory(factory.alchemy.SQLAlchemyModelFactory):
     remaining_balance = factory.LazyFunction(lambda: Money("7000"))
     interest_date = None
     processing_date = None
+    intention = factory.LazyFunction(lambda: {"method": "record_payment"})
