@@ -23,10 +23,13 @@ RUN if [ "${NODE_VERSION}" != "none" ]; then su vscode -c "umask 0002 && . /usr/
 # RUN RUN apt-get update && apt-get install iputils-ping bash-completion -y
 
 
-RUN sudo apt-get update
-RUN sudo apt install iputils-ping
+RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+    iputils-ping \
+    postgresql \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+ENV PATH="/usr/lib/postgresql/14/bin:${PATH}"
 RUN curl -sfL https://direnv.net/install.sh | bash
-RUN apt update
 
 
 ARG USERNAME=vscode

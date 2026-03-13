@@ -49,6 +49,7 @@ money_warp/ext/sa/
   __init__.py   -- re-exports for backward compatibility
   types.py      -- MoneyType, RateType, InterestRateType
   bridge.py     -- settlement_bridge, loan_bridge, _load_money_warp_loan, CTE SQL expression
+  compat.py     -- dialect-aware SQL function wrappers (SQLite + PostgreSQL)
 ```
 
 All public symbols are re-exported from `__init__.py`, so `from money_warp.ext.sa import MoneyType, loan_bridge` continues to work.
@@ -136,21 +137,40 @@ Stores `_money_warp_bridge_meta` on the loan class with all field mappings.
 
 The settlement model must be decorated with `@settlement_bridge` — `@loan_bridge` reads `_money_warp_bridge_meta` from the relationship target at query time. Raises `TypeError` if missing.
 
+### Dialect compatibility layer (`compat.py`)
+
+The CTE expressions need SQL functions that differ between SQLite and PostgreSQL. Rather than duplicating CTE logic per dialect, `compat.py` provides `FunctionElement` subclasses with `@compiles` overrides. `bridge.py` calls these wrappers; SQLAlchemy's compiler dispatches to the correct SQL at query compile time.
+
+| Wrapper | SQLite | PostgreSQL |
+|---------|--------|------------|
+| `mw_julianday(expr)` | `julianday(expr)` | `EXTRACT(EPOCH FROM expr::timestamp) / 86400.0` |
+| `mw_json_extract(col, key)` | `json_extract(col, '$.key')` | `(col)::jsonb->>'key'` |
+| `mw_json_array_values(col)` | `json_each(col)` | `jsonb_array_elements_text(col::jsonb)` |
+| `mw_json_array_length(col)` | `json_array_length(col)` | `jsonb_array_length(col::jsonb)` |
+| `mw_instr(str, sub)` | `instr(str, sub)` | `strpos(str, sub)` |
+| `mw_greatest(a, b)` | `max(a, b)` | `GREATEST(a, b)` |
+
+`mw_json_extract` accepts the bare key name (`"rate"`) rather than the SQLite `$.rate` path syntax. The compiler adds the appropriate prefix/operator.
+
+`mw_json_array_values` works with `.table_valued(column("value", String))`. In SQLite, `json_each` returns rows with a `value` column natively. In PostgreSQL, `jsonb_array_elements_text` returns a single unnamed column that is aliased to `value` by the `table_valued` wrapper.
+
+`mw_greatest` replaces `func.max(a, b)` for scalar two-argument maximum. SQLite's `max()` works as both aggregate (1 arg) and scalar (2+ args); PostgreSQL's `max()` is aggregate-only, so `GREATEST()` is needed.
+
 ### CTE-based SQL expression architecture
 
-The SQL side of `balance_at` uses nested CTEs (`nesting=True`) inside a single scalar subquery. Each CTE builds on the previous, keeping the computation readable:
+The SQL side of `balance_at` uses nested CTEs (`nesting=True`) inside a single scalar subquery. Each CTE builds on the previous, keeping the computation readable. All dialect-specific functions go through the `compat.py` wrappers.
 
 | CTE | Purpose |
 |-----|---------|
 | `loan_state` | `COALESCE(last_remaining_balance, principal)` and `COALESCE(last_payment_date, disbursement_date)`. Uses scalar subqueries so it always returns 1 row even with no settlements. |
 | `daily_rates` | Converts rates of any period to daily via `_daily_rate_expr`. Handles all `CompoundingFrequency` values for both JSON and string column representations. NULL mora rate coalesces to 0. |
-| `time_split` | Computes `total_days` and finds `next_due` date after last payment via `json_each(due_dates)`. |
+| `time_split` | Computes `total_days` and finds `next_due` date after last payment via `mw_json_array_values(due_dates)`. |
 | `day_split` | Splits total days into `regular_days` and `mora_days` at the next-due boundary. |
 | `accrued` | `regular_interest` (compound on principal) and `mora_interest` (COMPOUND or SIMPLE branching via `mora_strategy`). |
 | `late_fines` | Counts late installments (`past_grace_count - settlement_count`), estimates PMT, applies fine rate. |
 | Final SELECT | `principal_balance + regular_interest + mora_interest + fines`. |
 
-NULL guard: Falls back to `COALESCE(remaining_balance, principal)` when no rate is present. The check depends on representation: JSON uses `json_extract(interest_rate, '$.rate') IS NULL`; string uses `interest_rate IS NULL`.
+NULL guard: Falls back to `COALESCE(remaining_balance, principal)` when no rate is present. The check depends on representation: JSON uses `mw_json_extract(interest_rate, 'rate') IS NULL`; string uses `interest_rate IS NULL`.
 
 ### Rate conversion helpers
 
@@ -159,14 +179,14 @@ Private helpers in `bridge.py` convert stored rates to daily rates in SQL, mirro
 **Column introspection:** `_get_rate_col_info(cls, attr_name)` reads the `InterestRateType` from the model's column to determine `representation` ("json" or "string") and `default_year_size`. This happens once at expression-build time — no SQL-side format detection.
 
 **Param extraction:** `_extract_rate_params(rate_col, representation, default_year_size)` returns `(decimal_rate, period, year_size)` as SQL expressions:
-- JSON: uses `json_extract` for all three values.
-- String: parses `"5.250% annual"` via `SUBSTR`/`INSTR`, divides the percentage by 100; uses the column type's `default_year_size` since the string format does not embed year size.
+- JSON: uses `mw_json_extract` for all three values.
+- String: parses `"5.250% annual"` via `SUBSTR`/`mw_instr`, divides the percentage by 100; uses the column type's `default_year_size` since the string format does not embed year size.
 
 **Period mapping:** `_periods_per_year_expr(period, year_size, representation)` builds a SQL `CASE` generated from `CompoundingFrequency` — no hardcoded magic numbers. Period names differ by representation (JSON: `"annually"`, `"semi_annually"`; string: both long tokens like `"annual"`, `"semi-annual"` and abbreviated tokens like `"a.a."`, `"a.s."` from `_ABBREV_MAP`). Each frequency generates CASE branches for all its recognized tokens. `CONTINUOUS` is excluded (handled separately via `exp()`). `DAILY` uses `year_size` instead of a fixed value.
 
-**Conversion:** `_effective_annual_expr(rate_col, representation, default_year_size)` and `_daily_rate_expr(rate_col, representation, default_year_size)` combine the above. Both are used by the `daily_rates` CTE for `interest_rate` and `mora_interest_rate` columns. The `continuous` period uses `func.exp()` which requires the SQLite math extension (available in Python 3.11+ / SQLite 3.35+).
+**Conversion:** `_effective_annual_expr(rate_col, representation, default_year_size)` and `_daily_rate_expr(rate_col, representation, default_year_size)` combine the above. Both are used by the `daily_rates` CTE for `interest_rate` and `mora_interest_rate` columns. The `continuous` period uses `func.exp()` (requires SQLite math extension, available in Python 3.11+ / SQLite 3.35+; native in PostgreSQL).
 
-**NULL guard:** `_has_rate(rate_col, representation)` returns a SQL expression that is NULL when no parseable rate is present. For JSON: checks `json_extract(rate_col, '$.rate')`; for string: checks the column itself.
+**NULL guard:** `_has_rate(rate_col, representation)` returns a SQL expression that is NULL when no parseable rate is present. For JSON: checks `mw_json_extract(rate_col, 'rate')`; for string: checks the column itself.
 
 ## Design Decisions
 
@@ -179,17 +199,18 @@ Private helpers in `bridge.py` convert stored rates to daily rates in SQL, mirro
 - **Per-loan Warp nesting:** `Warp` tracks active loans by `id(loan)` in a class-level `_active_loans: set`. Warping different `Loan` objects concurrently is allowed, but warping the same `Loan` twice is still blocked with `NestedWarpError`. This enables `balance_at` to use `Warp` internally (it creates a fresh Loan via `_load_money_warp_loan()`, so `id()` is different from any outer-warped loan).
 - **Per-payment time warping during replay:** When `_load_money_warp_loan` replays settlements, the loan's `_time_ctx` is overridden to each payment's date via `WarpedTime(pdate)`. This ensures `self.now()` inside `record_payment` returns the correct historical time, affecting late fine calculations and the `processing_date` default.
 - **Phantom fine prevention:** `balance_at` clears `fines_applied` on the reconstructed loan before passing it to `Warp`. Without this, fines charged during replay of future settlements would persist when warping to an earlier date (e.g., a fine from a Mar 15 settlement would appear at Jan 15). Clearing forces `Warp.calculate_late_fines(as_of)` to recompute fines purely from the point-in-time state, matching the SQL CTE which computes fines based on settlements and due dates visible at `as_of`.
-- **CTE nesting:** `nesting=True` keeps CTEs inside the scalar subquery so correlation to the outer `loans` table works correctly with SQLAlchemy + SQLite.
+- **Dialect-aware compat layer:** `compat.py` uses SQLAlchemy's `@compiles` decorator pattern — the standard way to write cross-dialect SQL. Each `FunctionElement` subclass has a default (SQLite) compilation and a `"postgresql"` override. `bridge.py` is dialect-agnostic; it calls the wrappers and SQLAlchemy dispatches at compile time. Adding a new dialect means adding `@compiles(fn, "mysql")` (etc.) overrides to `compat.py` — no changes to `bridge.py`.
+- **CTE nesting:** `nesting=True` keeps CTEs inside the scalar subquery so correlation to the outer `loans` table works correctly with SQLAlchemy on all dialects.
 - **`loan_state` uses scalar subqueries:** Instead of `SELECT FROM last_settlement_cte` (which returns 0 rows when no settlements exist), `loan_state` uses inline scalar subqueries with `COALESCE`. This guarantees exactly 1 row regardless of settlement presence.
 - **Cartesian product warnings:** The final SELECT joins multiple single-row CTEs without explicit join conditions. SQLAlchemy warns about cartesian products, but this is intentional and correct since each CTE produces exactly 1 row.
 - **`balance_at` + `balance` pattern:** `balance_at(date)` is a `hybrid_method` that accepts a date param. `balance` is a `hybrid_property` that delegates to `balance_at(now())` / `balance_at(func.now())`.
-- **Package split rationale:** `types.py` contains pure column type descriptors (no business logic). `bridge.py` contains the loan/settlement decorators and the Loan reconstruction engine. Separation makes each file focused and testable.
+- **Package split rationale:** `types.py` contains pure column type descriptors (no business logic). `bridge.py` contains the loan/settlement decorators and the Loan reconstruction engine. `compat.py` contains dialect-specific SQL compilation. Separation makes each file focused and testable.
 
 ## Key Gotchas
 
 - String round-trip loses some precision: the percentage rate is formatted with 3 decimal places (`:.3f`). Rates with more than 3 decimal digits in the percentage form should use dict/json representation for lossless round-trips.
 - `None` handling: all type fields pass through `None` in both directions (returns `None`).
-- **SQLite precision:** SQLite stores `Numeric` as floating-point internally. Very high-precision raw amounts (> ~10 significant digits) may lose precision. Use PostgreSQL or MySQL for production.
+- **SQLite precision:** SQLite stores `Numeric` as floating-point internally. Very high-precision raw amounts (> ~10 significant digits) may lose precision. PostgreSQL uses true `DECIMAL` and does not have this limitation.
 - **SQL expression type asymmetry:** The `balance` hybrid_property returns `Money` on instances but raw `Numeric` in SQL expressions. Filter comparisons use `Decimal`, not `Money`: `LoanRecord.balance > Decimal("1000")`.
 - **SQL vs Python precision:** The SQL CTE expression uses float64 arithmetic while Python uses `Decimal`. For exact comparisons in tests, use approximate matching (e.g., `pytest.approx`) when comparing SQL results against Python `balance_at`.
 - **JSON NULL vs SQL NULL:** SQLAlchemy's `JSON` type stores Python `None` as the string `'null'` rather than SQL `NULL`. For JSON representation, the NULL guard checks `json_extract(interest_rate, '$.rate') IS NULL` which correctly handles both cases since `json_extract('null', '$.rate')` returns NULL.
@@ -197,3 +218,13 @@ Private helpers in `bridge.py` convert stored rates to daily rates in SQL, mirro
 - **Data-driven period mapping:** The SQL `CASE` branches in `_periods_per_year_expr` are generated from the `CompoundingFrequency` enum, `_FREQUENCY_TOKEN`, and `_ABBREV_MAP`. Each frequency maps to a list of recognized tokens (long and abbreviated). Adding a new `CompoundingFrequency` member and its tokens automatically extends both JSON and string SQL support.
 - **String representation year_size limitation:** The string format (e.g., `"5.250% annual"`) does not embed `year_size`. The SQL helpers use the `rate_year_size` default from the column's `InterestRateType` definition. If different rates on the same column need different year sizes, use JSON representation instead.
 - **Continuous compounding in string format:** `CompoundingFrequency.CONTINUOUS` is not in `_FREQUENCY_TOKEN` and cannot be serialized as a string. Use JSON representation for continuous rates.
+
+## Testing
+
+All SQLAlchemy extension tests run against both SQLite and PostgreSQL. The `engine` fixture in `tests/ext/sa/conftest.py` is parametrized with `["sqlite", "postgresql"]`, so every test automatically runs on both backends.
+
+PostgreSQL tests use `pytest-postgresql` with `postgresql_proc` — it starts/stops its own temporary PostgreSQL process per session. This requires `pg_ctl` on PATH (installed via the `postgresql` system package). No external Docker service or env var configuration is needed for tests.
+
+The devcontainer Dockerfile installs `postgresql` + `libpq-dev` and adds the PG bin dir to PATH. CI installs the same packages and appends `$(pg_config --bindir)` to `$GITHUB_PATH`.
+
+A separate Docker `postgres:16` service in `docker-compose.yml` is available for general development use (manual queries, testing against a persistent server) but is not used by the test suite.

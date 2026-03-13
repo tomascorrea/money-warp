@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import factory
 import factory.alchemy
 import pytest
+from pytest_postgresql import factories as pg_factories
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, relationship
 
@@ -135,15 +136,33 @@ class StringLoanRecord(Base):
 
 
 # ---------------------------------------------------------------------------
+# PostgreSQL fixtures (pytest-postgresql starts its own PG process)
+# ---------------------------------------------------------------------------
+
+postgresql_proc = pg_factories.postgresql_proc()
+postgresql_conn = pg_factories.postgresql("postgresql_proc")
+
+
+# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
-def engine():
-    eng = create_engine("sqlite:///:memory:")
+@pytest.fixture(params=[pytest.param("sqlite", id="sqlite"), pytest.param("postgresql", id="postgresql")])
+def engine(request):
+    if request.param == "sqlite":
+        eng = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(eng)
+        yield eng
+        return
+
+    pg = request.getfixturevalue("postgresql_conn")
+    info = pg.info
+    dsn = f"postgresql+psycopg://{info.user}@{info.host}:{info.port}/{info.dbname}"
+    eng = create_engine(dsn)
     Base.metadata.create_all(eng)
-    return eng
+    yield eng
+    eng.dispose()
 
 
 @pytest.fixture()

@@ -35,6 +35,12 @@ jobs:
       - name: Check out
         uses: actions/checkout@v4
 
+      - name: Install PostgreSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql libpq-dev
+          echo "$(pg_config --bindir)" >> $GITHUB_PATH
+
       - name: Set up python
         uses: actions/setup-python@v5
         with:
