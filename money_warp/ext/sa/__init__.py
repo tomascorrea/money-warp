@@ -6,12 +6,13 @@ Requires the ``sa`` extra::
 """
 
 from money_warp.ext.sa.bridge import loan_bridge, settlement_bridge
-from money_warp.ext.sa.types import InterestRateType, MoneyType, RateType
+from money_warp.ext.sa.types import DueDatesType, InterestRateType, MoneyType, RateType
 
 __all__ = [
     "MoneyType",
     "RateType",
     "InterestRateType",
+    "DueDatesType",
     "settlement_bridge",
     "loan_bridge",
 ]

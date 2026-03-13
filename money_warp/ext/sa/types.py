@@ -1,7 +1,8 @@
-"""SQLAlchemy TypeDecorators for Money, Rate, and InterestRate."""
+"""SQLAlchemy TypeDecorators for Money, Rate, InterestRate, and DueDates."""
 
+from datetime import date
 from decimal import Decimal
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 
 from sqlalchemy import JSON, Integer, Numeric, String
 from sqlalchemy.types import TypeDecorator
@@ -206,3 +207,37 @@ class InterestRateType(RateType):
 
     RATE_CLASS = InterestRate
     cache_ok = True
+
+
+class DueDatesType(TypeDecorator):
+    """SQLAlchemy column type for a list of due dates.
+
+    Stores ``list[date]`` as a JSON array of ISO 8601 strings
+    (``"YYYY-MM-DD"``).  On load, each string is parsed back to a
+    :class:`~datetime.date`.
+
+    Args:
+        impl_type: The underlying SQLAlchemy column type.
+            Defaults to ``JSON``.  Pass ``JSONB`` for PostgreSQL-native
+            binary JSON.
+    """
+
+    impl = JSON
+    cache_ok = True
+
+    def __init__(self, impl_type: type = JSON) -> None:
+        self.impl_type = impl_type
+        super().__init__()
+
+    def load_dialect_impl(self, dialect):
+        return dialect.type_descriptor(self.impl_type())
+
+    def process_bind_param(self, value: Optional[List[date]], dialect) -> Any:
+        if value is None:
+            return None
+        return [d.isoformat() for d in value]
+
+    def process_result_value(self, value: Any, dialect) -> Optional[List[date]]:
+        if value is None:
+            return None
+        return [date.fromisoformat(s) for s in value]
