@@ -114,20 +114,21 @@ def test_loan_principal_balance_zero_after_all_installments_paid(loan_with_all_i
         assert warped_loan.principal_balance == Money.zero()
 
 
-def test_loan_accrued_interest_zero_after_all_installments_paid(loan_with_all_installments_paid):
+def test_loan_interest_balance_zero_after_all_installments_paid(loan_with_all_installments_paid):
     """No interest should accrue after the final installment is paid on its due date."""
     loan, due_dates = loan_with_all_installments_paid
 
     with Warp(loan, due_dates[-1]) as warped_loan:
-        assert warped_loan.accrued_interest == Money.zero()
+        assert warped_loan.interest_balance == Money.zero()
+        assert warped_loan.mora_interest_balance == Money.zero()
 
 
-def test_loan_no_outstanding_fines_after_on_time_installments(loan_with_all_installments_paid):
+def test_loan_no_fine_balance_after_on_time_installments(loan_with_all_installments_paid):
     """No fines should exist when every installment is paid on its due date."""
     loan, due_dates = loan_with_all_installments_paid
 
     with Warp(loan, due_dates[-1]) as warped_loan:
-        assert warped_loan.outstanding_fines == Money.zero()
+        assert warped_loan.fine_balance == Money.zero()
 
 
 def test_loan_balance_zero_when_payments_recorded_beyond_real_time():
@@ -175,20 +176,26 @@ def test_loan_principal_balance_reduced_at_payment_date_with_warp(partial_paymen
         assert warped_loan.principal_balance < principal
 
 
-def test_loan_accrued_interest_non_negative_at_payment_date_with_warp(partial_payment_loan):
-    """Accrued interest at the payment date must be non-negative."""
+def test_loan_interest_balance_non_negative_at_payment_date_with_warp(partial_payment_loan):
+    """Interest balance at the payment date must be non-negative."""
     loan, _, payment_date = partial_payment_loan
 
     with Warp(loan, payment_date) as warped_loan:
-        assert warped_loan.accrued_interest >= Money.zero()
+        assert warped_loan.interest_balance >= Money.zero()
 
 
 def test_loan_current_balance_equals_components_at_payment_date_with_warp(partial_payment_loan):
-    """current_balance must equal principal_balance + accrued_interest at payment date."""
+    """current_balance must equal sum of four component balances at payment date."""
     loan, _, payment_date = partial_payment_loan
 
     with Warp(loan, payment_date) as warped_loan:
-        assert warped_loan.current_balance == warped_loan.principal_balance + warped_loan.accrued_interest
+        expected = (
+            warped_loan.principal_balance
+            + warped_loan.interest_balance
+            + warped_loan.mora_interest_balance
+            + warped_loan.fine_balance
+        )
+        assert warped_loan.current_balance == expected
 
 
 def test_loan_interest_accrues_after_partial_payment_with_warp(partial_payment_loan):
@@ -196,4 +203,5 @@ def test_loan_interest_accrues_after_partial_payment_with_warp(partial_payment_l
     loan, _, payment_date = partial_payment_loan
 
     with Warp(loan, payment_date + timedelta(days=5)) as warped_loan:
-        assert warped_loan.accrued_interest > Money.zero()
+        total_interest = warped_loan.interest_balance + warped_loan.mora_interest_balance
+        assert total_interest > Money.zero()

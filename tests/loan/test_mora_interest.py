@@ -383,11 +383,11 @@ def test_total_interest_with_custom_mora_rate_matches_manual(mora_rate_str, stra
     assert total_interest == Money(expected_total)
 
 
-# --- accrued_interest / current_balance with custom mora rate ---
+# --- interest_balance / mora_interest_balance with custom mora rate ---
 
 
-def test_accrued_interest_uses_mora_rate_when_past_due():
-    """accrued_interest should reflect the mora rate for days beyond the due date."""
+def test_interest_and_mora_balance_uses_mora_rate_when_past_due():
+    """interest_balance + mora_interest_balance should reflect the mora rate for days beyond the due date."""
     principal = Decimal("10000")
     base_rate = InterestRate("6% a")
     mora_rate = InterestRate("24% a")
@@ -401,9 +401,8 @@ def test_accrued_interest_uses_mora_rate_when_past_due():
     daily_base = base_rate.to_daily().as_decimal()
     daily_mora = mora_rate.to_daily().as_decimal()
 
-    regular = principal * ((1 + daily_base) ** regular_days - 1)
-    mora = (principal + regular) * ((1 + daily_mora) ** mora_days - 1)
-    expected = regular + mora
+    expected_regular = principal * ((1 + daily_base) ** regular_days - 1)
+    expected_mora = (principal + expected_regular) * ((1 + daily_mora) ** mora_days - 1)
 
     loan = Loan(
         Money(principal),
@@ -414,11 +413,12 @@ def test_accrued_interest_uses_mora_rate_when_past_due():
     )
 
     with Warp(loan, check_date) as warped:
-        assert warped.accrued_interest == Money(expected)
+        assert warped.interest_balance == Money(expected_regular)
+        assert warped.mora_interest_balance == Money(expected_mora)
 
 
-def test_accrued_interest_uses_base_rate_when_not_late():
-    """Before the due date, a custom mora rate has no effect on accrued_interest."""
+def test_interest_balance_uses_base_rate_when_not_late():
+    """Before the due date, a custom mora rate has no effect on interest_balance."""
     principal = Decimal("10000")
     base_rate = InterestRate("6% a")
     mora_rate = InterestRate("24% a")
@@ -439,7 +439,8 @@ def test_accrued_interest_uses_base_rate_when_not_late():
     )
 
     with Warp(loan, check_date) as warped:
-        assert warped.accrued_interest == Money(expected)
+        assert warped.interest_balance == Money(expected)
+        assert warped.mora_interest_balance == Money.zero()
 
 
 def test_current_balance_reflects_mora_rate_when_past_due():

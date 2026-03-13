@@ -119,15 +119,15 @@ def test_chart_data_generation(loan):
         try:
             with Warp(loan, date) as warped_loan:
                 total_balance = warped_loan.current_balance
-                outstanding_fines = warped_loan.outstanding_fines
-                principal_balance = total_balance - outstanding_fines
+                fine_bal = warped_loan.fine_balance
+                principal_balance = total_balance - fine_bal
 
                 balance_data.append(
                     {
                         "date": date,
                         "total_balance": float(total_balance.real_amount),
                         "principal_balance": float(principal_balance.real_amount),
-                        "outstanding_fines": float(outstanding_fines.real_amount),
+                        "fine_balance": float(fine_bal.real_amount),
                     }
                 )
         except Exception as e:
@@ -140,7 +140,7 @@ def test_chart_data_generation(loan):
         print(f"   Sample data point: {first_point['date'].strftime('%Y-%m-%d')}")
         print(f"     Total Balance: ${first_point['total_balance']:,.2f}")
         print(f"     Principal: ${first_point['principal_balance']:,.2f}")
-        print(f"     Fines: ${first_point['outstanding_fines']:,.2f}")
+        print(f"     Fines: ${first_point['fine_balance']:,.2f}")
 
 
 def test_late_payment_scenario(loan):
@@ -160,7 +160,7 @@ def test_late_payment_scenario(loan):
         print(f"   Fines before: ${fines_before.real_amount:,.2f}")
         print(f"   New fines applied: ${new_fines.real_amount:,.2f}")
         print(f"   Total fines after: ${fines_after.real_amount:,.2f}")
-        print(f"   Outstanding fines: ${warped_loan.outstanding_fines.real_amount:,.2f}")
+        print(f"   Fine balance: ${warped_loan.fine_balance.real_amount:,.2f}")
 
         if new_fines.is_positive():
             print(f"   Fine rate applied: {loan.fine_rate}")

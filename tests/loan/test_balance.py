@@ -1,4 +1,4 @@
-"""Tests for Loan balance properties, accrued interest, and balance composition."""
+"""Tests for Loan balance properties and balance composition."""
 
 from datetime import datetime, timezone
 
@@ -92,8 +92,8 @@ def test_loan_principal_balance_zero_after_full_payment():
     assert loan.principal_balance == Money.zero()
 
 
-def test_loan_accrued_interest_initial_zero():
-    """Test accrued_interest is zero at disbursement time."""
+def test_loan_interest_balance_initial_zero():
+    """Test interest_balance is zero at disbursement time."""
     principal = Money("10000.00")
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
@@ -101,56 +101,51 @@ def test_loan_accrued_interest_initial_zero():
 
     loan = Loan(principal, rate, due_dates, disbursement_date=disbursement_date)
 
-    # At disbursement time, accrued interest should be zero
     with Warp(loan, disbursement_date) as warped_loan:
-        assert warped_loan.accrued_interest == Money.zero()
+        assert warped_loan.interest_balance == Money.zero()
 
 
-def test_loan_accrued_interest_grows_over_time():
-    """Test accrued_interest increases over time."""
+def test_loan_interest_balance_grows_over_time():
+    """Test interest_balance increases over time."""
     principal = Money("10000.00")
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
 
-    # Use Warp to simulate time passing
     with Warp(loan, datetime(2024, 1, 15, tzinfo=timezone.utc)) as warped_loan:
-        interest_after_14_days = warped_loan.accrued_interest
+        interest_after_14_days = warped_loan.interest_balance
 
     with Warp(loan, datetime(2024, 1, 30, tzinfo=timezone.utc)) as warped_loan:
-        interest_after_29_days = warped_loan.accrued_interest
+        interest_after_29_days = warped_loan.interest_balance
 
     assert interest_after_14_days > Money.zero()
     assert interest_after_29_days > interest_after_14_days
 
 
-def test_loan_accrued_interest_resets_after_payment():
-    """Test accrued_interest resets after interest payment."""
+def test_loan_interest_balance_resets_after_payment():
+    """Test interest_balance resets after interest payment."""
     principal = Money("10000.00")
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
 
-    # Let interest accrue
     with Warp(loan, datetime(2024, 1, 15, tzinfo=timezone.utc)) as warped_loan:
-        interest_before_payment = warped_loan.accrued_interest
+        interest_before_payment = warped_loan.interest_balance
 
     assert interest_before_payment > Money.zero()
 
-    # Make payment to cover accrued interest
     loan.record_payment(Money("100.00"), datetime(2024, 1, 15, tzinfo=timezone.utc))
 
-    # Interest should be reset (or much lower)
     with Warp(loan, datetime(2024, 1, 16, tzinfo=timezone.utc)) as warped_loan:
-        interest_after_payment = warped_loan.accrued_interest
+        interest_after_payment = warped_loan.interest_balance
 
     assert interest_after_payment < interest_before_payment
 
 
 def test_loan_current_balance_composition():
-    """Test current_balance equals principal_balance + accrued_interest + outstanding_fines."""
+    """Test current_balance equals sum of four component balances."""
     principal = Money("10000.00")
     rate = InterestRate("5% a")
     due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
@@ -163,17 +158,16 @@ def test_loan_current_balance_composition():
         fine_rate=InterestRate("2% annual"),
     )
 
-    # Let interest accrue and apply fines
     with Warp(loan, datetime(2024, 2, 5, tzinfo=timezone.utc)) as warped_loan:
         warped_loan.calculate_late_fines(datetime(2024, 2, 5, tzinfo=timezone.utc))
 
         principal_bal = warped_loan.principal_balance
-        accrued_int = warped_loan.accrued_interest
-        fines = warped_loan.outstanding_fines
+        interest = warped_loan.interest_balance
+        mora = warped_loan.mora_interest_balance
+        fines = warped_loan.fine_balance
         current_bal = warped_loan.current_balance
 
-        # Current balance should equal sum of components
-        expected_balance = principal_bal + accrued_int + fines
+        expected_balance = principal_bal + interest + mora + fines
         assert current_bal == expected_balance
 
 
@@ -185,22 +179,18 @@ def test_loan_balance_components_with_payments():
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
 
-    # Make partial payment
     loan.record_payment(Money("500.00"), datetime(2024, 1, 15, tzinfo=timezone.utc))
 
     with Warp(loan, datetime(2024, 1, 20, tzinfo=timezone.utc)) as warped_loan:
         principal_bal = warped_loan.principal_balance
-        accrued_int = warped_loan.accrued_interest
+        interest = warped_loan.interest_balance
+        mora = warped_loan.mora_interest_balance
+        fines = warped_loan.fine_balance
         current_bal = warped_loan.current_balance
 
-        # Principal should be reduced
         assert principal_bal < principal
-
-        # Interest should be accruing on remaining principal
-        assert accrued_int > Money.zero()
-
-        # Current balance should be sum of components
-        assert current_bal == principal_bal + accrued_int + warped_loan.outstanding_fines
+        assert interest > Money.zero()
+        assert current_bal == principal_bal + interest + mora + fines
 
 
 def test_loan_balance_components_with_fines_and_payments():
@@ -217,27 +207,21 @@ def test_loan_balance_components_with_fines_and_payments():
         fine_rate=InterestRate("3% annual"),
     )
 
-    # Let payment become late and apply fine
     with Warp(loan, datetime(2024, 2, 10, tzinfo=timezone.utc)) as warped_loan:
         warped_loan.calculate_late_fines(datetime(2024, 2, 10, tzinfo=timezone.utc))
-        fines_before_payment = warped_loan.outstanding_fines
+        fines_before_payment = warped_loan.fine_balance
 
     assert fines_before_payment > Money.zero()
 
-    # Make payment that covers fines and some principal/interest
     loan.record_payment(Money("1000.00"), datetime(2024, 2, 10, tzinfo=timezone.utc))
 
     with Warp(loan, datetime(2024, 2, 15, tzinfo=timezone.utc)) as warped_loan:
         principal_bal = warped_loan.principal_balance
-        accrued_int = warped_loan.accrued_interest
-        fines = warped_loan.outstanding_fines
+        interest = warped_loan.interest_balance
+        mora = warped_loan.mora_interest_balance
+        fines = warped_loan.fine_balance
         current_bal = warped_loan.current_balance
 
-        # Fines should be paid first (reduced or zero)
         assert fines < fines_before_payment
-
-        # Principal should be reduced from payment
         assert principal_bal < principal
-
-        # Components should sum to current balance
-        assert current_bal == principal_bal + accrued_int + fines
+        assert current_bal == principal_bal + interest + mora + fines
