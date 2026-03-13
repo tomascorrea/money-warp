@@ -130,6 +130,9 @@ branch = true
 source = ["money_warp"]
 
 [tool.deptry]
+ignore_obsolete = [
+    "psycopg"
+]
 ignore_transitive = [
     "ipython",
     "ipywidgets", 
