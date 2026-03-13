@@ -5,17 +5,19 @@ persists to SA models, and verifies balance_at against settlement data.
 """
 
 import copy
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 from sqlalchemy import select
 
 from money_warp import Loan, MoraStrategy, Warp
+from money_warp.ext.sa.types import DueDatesType
 from money_warp.interest_rate import InterestRate
 from money_warp.money import Money
 
 from .conftest import (
     _LATE_PAYMENT_DUE_DATES,
+    DueDatesModel,
     LoanRecord,
     LoanRecordFactory,
     StringLoanRecord,
@@ -25,6 +27,7 @@ from .conftest import (
 _LOAN_PRINCIPAL = Money("10000")
 _LOAN_RATE = InterestRate("6% a")
 _LOAN_DISBURSEMENT = datetime(2025, 1, 1, tzinfo=timezone.utc)
+_LOAN_DUE_DATETIMES = [datetime(d.year, d.month, d.day, tzinfo=timezone.utc) for d in _LATE_PAYMENT_DUE_DATES]
 
 
 @pytest.fixture()
@@ -33,7 +36,7 @@ def loan_with_payments():
     loan = Loan(
         _LOAN_PRINCIPAL,
         _LOAN_RATE,
-        _LATE_PAYMENT_DUE_DATES,
+        _LOAN_DUE_DATETIMES,
         disbursement_date=_LOAN_DISBURSEMENT,
         fine_rate=InterestRate("2% annual"),
         grace_period_days=0,
@@ -84,7 +87,7 @@ def test_late_payment_remaining_balance_higher_than_on_time(loan_with_payments):
     on_time_loan = Loan(
         _LOAN_PRINCIPAL,
         _LOAN_RATE,
-        _LATE_PAYMENT_DUE_DATES,
+        _LOAN_DUE_DATETIMES,
         disbursement_date=_LOAN_DISBURSEMENT,
         fine_rate=InterestRate("2% annual"),
         mora_interest_rate=InterestRate("12% a"),
@@ -211,7 +214,7 @@ def test_balance_at_sql_matches_python_various_mora_rate_periods(session, mora_r
         fine_rate=InterestRate("2% annual"),
         grace_period_days=0,
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        due_dates=[d.isoformat() for d in _LATE_PAYMENT_DUE_DATES],
+        due_dates=list(_LATE_PAYMENT_DUE_DATES),
     )
     session.expire_all()
     loaded = session.get(LoanRecord, sa_loan.id)
@@ -274,7 +277,7 @@ def test_string_repr_balance_at_sql_matches_python_mora(session, mora_rate_str):
         fine_rate=InterestRate("2% annual"),
         grace_period_days=0,
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        due_dates=[d.isoformat() for d in _LATE_PAYMENT_DUE_DATES],
+        due_dates=list(_LATE_PAYMENT_DUE_DATES),
     )
     session.expire_all()
     loaded = session.get(StringLoanRecord, sa_loan.id)
@@ -339,7 +342,7 @@ def test_string_repr_abbrev_balance_at_sql_matches_python_mora(session, mora_rat
         fine_rate=InterestRate("2% annual"),
         grace_period_days=0,
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        due_dates=[d.isoformat() for d in _LATE_PAYMENT_DUE_DATES],
+        due_dates=list(_LATE_PAYMENT_DUE_DATES),
     )
     session.expire_all()
     loaded = session.get(StringLoanRecord, sa_loan.id)
@@ -448,3 +451,61 @@ def test_sql_component_sum_equals_balance_at(session, warp_to):
 
     component_sum = float(principal) + float(interest) + float(mora) + float(fines)
     assert component_sum == pytest.approx(float(total.raw_amount), abs=1e-4)
+
+
+# ===========================================================================
+# DueDatesType round-trip
+# ===========================================================================
+
+
+def test_due_dates_type_round_trip(session):
+    dates = [date(2024, 1, 15), date(2024, 2, 15), date(2024, 3, 15)]
+    row = DueDatesModel(dates=dates)
+    session.add(row)
+    session.flush()
+
+    session.expire_all()
+    loaded = session.get(DueDatesModel, row.id)
+    assert loaded.dates == [date(2024, 1, 15), date(2024, 2, 15), date(2024, 3, 15)]
+
+
+def test_due_dates_type_none_round_trip(session):
+    row = DueDatesModel(dates=None)
+    session.add(row)
+    session.flush()
+
+    session.expire_all()
+    loaded = session.get(DueDatesModel, row.id)
+    assert loaded.dates is None
+
+
+def test_due_dates_type_empty_list_round_trip(session):
+    row = DueDatesModel(dates=[])
+    session.add(row)
+    session.flush()
+
+    session.expire_all()
+    loaded = session.get(DueDatesModel, row.id)
+    assert loaded.dates == []
+
+
+def test_due_dates_type_single_date_round_trip(session):
+    row = DueDatesModel(dates=[date(2025, 12, 31)])
+    session.add(row)
+    session.flush()
+
+    session.expire_all()
+    loaded = session.get(DueDatesModel, row.id)
+    assert loaded.dates == [date(2025, 12, 31)]
+
+
+def test_due_dates_type_serializes_to_iso_strings():
+    col_type = DueDatesType()
+    dates = [date(2024, 6, 1), date(2024, 7, 1)]
+    assert col_type.process_bind_param(dates, None) == ["2024-06-01", "2024-07-01"]
+
+
+def test_due_dates_type_deserializes_from_iso_strings():
+    col_type = DueDatesType()
+    raw = ["2024-06-01", "2024-07-01"]
+    assert col_type.process_result_value(raw, None) == [date(2024, 6, 1), date(2024, 7, 1)]
