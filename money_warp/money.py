@@ -1,5 +1,6 @@
 """Money class for high-precision financial calculations."""
 
+import numbers
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Union
 
@@ -52,6 +53,24 @@ class Money:
         """Divide by a number - keeps high precision."""
         return Money(self._amount / Decimal(str(divisor)))
 
+    def __radd__(self, other: Union[Decimal, int, float]) -> "Money":
+        """Support numeric + Money (e.g. Decimal + Money)."""
+        if isinstance(other, (Decimal, int, float)):
+            return Money(Decimal(str(other)) + self._amount)
+        return NotImplemented
+
+    def __rsub__(self, other: Union[Decimal, int, float]) -> "Money":
+        """Support numeric - Money (e.g. Decimal - Money)."""
+        if isinstance(other, (Decimal, int, float)):
+            return Money(Decimal(str(other)) - self._amount)
+        return NotImplemented
+
+    def __rmul__(self, factor: Union[Decimal, int, float]) -> "Money":
+        """Support numeric * Money (e.g. float * Money)."""
+        if isinstance(factor, (Decimal, int, float)):
+            return Money(self._amount * Decimal(str(factor)))
+        return NotImplemented
+
     def __neg__(self) -> "Money":
         """Negative money."""
         return Money(-self._amount)
@@ -68,8 +87,8 @@ class Money:
         """Extract the Decimal value to compare against, or NotImplemented."""
         if isinstance(other, Money):
             return other.real_amount
-        if isinstance(other, Decimal):
-            return other
+        if isinstance(other, (Decimal, int, float)):
+            return Decimal(str(other))
         return NotImplemented
 
     def __eq__(self, other: object) -> bool:
@@ -149,3 +168,6 @@ class Money:
     def debug_precision(self) -> str:
         """Show both internal and real amounts for debugging."""
         return f"Internal: {self._amount}, Real: {self.real_amount}"
+
+
+numbers.Real.register(Money)

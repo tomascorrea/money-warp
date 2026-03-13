@@ -220,8 +220,12 @@ def test_money_equality_with_unsupported_type_returns_not_implemented():
     assert Money("100.50").__eq__("100.50") is NotImplemented
 
 
-def test_money_equality_with_int_returns_not_implemented():
-    assert Money("100").__eq__(100) is NotImplemented
+def test_money_equality_with_int():
+    assert Money("100") == 100
+
+
+def test_money_equality_with_float():
+    assert Money("100.50") == 100.5
 
 
 # Property tests
@@ -316,3 +320,79 @@ def test_money_compound_operations_precision():
     result = money / 3 * 3
     # Due to precision, might not be exactly 100.00 but should be close
     assert abs(result.real_amount - Decimal("100.00")) <= Decimal("0.01")
+
+
+# Reflected arithmetic tests (__radd__, __rsub__)
+def test_money_radd_decimal_plus_money():
+    result = Decimal("50.00") + Money("30.25")
+    assert result.real_amount == Decimal("80.25")
+
+
+def test_money_radd_int_plus_money():
+    result = 50 + Money("30.25")
+    assert result.real_amount == Decimal("80.25")
+
+
+def test_money_radd_float_plus_money():
+    result = 50.0 + Money("30.25")
+    assert result.real_amount == Decimal("80.25")
+
+
+def test_money_radd_unsupported_type_returns_not_implemented():
+    assert Money("100").__radd__("bad") is NotImplemented
+
+
+def test_money_rsub_decimal_minus_money():
+    result = Decimal("100.00") - Money("30.25")
+    assert result.real_amount == Decimal("69.75")
+
+
+def test_money_rsub_int_minus_money():
+    result = 100 - Money("30.25")
+    assert result.real_amount == Decimal("69.75")
+
+
+def test_money_rsub_float_minus_money():
+    result = 100.0 - Money("30.25")
+    assert result.real_amount == Decimal("69.75")
+
+
+def test_money_rsub_unsupported_type_returns_not_implemented():
+    assert Money("100").__rsub__("bad") is NotImplemented
+
+
+# Reflected multiplication tests (__rmul__)
+def test_money_rmul_int_times_money():
+    result = 3 * Money("50.00")
+    assert result.real_amount == Decimal("150.00")
+
+
+def test_money_rmul_float_times_money():
+    result = 1.5 * Money("100.00")
+    assert result.real_amount == Decimal("150.00")
+
+
+def test_money_rmul_decimal_times_money():
+    result = Decimal("2.5") * Money("100.00")
+    assert result.real_amount == Decimal("250.00")
+
+
+def test_money_rmul_unsupported_type_returns_not_implemented():
+    assert Money("100").__rmul__("bad") is NotImplemented
+
+
+# pytest.approx compatibility tests
+def test_money_approx_exact_match():
+    assert Money("200.00") == pytest.approx(Money("200.00"))
+
+
+def test_money_approx_within_tolerance():
+    assert Money("200.01") == pytest.approx(Money("200"), abs=Decimal("0.02"))
+
+
+def test_money_approx_outside_tolerance():
+    assert Money("200.05") != pytest.approx(Money("200"), abs=Decimal("0.02"))
+
+
+def test_money_approx_default_tolerance():
+    assert Money("200.00") == pytest.approx(Money("200"))
