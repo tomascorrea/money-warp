@@ -352,3 +352,99 @@ def test_string_repr_abbrev_balance_at_sql_matches_python_mora(session, mora_rat
     ).scalar()
 
     assert float(sql_result.raw_amount) == pytest.approx(expected, abs=1e-4)
+
+
+# ===========================================================================
+# Component balance SQL vs Python (per component)
+# ===========================================================================
+
+_COMPONENT_WARP_DATES = [
+    datetime(2025, 1, 15, tzinfo=timezone.utc),
+    datetime(2025, 2, 15, tzinfo=timezone.utc),
+    datetime(2025, 3, 15, tzinfo=timezone.utc),
+    datetime(2025, 3, 20, tzinfo=timezone.utc),
+    datetime(2025, 4, 1, tzinfo=timezone.utc),
+]
+
+
+@pytest.mark.parametrize("warp_to", _COMPONENT_WARP_DATES)
+def test_principal_balance_at_sql_matches_python(session, warp_to):
+    sa_loan = LoanRecordFactory(with_late_payment=True)
+    session.expire_all()
+    loaded = session.get(LoanRecord, sa_loan.id)
+
+    expected = float(loaded.principal_balance_at(warp_to).raw_amount)
+    sql_result = session.execute(
+        select(LoanRecord.principal_balance_at(warp_to)).where(LoanRecord.id == sa_loan.id)
+    ).scalar()
+
+    assert float(sql_result) == pytest.approx(expected, abs=1e-4)
+
+
+@pytest.mark.parametrize("warp_to", _COMPONENT_WARP_DATES)
+def test_interest_balance_at_sql_matches_python(session, warp_to):
+    sa_loan = LoanRecordFactory(with_late_payment=True)
+    session.expire_all()
+    loaded = session.get(LoanRecord, sa_loan.id)
+
+    expected = float(loaded.interest_balance_at(warp_to).raw_amount)
+    sql_result = session.execute(
+        select(LoanRecord.interest_balance_at(warp_to)).where(LoanRecord.id == sa_loan.id)
+    ).scalar()
+
+    assert float(sql_result) == pytest.approx(expected, abs=1e-4)
+
+
+@pytest.mark.parametrize("warp_to", _COMPONENT_WARP_DATES)
+def test_mora_interest_balance_at_sql_matches_python(session, warp_to):
+    sa_loan = LoanRecordFactory(with_late_payment=True)
+    session.expire_all()
+    loaded = session.get(LoanRecord, sa_loan.id)
+
+    expected = float(loaded.mora_interest_balance_at(warp_to).raw_amount)
+    sql_result = session.execute(
+        select(LoanRecord.mora_interest_balance_at(warp_to)).where(LoanRecord.id == sa_loan.id)
+    ).scalar()
+
+    assert float(sql_result) == pytest.approx(expected, abs=1e-4)
+
+
+@pytest.mark.parametrize("warp_to", _COMPONENT_WARP_DATES)
+def test_fine_balance_at_sql_matches_python(session, warp_to):
+    sa_loan = LoanRecordFactory(with_late_payment=True)
+    session.expire_all()
+    loaded = session.get(LoanRecord, sa_loan.id)
+
+    expected = float(loaded.fine_balance_at(warp_to).raw_amount)
+    sql_result = session.execute(
+        select(LoanRecord.fine_balance_at(warp_to)).where(LoanRecord.id == sa_loan.id)
+    ).scalar()
+
+    assert float(sql_result) == pytest.approx(expected, abs=1e-4)
+
+
+# ===========================================================================
+# Sum equivalence: components sum to total balance (SQL side)
+# ===========================================================================
+
+
+@pytest.mark.parametrize("warp_to", _COMPONENT_WARP_DATES)
+def test_sql_component_sum_equals_balance_at(session, warp_to):
+    """principal + interest + mora + fines == balance (SQL expressions)."""
+    sa_loan = LoanRecordFactory(with_late_payment=True)
+    session.expire_all()
+
+    total = session.execute(select(LoanRecord.balance_at(warp_to)).where(LoanRecord.id == sa_loan.id)).scalar()
+    principal = session.execute(
+        select(LoanRecord.principal_balance_at(warp_to)).where(LoanRecord.id == sa_loan.id)
+    ).scalar()
+    interest = session.execute(
+        select(LoanRecord.interest_balance_at(warp_to)).where(LoanRecord.id == sa_loan.id)
+    ).scalar()
+    mora = session.execute(
+        select(LoanRecord.mora_interest_balance_at(warp_to)).where(LoanRecord.id == sa_loan.id)
+    ).scalar()
+    fines = session.execute(select(LoanRecord.fine_balance_at(warp_to)).where(LoanRecord.id == sa_loan.id)).scalar()
+
+    component_sum = float(principal) + float(interest) + float(mora) + float(fines)
+    assert component_sum == pytest.approx(float(total.raw_amount), abs=1e-4)
