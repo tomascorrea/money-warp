@@ -47,7 +47,7 @@ Custom SQLAlchemy `TypeDecorator` column types and bridge decorators for loan/se
 ```
 money_warp/ext/sa/
   __init__.py   -- re-exports for backward compatibility
-  types.py      -- MoneyType, RateType, InterestRateType
+  types.py      -- MoneyType, RateType, InterestRateType, DueDatesType
   bridge.py     -- settlement_bridge, loan_bridge, _load_money_warp_loan, CTE SQL expression
   compat.py     -- dialect-aware SQL function wrappers (SQLite + PostgreSQL)
 ```
@@ -89,6 +89,23 @@ Same deserialization knobs as the Marshmallow `RateField`: `year_size`, `precisi
 ### InterestRateType
 
 Subclass of `RateType` with `RATE_CLASS = InterestRate`. Same representations, constructs `InterestRate` on load (rejects negative values).
+
+### DueDatesType
+
+`TypeDecorator` storing `list[date]` as a JSON array of ISO 8601 strings (`"YYYY-MM-DD"`). Constructor signature:
+
+```python
+DueDatesType(impl_type=JSON)
+```
+
+- `impl_type` controls the underlying column type. Defaults to `JSON`. Pass `JSONB` for PostgreSQL-native binary JSON.
+
+| Direction | Format |
+|-----------|--------|
+| Bind (Python -> DB) | `[d.isoformat() for d in value]` |
+| Result (DB -> Python) | `[date.fromisoformat(s) for s in value]` |
+
+`None` passes through in both directions. The bridge's `_parse_due_dates` handles `date`, `datetime`, and `str` elements so that models using `DueDatesType` and models using raw `JSON` columns both work with `@loan_bridge`.
 
 ### settlement_bridge
 
