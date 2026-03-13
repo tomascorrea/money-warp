@@ -1,11 +1,13 @@
 # ruff: noqa: A003
 """Shared models, fixtures, and factories for SQLAlchemy extension tests."""
 
+import os
 from datetime import datetime, timezone
 
 import factory
 import factory.alchemy
 import pytest
+from pytest_postgresql import factories as pg_factories
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, relationship
 
@@ -135,15 +137,47 @@ class StringLoanRecord(Base):
 
 
 # ---------------------------------------------------------------------------
+# PostgreSQL fixtures (pytest-postgresql noproc for Docker/CI server)
+# ---------------------------------------------------------------------------
+
+postgresql_noproc = pg_factories.postgresql_noproc(
+    host=os.environ.get("PG_HOST", "postgres"),
+    port=int(os.environ.get("PG_PORT", "5432")),
+    user=os.environ.get("PG_USER", "test"),
+    password=os.environ.get("PG_PASSWORD", "test"),
+)
+postgresql_conn = pg_factories.postgresql("postgresql_noproc")
+
+
+# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
+_PG_ENABLED = os.environ.get("MONEY_WARP_TEST_PG", "").lower() in ("1", "true", "yes")
 
-@pytest.fixture()
-def engine():
-    eng = create_engine("sqlite:///:memory:")
+_engine_params = [pytest.param("sqlite", id="sqlite")]
+if _PG_ENABLED:
+    _engine_params.append(pytest.param("postgresql", id="postgresql"))
+
+
+@pytest.fixture(params=_engine_params)
+def engine(request):
+    if request.param == "sqlite":
+        eng = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(eng)
+        yield eng
+        return
+
+    pg = request.getfixturevalue("postgresql_conn")
+    host = os.environ.get("PG_HOST", "postgres")
+    port = os.environ.get("PG_PORT", "5432")
+    user = os.environ.get("PG_USER", "test")
+    password = os.environ.get("PG_PASSWORD", "test")
+    dsn = f"postgresql+psycopg://{user}:{password}@{host}:{port}/{pg.info.dbname}"
+    eng = create_engine(dsn)
     Base.metadata.create_all(eng)
-    return eng
+    yield eng
+    eng.dispose()
 
 
 @pytest.fixture()
