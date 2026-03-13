@@ -118,12 +118,31 @@ Class decorator that stores column metadata on a settlement model:
     amount="amount",
     interest_date="interest_date",
     processing_date="processing_date",
+    intention="intention",
 )
 ```
 
 All params have defaults matching the names above — `@settlement_bridge()` with no args works if you follow the convention. Stores a `_money_warp_bridge_meta` dict on the class.
 
 The `interest_date` and `processing_date` columns are optional on the model. When absent or `None`, `record_payment` uses its own defaults (`interest_date` defaults to `payment_date`, `processing_date` defaults to `self.now()`).
+
+#### Intention column
+
+The `intention` column is a JSON object that declares which payment method was used when the settlement was created. The column should be NOT NULL. Recognized shapes:
+
+```json
+{"method": "record_payment"}
+{"method": "pay_installment"}
+{"method": "anticipate_payment", "installments": [1, 2]}
+```
+
+During replay (`_replay_settlements`), the intention determines which `Loan` method is called:
+
+- `"record_payment"`: calls `loan.record_payment(amount, date, **kwargs)` with `interest_date` and `processing_date` from the model.
+- `"pay_installment"`: calls `loan.pay_installment(amount)`. The method internally computes `interest_date = max(self.now(), next_due)`, which is correct because time is already warped to the payment date.
+- `"anticipate_payment"`: calls `loan.anticipate_payment(amount, installments=...)` with installment numbers from the JSON.
+
+When the `intention` attribute is absent on the model (backward compatibility), the replay defaults to `{"method": "record_payment"}`.
 
 ### loan_bridge
 
@@ -139,8 +158,8 @@ Stores `_money_warp_bridge_meta` on the loan class with all field mappings.
 
 **`_load_money_warp_loan()`** (instance method, no parameters):
 - Reads `_money_warp_bridge_meta` from `type(self)`.
-- Reconstructs a full `money_warp.Loan` from stored fields, replays settlements with per-payment time warping (loan's `_time_ctx` is overridden to each payment's date before `record_payment`).
-- Passes all three dates from settlement metadata: `payment_date`, `interest_date`, `processing_date` (optional ones skipped when `None`).
+- Reconstructs a full `money_warp.Loan` from stored fields, replays settlements with per-payment time warping (loan's `_time_ctx` is overridden to each payment's date).
+- Dispatches to the correct `Loan` payment method based on the settlement's `intention` JSON: `record_payment`, `pay_installment`, or `anticipate_payment`. Falls back to `record_payment` when intention is absent.
 - Always returns a `Loan` or raises `ValueError` if any required field (`interest_rate`, `due_dates`, `disbursement_date`) is `None`.
 - Never returns `None`.
 
