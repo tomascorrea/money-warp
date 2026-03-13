@@ -20,10 +20,6 @@ services:
       - internal
     environment:
       MONEY_WARP_TEST_PG: "1"
-      PG_HOST: postgres
-      PG_PORT: "5432"
-      PG_USER: test
-      PG_PASSWORD: test
 
   postgres:
     image: postgres:16
