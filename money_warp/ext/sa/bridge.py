@@ -41,13 +41,14 @@ def settlement_bridge(
     amount: str = "amount",
     interest_date: str = "interest_date",
     processing_date: str = "processing_date",
+    intention: str = "intention",
 ):
     """Mark a settlement model with column metadata for :func:`loan_bridge`.
 
     Stores a ``_money_warp_bridge_meta`` dict on the class so that
     ``@loan_bridge`` can discover which columns hold the remaining
-    balance, payment date, payment amount, interest date, and
-    processing date.
+    balance, payment date, payment amount, interest date, processing
+    date, and payment intention.
 
     All parameters have sensible defaults.  If your columns follow the
     naming convention, ``@settlement_bridge()`` with no arguments works.
@@ -56,12 +57,24 @@ def settlement_bridge(
     on the model.  When absent or ``None``,
     :meth:`~money_warp.loan.Loan.record_payment` uses its own defaults.
 
+    The ``intention`` column is a JSON object that declares which payment
+    method was used when the settlement was created.  Recognized shapes::
+
+        {"method": "record_payment"}
+        {"method": "pay_installment"}
+        {"method": "anticipate_payment", "installments": [1, 2]}
+
+    When the attribute is absent on the model,
+    ``{"method": "record_payment"}`` is assumed for backward
+    compatibility.
+
     Args:
         balance: Attribute name for the remaining balance after settlement.
         date: Attribute name for the payment/settlement date.
         amount: Attribute name for the payment amount.
         interest_date: Attribute name for the interest accrual cutoff date.
         processing_date: Attribute name for the audit-trail processing date.
+        intention: Attribute name for the payment intention JSON object.
     """
 
     def decorator(cls):
@@ -71,6 +84,7 @@ def settlement_bridge(
             "amount": amount,
             "interest_date": interest_date,
             "processing_date": processing_date,
+            "intention": intention,
         }
         return cls
 
@@ -137,8 +151,24 @@ def _collect_optional_loan_kwargs(instance, meta):
     return kwargs
 
 
+_DEFAULT_INTENTION = {"method": "record_payment"}
+
+
 def _replay_settlements(loan, items):
-    """Replay recorded settlements onto *loan*, warping time per payment."""
+    """Replay recorded settlements onto *loan*, warping time per payment.
+
+    Dispatches to the correct payment method based on the ``intention``
+    JSON stored on each settlement item:
+
+    - ``"record_payment"`` (default): explicit dates via ``record_payment``.
+    - ``"pay_installment"``: delegates to ``loan.pay_installment`` which
+      computes ``interest_date = max(now, next_due)`` internally.
+    - ``"anticipate_payment"``: delegates to ``loan.anticipate_payment``
+      with optional installment numbers from the JSON.
+
+    When the ``intention`` attribute is absent on the model, falls back
+    to ``record_payment`` for backward compatibility.
+    """
     if not items:
         return
 
@@ -147,19 +177,25 @@ def _replay_settlements(loan, items):
         pdate = ensure_aware(getattr(item, s_meta["date"]))
         loan._time_ctx.override(WarpedTime(pdate))
 
-        rp_kwargs: dict = {}
-        idate = getattr(item, s_meta["interest_date"], None)
-        if idate is not None:
-            rp_kwargs["interest_date"] = idate
-        proc_date = getattr(item, s_meta["processing_date"], None)
-        if proc_date is not None:
-            rp_kwargs["processing_date"] = proc_date
+        amount = getattr(item, s_meta["amount"])
+        raw_intention = getattr(item, s_meta["intention"], _DEFAULT_INTENTION)
+        method = raw_intention.get("method", "record_payment")
 
-        loan.record_payment(
-            getattr(item, s_meta["amount"]),
-            pdate,
-            **rp_kwargs,
-        )
+        if method == "pay_installment":
+            loan.pay_installment(amount)
+        elif method == "anticipate_payment":
+            installments = raw_intention.get("installments")
+            loan.anticipate_payment(amount, installments=installments)
+        else:
+            rp_kwargs: dict = {}
+            idate = getattr(item, s_meta["interest_date"], None)
+            if idate is not None:
+                rp_kwargs["interest_date"] = idate
+            proc_date = getattr(item, s_meta["processing_date"], None)
+            if proc_date is not None:
+                rp_kwargs["processing_date"] = proc_date
+
+            loan.record_payment(amount, pdate, **rp_kwargs)
 
 
 def _load_money_warp_loan_impl(self):
