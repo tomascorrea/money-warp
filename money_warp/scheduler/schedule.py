@@ -1,7 +1,7 @@
 """Payment schedule data structures."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date
 from typing import Iterator, List
 
 from ..money import Money
@@ -16,7 +16,7 @@ class PaymentScheduleEntry:
     """
 
     payment_number: int
-    due_date: datetime
+    due_date: date
     days_in_period: int
     beginning_balance: Money
     payment_amount: Money
@@ -29,7 +29,7 @@ class PaymentScheduleEntry:
         return (
             f"Payment {self.payment_number}: {self.payment_amount} "
             f"(Principal: {self.principal_payment}, Interest: {self.interest_payment}) "
-            f"on {self.due_date.date()}"
+            f"on {self.due_date}"
         )
 
 

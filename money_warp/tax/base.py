@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import List
 
 from ..money import Money
@@ -14,7 +14,7 @@ class TaxInstallmentDetail:
     """Tax breakdown for a single installment."""
 
     payment_number: int
-    due_date: datetime
+    due_date: date
     principal_payment: Money
     tax_amount: Money
 

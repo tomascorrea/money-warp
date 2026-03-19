@@ -1,6 +1,6 @@
 """Price scheduler implementing Progressive Price Schedule (French amortization system)."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Optional
 
@@ -36,7 +36,7 @@ class PriceScheduler(BaseScheduler):
 
     @classmethod
     def generate_schedule(
-        cls, principal: Money, interest_rate: InterestRate, due_dates: List[datetime], disbursement_date: datetime
+        cls, principal: Money, interest_rate: InterestRate, due_dates: List[date], disbursement_date: datetime
     ) -> PaymentSchedule:
         """
         Generate Progressive Price Schedule with fixed payment amounts.
@@ -54,7 +54,7 @@ class PriceScheduler(BaseScheduler):
             raise ValueError("At least one due date is required")
 
         # Calculate return days (days from disbursement to each payment)
-        return_days = [(due_date - disbursement_date).days for due_date in due_dates]
+        return_days = [(due_date - disbursement_date.date()).days for due_date in due_dates]
 
         # Calculate PMT using the reference formula
         daily_rate = interest_rate.to_daily().as_decimal()
@@ -72,7 +72,7 @@ class PriceScheduler(BaseScheduler):
         remaining_balance = principal.real_amount
 
         for i, due_date in enumerate(due_dates):
-            prev_date = disbursement_date if i == 0 else due_dates[i - 1]
+            prev_date = disbursement_date.date() if i == 0 else due_dates[i - 1]
             days = (due_date - prev_date).days
 
             beginning_balance = remaining_balance
