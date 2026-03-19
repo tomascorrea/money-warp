@@ -202,12 +202,10 @@ def _build_late_payment_settlements(obj, create, extracted, **kwargs):
     if not create:
         return
 
-    due_dates_dt = [datetime(d.year, d.month, d.day, tzinfo=timezone.utc) for d in obj.due_dates]
-
     loan = Loan(
         obj.principal,
         obj.interest_rate,
-        due_dates_dt,
+        list(obj.due_dates),
         disbursement_date=obj.disbursement_date,
         fine_rate=obj.fine_rate,
         grace_period_days=obj.grace_period_days,

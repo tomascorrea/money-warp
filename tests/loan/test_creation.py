@@ -1,6 +1,6 @@
 """Tests for Loan creation, validation, defaults, and string representation."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -11,9 +11,9 @@ def test_loan_creation_basic():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
     due_dates = [
-        datetime(2024, 2, 1, tzinfo=timezone.utc),
-        datetime(2024, 3, 1, tzinfo=timezone.utc),
-        datetime(2024, 4, 1, tzinfo=timezone.utc),
+        date(2024, 2, 1),
+        date(2024, 3, 1),
+        date(2024, 4, 1),
     ]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
@@ -26,7 +26,7 @@ def test_loan_creation_basic():
 def test_loan_creation_with_disbursement_date():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
     disbursement_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
     loan = Loan(principal, rate, due_dates, disbursement_date)
@@ -36,7 +36,7 @@ def test_loan_creation_with_disbursement_date():
 def test_loan_creation_with_custom_scheduler():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     loan = Loan(
         principal,
@@ -52,7 +52,7 @@ def test_loan_creation_default_disbursement_date():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
     # Use a future first due date so default "now" is before it (validation requires disbursement < first due)
-    due_dates = [datetime(2030, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2030, 2, 1)]
 
     t_before = datetime.now(tz=timezone.utc)
     loan = Loan(principal, rate, due_dates)
@@ -65,16 +65,16 @@ def test_loan_creation_sorts_due_dates():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
     due_dates = [
-        datetime(2024, 3, 1, tzinfo=timezone.utc),
-        datetime(2024, 1, 1, tzinfo=timezone.utc),
-        datetime(2024, 2, 1, tzinfo=timezone.utc),
+        date(2024, 3, 1),
+        date(2024, 1, 1),
+        date(2024, 2, 1),
     ]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2023, 12, 1, tzinfo=timezone.utc))
     expected_sorted = [
-        datetime(2024, 1, 1, tzinfo=timezone.utc),
-        datetime(2024, 2, 1, tzinfo=timezone.utc),
-        datetime(2024, 3, 1, tzinfo=timezone.utc),
+        date(2024, 1, 1),
+        date(2024, 2, 1),
+        date(2024, 3, 1),
     ]
     assert loan.due_dates == expected_sorted
 
@@ -89,7 +89,7 @@ def test_loan_creation_empty_due_dates_raises_error():
 
 def test_loan_creation_zero_principal_raises_error():
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     with pytest.raises(ValueError, match="Principal must be positive"):
         Loan(Money.zero(), rate, due_dates)
@@ -97,7 +97,7 @@ def test_loan_creation_zero_principal_raises_error():
 
 def test_loan_creation_negative_principal_raises_error():
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     with pytest.raises(ValueError, match="Principal must be positive"):
         Loan(Money("-1000.00"), rate, due_dates)
@@ -106,7 +106,7 @@ def test_loan_creation_negative_principal_raises_error():
 def test_loan_creation_disbursement_on_or_after_first_due_raises_error():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     with pytest.raises(ValueError, match="disbursement_date must be before the first due date"):
         Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 2, 1, tzinfo=timezone.utc))
@@ -118,7 +118,7 @@ def test_loan_creation_disbursement_on_or_after_first_due_raises_error():
 def test_loan_initial_not_paid_off():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     assert not loan.is_paid_off
@@ -127,7 +127,7 @@ def test_loan_initial_not_paid_off():
 def test_loan_string_representation():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     loan_str = str(loan)
@@ -140,7 +140,7 @@ def test_loan_string_representation():
 def test_loan_repr_representation():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
     disbursement_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
     loan = Loan(principal, rate, due_dates, disbursement_date)

@@ -1,6 +1,6 @@
 """Tests for sugar payment methods (pay_installment, anticipate_payment) and schedule rebuild."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -16,7 +16,7 @@ def test_pay_installment_uses_now_as_payment_date():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1), date(2025, 3, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -29,7 +29,7 @@ def test_pay_installment_charges_interest_to_due_date():
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1), date(2025, 3, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -46,7 +46,7 @@ def test_pay_installment_charges_interest_to_due_date():
 
 def test_pay_installment_no_discount_vs_anticipate_discount():
     """pay_installment charges full-period interest; anticipate_payment only charges for elapsed days."""
-    due_dates = [datetime(2025, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2025, 2, 1)]
     disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
     principal = Money("10000.00")
     rate = InterestRate("6% a")
@@ -68,7 +68,7 @@ def test_pay_installment_no_discount_vs_anticipate_discount():
 
 def test_pay_installment_more_principal_with_anticipate():
     """anticipate_payment allocates more to principal since interest is lower."""
-    due_dates = [datetime(2025, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2025, 2, 1)]
     disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
     principal = Money("10000.00")
     rate = InterestRate("6% a")
@@ -94,7 +94,7 @@ def test_anticipate_payment_uses_now_as_payment_date():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -107,7 +107,7 @@ def test_anticipate_payment_charges_interest_only_for_elapsed_days():
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -124,7 +124,7 @@ def test_anticipate_payment_negative_amount_raises_error():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -141,31 +141,31 @@ def test_next_unpaid_due_date_returns_first_due_date():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1), date(2025, 3, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    assert loan._next_unpaid_due_date() == datetime(2025, 2, 1, tzinfo=timezone.utc)
+    assert loan._next_unpaid_due_date() == date(2025, 2, 1)
 
 
 def test_next_unpaid_due_date_advances_after_full_installment():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1), date(2025, 3, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
     scheduled_pmt = loan.get_original_schedule()[0].payment_amount
     loan.record_payment(scheduled_pmt, datetime(2025, 2, 1, tzinfo=timezone.utc))
-    assert loan._next_unpaid_due_date() == datetime(2025, 3, 1, tzinfo=timezone.utc)
+    assert loan._next_unpaid_due_date() == date(2025, 3, 1)
 
 
 def test_next_unpaid_due_date_raises_when_all_paid():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -182,7 +182,7 @@ def test_record_payment_with_explicit_interest_date():
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -203,7 +203,7 @@ def test_record_payment_interest_date_defaults_to_payment_date():
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -223,9 +223,9 @@ def test_schedule_rebuild_first_entry_reflects_actual_payment():
         Money("10000.00"),
         InterestRate("5% a"),
         [
-            datetime(2025, 2, 1, tzinfo=timezone.utc),
-            datetime(2025, 3, 1, tzinfo=timezone.utc),
-            datetime(2025, 4, 1, tzinfo=timezone.utc),
+            date(2025, 2, 1),
+            date(2025, 3, 1),
+            date(2025, 4, 1),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
@@ -241,9 +241,9 @@ def test_schedule_rebuild_remaining_entries_are_projected():
         Money("10000.00"),
         InterestRate("5% a"),
         [
-            datetime(2025, 2, 1, tzinfo=timezone.utc),
-            datetime(2025, 3, 1, tzinfo=timezone.utc),
-            datetime(2025, 4, 1, tzinfo=timezone.utc),
+            date(2025, 2, 1),
+            date(2025, 3, 1),
+            date(2025, 4, 1),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
@@ -257,9 +257,9 @@ def test_schedule_rebuild_remaining_entries_are_projected():
 
 def test_schedule_rebuild_total_entries_match_due_dates():
     due_dates = [
-        datetime(2025, 2, 1, tzinfo=timezone.utc),
-        datetime(2025, 3, 1, tzinfo=timezone.utc),
-        datetime(2025, 4, 1, tzinfo=timezone.utc),
+        date(2025, 2, 1),
+        date(2025, 3, 1),
+        date(2025, 4, 1),
     ]
     loan = Loan(
         Money("10000.00"),
@@ -277,9 +277,9 @@ def test_schedule_rebuild_total_entries_match_due_dates():
 def test_schedule_rebuild_projected_pmt_recalculated():
     """After a payment, the remaining PMT should be recalculated based on remaining principal."""
     due_dates = [
-        datetime(2025, 2, 1, tzinfo=timezone.utc),
-        datetime(2025, 3, 1, tzinfo=timezone.utc),
-        datetime(2025, 4, 1, tzinfo=timezone.utc),
+        date(2025, 2, 1),
+        date(2025, 3, 1),
+        date(2025, 4, 1),
     ]
     loan = Loan(
         Money("10000.00"),
@@ -305,9 +305,9 @@ def test_schedule_rebuild_projected_pmt_recalculated():
 
 def test_schedule_rebuild_payment_numbers_are_sequential():
     due_dates = [
-        datetime(2025, 2, 1, tzinfo=timezone.utc),
-        datetime(2025, 3, 1, tzinfo=timezone.utc),
-        datetime(2025, 4, 1, tzinfo=timezone.utc),
+        date(2025, 2, 1),
+        date(2025, 3, 1),
+        date(2025, 4, 1),
     ]
     loan = Loan(
         Money("10000.00"),
@@ -326,7 +326,7 @@ def test_schedule_no_rebuild_without_payments():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1), date(2025, 3, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -342,13 +342,19 @@ def test_schedule_fully_paid_returns_only_actual():
     loan = Loan(
         Money("1000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1), date(2025, 3, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
     schedule = loan.get_original_schedule()
     for entry in schedule:
-        loan.record_payment(entry.payment_amount, entry.due_date)
+        payment_dt = datetime(
+            entry.due_date.year,
+            entry.due_date.month,
+            entry.due_date.day,
+            tzinfo=timezone.utc,
+        )
+        loan.record_payment(entry.payment_amount, payment_dt)
 
     rebuilt = loan.get_amortization_schedule()
 
@@ -359,7 +365,7 @@ def test_original_schedule_unchanged_after_payments():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1), date(2025, 3, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -379,7 +385,7 @@ def test_actual_entry_beginning_balance_matches_principal():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1), date(2025, 3, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -393,7 +399,7 @@ def test_actual_entry_ending_balance_reflects_principal_paid():
     loan = Loan(
         Money("10000.00"),
         InterestRate("5% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc), datetime(2025, 3, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1), date(2025, 3, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -409,9 +415,9 @@ def test_projected_beginning_balance_matches_previous_ending():
         Money("10000.00"),
         InterestRate("5% a"),
         [
-            datetime(2025, 2, 1, tzinfo=timezone.utc),
-            datetime(2025, 3, 1, tzinfo=timezone.utc),
-            datetime(2025, 4, 1, tzinfo=timezone.utc),
+            date(2025, 2, 1),
+            date(2025, 3, 1),
+            date(2025, 4, 1),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
@@ -431,18 +437,18 @@ def test_two_partial_payments_same_installment_next_due_date_unchanged():
         Money("10000.00"),
         InterestRate("5% a"),
         [
-            datetime(2025, 2, 1, tzinfo=timezone.utc),
-            datetime(2025, 3, 1, tzinfo=timezone.utc),
-            datetime(2025, 4, 1, tzinfo=timezone.utc),
+            date(2025, 2, 1),
+            date(2025, 3, 1),
+            date(2025, 4, 1),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
     loan.record_payment(Money("1000.00"), datetime(2025, 1, 20, tzinfo=timezone.utc))
-    assert loan._next_unpaid_due_date() == datetime(2025, 2, 1, tzinfo=timezone.utc)
+    assert loan._next_unpaid_due_date() == date(2025, 2, 1)
 
     loan.record_payment(Money("1000.00"), datetime(2025, 1, 25, tzinfo=timezone.utc))
-    assert loan._next_unpaid_due_date() == datetime(2025, 2, 1, tzinfo=timezone.utc)
+    assert loan._next_unpaid_due_date() == date(2025, 2, 1)
 
 
 def test_two_partial_payments_covering_one_installment():
@@ -451,9 +457,9 @@ def test_two_partial_payments_covering_one_installment():
         Money("10000.00"),
         InterestRate("5% a"),
         [
-            datetime(2025, 2, 1, tzinfo=timezone.utc),
-            datetime(2025, 3, 1, tzinfo=timezone.utc),
-            datetime(2025, 4, 1, tzinfo=timezone.utc),
+            date(2025, 2, 1),
+            date(2025, 3, 1),
+            date(2025, 4, 1),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
@@ -461,10 +467,10 @@ def test_two_partial_payments_covering_one_installment():
     scheduled_pmt = loan.get_original_schedule()[0].payment_amount
 
     loan.record_payment(Money("1000.00"), datetime(2025, 1, 20, tzinfo=timezone.utc))
-    assert loan._next_unpaid_due_date() == datetime(2025, 2, 1, tzinfo=timezone.utc)
+    assert loan._next_unpaid_due_date() == date(2025, 2, 1)
 
     loan.record_payment(scheduled_pmt, datetime(2025, 2, 1, tzinfo=timezone.utc))
-    assert loan._next_unpaid_due_date() == datetime(2025, 3, 1, tzinfo=timezone.utc)
+    assert loan._next_unpaid_due_date() == date(2025, 3, 1)
 
 
 def test_large_payment_covers_two_installments():
@@ -473,9 +479,9 @@ def test_large_payment_covers_two_installments():
         Money("10000.00"),
         InterestRate("5% a"),
         [
-            datetime(2025, 2, 1, tzinfo=timezone.utc),
-            datetime(2025, 3, 1, tzinfo=timezone.utc),
-            datetime(2025, 4, 1, tzinfo=timezone.utc),
+            date(2025, 2, 1),
+            date(2025, 3, 1),
+            date(2025, 4, 1),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
@@ -485,7 +491,7 @@ def test_large_payment_covers_two_installments():
 
     loan.record_payment(two_installments, datetime(2025, 2, 1, tzinfo=timezone.utc))
     assert loan._covered_due_date_count() >= 2
-    assert loan._next_unpaid_due_date() == datetime(2025, 4, 1, tzinfo=timezone.utc)
+    assert loan._next_unpaid_due_date() == date(2025, 4, 1)
 
 
 def test_three_consecutive_anticipations():
@@ -494,9 +500,9 @@ def test_three_consecutive_anticipations():
         Money("10000.00"),
         InterestRate("5% a"),
         [
-            datetime(2025, 2, 1, tzinfo=timezone.utc),
-            datetime(2025, 3, 1, tzinfo=timezone.utc),
-            datetime(2025, 4, 1, tzinfo=timezone.utc),
+            date(2025, 2, 1),
+            date(2025, 3, 1),
+            date(2025, 4, 1),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
@@ -523,9 +529,9 @@ def test_schedule_rebuild_after_partial_projects_from_correct_due_date():
         Money("10000.00"),
         InterestRate("5% a"),
         [
-            datetime(2025, 2, 1, tzinfo=timezone.utc),
-            datetime(2025, 3, 1, tzinfo=timezone.utc),
-            datetime(2025, 4, 1, tzinfo=timezone.utc),
+            date(2025, 2, 1),
+            date(2025, 3, 1),
+            date(2025, 4, 1),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
@@ -533,7 +539,7 @@ def test_schedule_rebuild_after_partial_projects_from_correct_due_date():
     loan.record_payment(Money("1000.00"), datetime(2025, 1, 20, tzinfo=timezone.utc))
     schedule = loan.get_amortization_schedule()
 
-    assert schedule[1].due_date == datetime(2025, 2, 1, tzinfo=timezone.utc)
+    assert schedule[1].due_date == date(2025, 2, 1)
 
 
 def test_schedule_rebuild_after_overpayment_skips_covered_dates():
@@ -542,9 +548,9 @@ def test_schedule_rebuild_after_overpayment_skips_covered_dates():
         Money("10000.00"),
         InterestRate("5% a"),
         [
-            datetime(2025, 2, 1, tzinfo=timezone.utc),
-            datetime(2025, 3, 1, tzinfo=timezone.utc),
-            datetime(2025, 4, 1, tzinfo=timezone.utc),
+            date(2025, 2, 1),
+            date(2025, 3, 1),
+            date(2025, 4, 1),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
@@ -556,7 +562,7 @@ def test_schedule_rebuild_after_overpayment_skips_covered_dates():
     schedule = loan.get_amortization_schedule()
 
     assert len(schedule) == 2
-    assert schedule[1].due_date == datetime(2025, 4, 1, tzinfo=timezone.utc)
+    assert schedule[1].due_date == date(2025, 4, 1)
 
 
 # --- Schedule values: pay_installment vs anticipate_payment ---
@@ -569,9 +575,9 @@ def test_pay_installment_on_due_date_projected_schedule_matches_original():
     remaining schedule should have the same PMT as the original.
     """
     due_dates = [
-        datetime(2025, 2, 1, tzinfo=timezone.utc),
-        datetime(2025, 3, 1, tzinfo=timezone.utc),
-        datetime(2025, 4, 1, tzinfo=timezone.utc),
+        date(2025, 2, 1),
+        date(2025, 3, 1),
+        date(2025, 4, 1),
     ]
     loan = Loan(
         Money("10000.00"),
@@ -604,9 +610,9 @@ def test_anticipate_payment_schedule_with_concrete_values():
       - New projected PMT: $3,356.31 (lower than original $3,360.16)
     """
     due_dates = [
-        datetime(2025, 2, 1, tzinfo=timezone.utc),
-        datetime(2025, 3, 1, tzinfo=timezone.utc),
-        datetime(2025, 4, 1, tzinfo=timezone.utc),
+        date(2025, 2, 1),
+        date(2025, 3, 1),
+        date(2025, 4, 1),
     ]
     loan = Loan(
         Money("10000.00"),
@@ -641,7 +647,7 @@ def test_anticipate_payment_schedule_with_concrete_values():
 def test_anticipate_payment_projected_pmt_lower_than_original(principal, annual_rate, num_payments, days_early):
     """anticipate_payment always results in a lower projected PMT than the original schedule."""
     disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
-    due_dates = [disbursement + timedelta(days=30 * (i + 1)) for i in range(num_payments)]
+    due_dates = [(disbursement + timedelta(days=30 * (i + 1))).date() for i in range(num_payments)]
     rate_str = f"{annual_rate}% a"
     loan = Loan(
         Money(str(principal)),
@@ -668,9 +674,9 @@ def test_anticipate_vs_installment_ending_balance_comparison():
     principal than pay_installment because less went to interest.
     """
     due_dates = [
-        datetime(2025, 2, 1, tzinfo=timezone.utc),
-        datetime(2025, 3, 1, tzinfo=timezone.utc),
-        datetime(2025, 4, 1, tzinfo=timezone.utc),
+        date(2025, 2, 1),
+        date(2025, 3, 1),
+        date(2025, 4, 1),
     ]
     disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
     principal = Money("10000.00")

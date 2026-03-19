@@ -1,6 +1,6 @@
 """Tests for Loan amortization schedule generation and edge cases."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from money_warp import InterestRate, Loan, Money
 
@@ -8,7 +8,7 @@ from money_warp import InterestRate, Loan, Money
 def test_loan_get_amortization_schedule_structure():
     principal = Money("10000.00")
     rate = InterestRate("6% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc), datetime(2024, 3, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1), date(2024, 3, 1)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     schedule = loan.get_amortization_schedule()
@@ -22,14 +22,14 @@ def test_loan_get_amortization_schedule_structure():
 def test_loan_get_amortization_schedule_entries():
     principal = Money("10000.00")
     rate = InterestRate("6% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     schedule = loan.get_amortization_schedule()
 
     entry = schedule[0]
     assert entry.payment_number == 1
-    assert entry.due_date == datetime(2024, 2, 1, tzinfo=timezone.utc)
+    assert entry.due_date == date(2024, 2, 1)
     assert entry.beginning_balance == principal
     assert entry.payment_amount > Money.zero()
     assert entry.principal_payment > Money.zero()
@@ -40,7 +40,7 @@ def test_loan_get_amortization_schedule_entries():
 def test_loan_single_payment_zero_interest():
     principal = Money("10000.00")
     rate = InterestRate("0% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     schedule = loan.get_amortization_schedule()
@@ -53,7 +53,7 @@ def test_loan_single_payment_zero_interest():
 def test_loan_very_small_principal():
     principal = Money("0.01")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     cash_flow = loan.generate_expected_cash_flow()
@@ -65,7 +65,7 @@ def test_loan_very_small_principal():
 def test_loan_high_interest_rate():
     principal = Money("10000.00")
     rate = InterestRate("50% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     schedule = loan.get_amortization_schedule()
@@ -79,7 +79,7 @@ def test_loan_many_payments():
     principal = Money("10000.00")
     rate = InterestRate("6% a")
     # Create monthly payments for 2 years
-    due_dates = [datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(days=30 * i) for i in range(1, 25)]
+    due_dates = [date(2024, 1, 1) + timedelta(days=30 * i) for i in range(1, 25)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     cash_flow = loan.generate_expected_cash_flow()

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -26,7 +26,7 @@ from money_warp import InterestRate, Loan, Money
 def test_loan_pay_instalment_all_money_is_alocated(principal, payment):
     rate = InterestRate("5% a")
     disbursement_date = datetime.now(timezone.utc)
-    due_dates = [disbursement_date + timedelta(days=20)]
+    due_dates = [(disbursement_date + timedelta(days=20)).date()]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=disbursement_date)
     loan.pay_installment(payment)

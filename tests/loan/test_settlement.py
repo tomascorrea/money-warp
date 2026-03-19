@@ -1,11 +1,16 @@
 """Tests for Settlement — the result of applying a payment to a loan."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
 
 from money_warp import InterestRate, Loan, Money, Settlement, SettlementAllocation, Warp
+
+
+def _payment_datetime(d: date) -> datetime:
+    """Calendar due date as UTC midnight — record_payment requires datetime."""
+    return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
 
 
 @pytest.fixture
@@ -14,9 +19,9 @@ def simple_loan():
     principal = Money("10000.00")
     rate = InterestRate("6% a")
     due_dates = [
-        datetime(2025, 2, 1, tzinfo=timezone.utc),
-        datetime(2025, 3, 1, tzinfo=timezone.utc),
-        datetime(2025, 4, 1, tzinfo=timezone.utc),
+        date(2025, 2, 1),
+        date(2025, 3, 1),
+        date(2025, 4, 1),
     ]
     return Loan(principal, rate, due_dates, disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc))
 
@@ -51,9 +56,9 @@ def test_settlement_payment_amount_matches_input(simple_loan):
 
 
 def test_settlement_payment_date_matches_input(simple_loan):
-    date = datetime(2025, 2, 1, tzinfo=timezone.utc)
-    settlement = simple_loan.record_payment(Money("5000"), date)
-    assert settlement.payment_date == date
+    payment_dt = datetime(2025, 2, 1, tzinfo=timezone.utc)
+    settlement = simple_loan.record_payment(Money("5000"), payment_dt)
+    assert settlement.payment_date == payment_dt
 
 
 def test_settlement_components_sum_to_payment_amount(simple_loan):
@@ -101,7 +106,7 @@ def test_settlement_allocation_is_settlement_allocation_type(simple_loan):
 
 def test_exact_payment_covers_single_installment(simple_loan):
     schedule = simple_loan.get_original_schedule()
-    settlement = simple_loan.record_payment(schedule[0].payment_amount, schedule[0].due_date)
+    settlement = simple_loan.record_payment(schedule[0].payment_amount, _payment_datetime(schedule[0].due_date))
 
     assert len(settlement.allocations) == 1
     assert settlement.allocations[0].installment_number == 1
@@ -110,7 +115,7 @@ def test_exact_payment_covers_single_installment(simple_loan):
 
 def test_exact_payment_principal_allocated_matches_expected(simple_loan):
     schedule = simple_loan.get_original_schedule()
-    settlement = simple_loan.record_payment(schedule[0].payment_amount, schedule[0].due_date)
+    settlement = simple_loan.record_payment(schedule[0].payment_amount, _payment_datetime(schedule[0].due_date))
 
     expected_principal = schedule[0].principal_payment
     assert abs(settlement.allocations[0].principal_allocated.raw_amount - expected_principal.raw_amount) < Decimal(
@@ -172,8 +177,8 @@ def test_full_repayment_in_one_payment(simple_loan):
 
 def test_second_payment_allocates_to_next_installment(simple_loan):
     schedule = simple_loan.get_original_schedule()
-    simple_loan.record_payment(schedule[0].payment_amount, schedule[0].due_date)
-    settlement2 = simple_loan.record_payment(schedule[1].payment_amount, schedule[1].due_date)
+    simple_loan.record_payment(schedule[0].payment_amount, _payment_datetime(schedule[0].due_date))
+    settlement2 = simple_loan.record_payment(schedule[1].payment_amount, _payment_datetime(schedule[1].due_date))
 
     assert settlement2.allocations[0].installment_number == 2
 
@@ -184,7 +189,7 @@ def test_second_payment_allocates_to_next_installment(simple_loan):
 def test_late_payment_settlement_includes_fine():
     principal = Money("10000.00")
     rate = InterestRate("6% a")
-    due_dates = [datetime(2025, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2025, 2, 1)]
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc))
 
     late_date = datetime(2025, 2, 15, tzinfo=timezone.utc)
@@ -201,7 +206,7 @@ def test_late_payment_settlement_includes_fine():
 def test_late_payment_settlement_includes_mora():
     principal = Money("10000.00")
     rate = InterestRate("6% a")
-    due_dates = [datetime(2025, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2025, 2, 1)]
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc))
 
     late_date = datetime(2025, 2, 15, tzinfo=timezone.utc)
@@ -217,7 +222,7 @@ def test_late_payment_settlement_includes_mora():
 def test_late_payment_fine_allocated_to_installment():
     principal = Money("10000.00")
     rate = InterestRate("6% a")
-    due_dates = [datetime(2025, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2025, 2, 1)]
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc))
 
     late_date = datetime(2025, 2, 15, tzinfo=timezone.utc)
@@ -236,7 +241,7 @@ def test_late_payment_fine_allocated_to_installment():
 def test_settlements_property_returns_all_settlements(simple_loan):
     schedule = simple_loan.get_original_schedule()
     for entry in schedule:
-        simple_loan.record_payment(entry.payment_amount, entry.due_date)
+        simple_loan.record_payment(entry.payment_amount, _payment_datetime(entry.due_date))
 
     assert len(simple_loan.settlements) == 3
 
@@ -247,7 +252,7 @@ def test_settlements_property_empty_before_any_payment(simple_loan):
 
 def test_settlements_property_matches_record_payment_results(simple_loan):
     schedule = simple_loan.get_original_schedule()
-    returned = simple_loan.record_payment(schedule[0].payment_amount, schedule[0].due_date)
+    returned = simple_loan.record_payment(schedule[0].payment_amount, _payment_datetime(schedule[0].due_date))
 
     from_property = simple_loan.settlements[0]
 
@@ -262,7 +267,7 @@ def test_settlements_property_matches_record_payment_results(simple_loan):
 def test_settlements_respect_warp_time(simple_loan):
     schedule = simple_loan.get_original_schedule()
     for entry in schedule:
-        simple_loan.record_payment(entry.payment_amount, entry.due_date)
+        simple_loan.record_payment(entry.payment_amount, _payment_datetime(entry.due_date))
 
     with Warp(simple_loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         assert len(warped.settlements) == 1
@@ -274,7 +279,7 @@ def test_settlements_respect_warp_time(simple_loan):
 def test_installments_is_fully_paid_respects_warp(simple_loan):
     schedule = simple_loan.get_original_schedule()
     for entry in schedule:
-        simple_loan.record_payment(entry.payment_amount, entry.due_date)
+        simple_loan.record_payment(entry.payment_amount, _payment_datetime(entry.due_date))
 
     with Warp(simple_loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         assert warped.installments[0].is_fully_paid is True

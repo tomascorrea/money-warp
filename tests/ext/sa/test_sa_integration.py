@@ -27,7 +27,7 @@ from .conftest import (
 _LOAN_PRINCIPAL = Money("10000")
 _LOAN_RATE = InterestRate("6% a")
 _LOAN_DISBURSEMENT = datetime(2025, 1, 1, tzinfo=timezone.utc)
-_LOAN_DUE_DATETIMES = [datetime(d.year, d.month, d.day, tzinfo=timezone.utc) for d in _LATE_PAYMENT_DUE_DATES]
+_LOAN_DUE_DATES = list(_LATE_PAYMENT_DUE_DATES)
 
 
 @pytest.fixture()
@@ -36,7 +36,7 @@ def loan_with_payments():
     loan = Loan(
         _LOAN_PRINCIPAL,
         _LOAN_RATE,
-        _LOAN_DUE_DATETIMES,
+        _LOAN_DUE_DATES,
         disbursement_date=_LOAN_DISBURSEMENT,
         fine_rate=InterestRate("2% annual"),
         grace_period_days=0,
@@ -87,7 +87,7 @@ def test_late_payment_remaining_balance_higher_than_on_time(loan_with_payments):
     on_time_loan = Loan(
         _LOAN_PRINCIPAL,
         _LOAN_RATE,
-        _LOAN_DUE_DATETIMES,
+        _LOAN_DUE_DATES,
         disbursement_date=_LOAN_DISBURSEMENT,
         fine_rate=InterestRate("2% annual"),
         mora_interest_rate=InterestRate("12% a"),

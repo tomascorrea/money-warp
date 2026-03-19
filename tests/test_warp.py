@@ -13,9 +13,9 @@ def sample_loan():
     principal = Money("10000.00")
     interest_rate = InterestRate("5% annual")
     due_dates = [
-        datetime(2024, 1, 15, tzinfo=timezone.utc),
-        datetime(2024, 2, 15, tzinfo=timezone.utc),
-        datetime(2024, 3, 15, tzinfo=timezone.utc),
+        date(2024, 1, 15),
+        date(2024, 2, 15),
+        date(2024, 3, 15),
     ]
     return Loan(principal, interest_rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
 
@@ -77,13 +77,13 @@ def test_warp_different_loans_concurrently_allowed():
     loan_a = Loan(
         Money("10000"),
         InterestRate("5% annual"),
-        [datetime(2024, 1, 15, tzinfo=timezone.utc)],
+        [date(2024, 1, 15)],
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
     loan_b = Loan(
         Money("5000"),
         InterestRate("8% annual"),
-        [datetime(2024, 2, 15, tzinfo=timezone.utc)],
+        [date(2024, 2, 15)],
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -171,9 +171,9 @@ def test_warp_to_past_ignores_future_payments():
         Money("10000"),
         InterestRate("5% annual"),
         [
-            datetime(2024, 1, 15, tzinfo=timezone.utc),
-            datetime(2024, 2, 15, tzinfo=timezone.utc),
-            datetime(2024, 3, 15, tzinfo=timezone.utc),
+            date(2024, 1, 15),
+            date(2024, 2, 15),
+            date(2024, 3, 15),
         ],
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
@@ -200,7 +200,7 @@ def test_warp_to_future_keeps_all_past_payments():
     loan = Loan(
         Money("10000"),
         InterestRate("5% annual"),
-        [datetime(2024, 1, 15, tzinfo=timezone.utc), datetime(2024, 2, 15, tzinfo=timezone.utc)],
+        [date(2024, 1, 15), date(2024, 2, 15)],
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
         fine_rate=InterestRate("0% annual"),
     )
@@ -218,7 +218,7 @@ def test_warp_string_representation():
     loan = Loan(
         Money("1000"),
         InterestRate("5% annual"),
-        [datetime(2024, 1, 1, tzinfo=timezone.utc)],
+        [date(2024, 1, 1)],
         disbursement_date=datetime(2023, 12, 1, tzinfo=timezone.utc),
     )
     warp = Warp(loan, "2030-01-15")
@@ -232,7 +232,7 @@ def test_warp_repr_representation():
     loan = Loan(
         Money("1000"),
         InterestRate("5% annual"),
-        [datetime(2024, 1, 1, tzinfo=timezone.utc)],
+        [date(2024, 1, 1)],
         disbursement_date=datetime(2023, 12, 1, tzinfo=timezone.utc),
     )
     warp = Warp(loan, "2030-01-15")

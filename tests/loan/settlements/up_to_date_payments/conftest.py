@@ -1,6 +1,6 @@
 """Shared fixtures for up-to-date payment settlement tests."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -14,9 +14,9 @@ def no_fine_loan():
         Money("890.22"),
         InterestRate("15% annual"),
         [
-            datetime(2025, 2, 1, tzinfo=timezone.utc),
-            datetime(2025, 3, 1, tzinfo=timezone.utc),
-            datetime(2025, 4, 1, tzinfo=timezone.utc),
+            date(2025, 2, 1),
+            date(2025, 3, 1),
+            date(2025, 4, 1),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
         fine_rate=InterestRate("0% annual"),
