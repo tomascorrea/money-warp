@@ -1039,10 +1039,7 @@ class Loan:
         principal_paid = items["principal"]
         payment_amount = fine_paid + interest_paid + mora_paid + principal_paid
 
-        if entry_index == 0:
-            last_pay_date = self.disbursement_date
-        else:
-            last_pay_date = self._actual_payment_datetimes[entry_index - 1]
+        last_pay_date = self.disbursement_date if entry_index == 0 else self._actual_payment_datetimes[entry_index - 1]
 
         payment_dt = self._actual_payment_datetimes[entry_index]
         installments = self._build_installments_snapshot(
@@ -1147,7 +1144,7 @@ class Loan:
         current_time = self.now()
         allocs_by_number: Dict[int, List[SettlementAllocation]] = {}
         result: List[Settlement] = []
-        for i, entry in enumerate(self._actual_schedule_entries):
+        for i, _entry in enumerate(self._actual_schedule_entries):
             if self._actual_payment_datetimes[i] > current_time:
                 break
             settlement = self._compute_settlement(i, allocs_by_number)
