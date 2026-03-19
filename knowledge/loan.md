@@ -230,7 +230,7 @@ Computed properties:
 Field semantics:
 - `expected_payment`, `expected_principal`, `expected_interest` come from the original schedule.
 - `expected_fine` comes from `Loan.fines_applied` for the installment's due date.
-- `expected_mora` is computed by the Loan: for covered installments it equals `mora_paid`; for the first uncovered overdue installment it is the accrued mora from the due date to `self.now()` using `_compute_accrued_interest`; for all other installments it is zero.
+- `expected_mora` is computed by the Loan: for covered installments it equals the sum of prior `mora_allocated` values; for the first uncovered overdue installment it is prior `mora_allocated` **plus** newly accrued mora (from last payment to `self.now()`) via `_compute_accrued_interest`; for all other installments it is zero. The cumulative form ensures `Installment.allocate` correctly computes `mora_owed = expected_mora - mora_paid` even when the same installment receives mora across multiple settlements.
 - `*_paid` fields are aggregated totals from all settlement allocations attributed to this installment.
 - `allocations` is the reverse view of Settlement: all `SettlementAllocation`s that touched this installment.
 - Created via `Installment.from_schedule_entry(entry, allocations, expected_mora, expected_fine)`.
@@ -246,6 +246,7 @@ Fields: `payment_amount`, `payment_date`, `fine_paid`, `interest_paid`, `mora_pa
 - `allocations` shows per-installment detail: which installments the payment covered and how much principal/interest/mora/fine went to each.
 - All three payment methods (`record_payment`, `pay_installment`, `anticipate_payment`) return a `Settlement`.
 - The `settlements` property reconstructs all settlements by querying the cash flow. Warp-aware: only includes settlements with `payment_date <= self.now()`.
+- **Reconciliation invariant:** For every settlement, each component total must equal the sum of its per-installment allocations: `settlement.X_paid == sum(a.X_allocated for a in settlement.allocations)` for X in {principal, interest, mora, fine}.
 
 #### Per-Installment Allocation
 
@@ -332,3 +333,15 @@ Sugar methods (`pay_installment`, `anticipate_payment`) use `self.now()` for the
 **Fix:** Replaced datetime-based grouping with positional offset tracking. `record_payment` now records `len(self._all_payments)` into `_payment_item_offsets` before calling `_allocate_payment`. `_extract_payment_items` slices `_all_payments` by `[offsets[i]:offsets[i+1]]` instead of walking by datetime. This is simpler, faster (O(items-in-this-payment) vs O(all-items-up-to-this-payment)), and correct regardless of datetime values.
 
 **Lesson:** Don't use a value that can be non-unique (datetime) as a grouping boundary when a positional invariant (sequential append order) already provides an unambiguous one.
+
+### Mora under-distributed across allocations (fixed 2026-03-19)
+
+**Symptom:** `settlement.mora_paid` was consistently higher than `sum(a.mora_allocated for a in settlement.allocations)`. The difference was always positive and exactly equalled the mora allocated to the same installment in prior settlements.
+
+**Root cause:** `_build_installments_snapshot` computed `expected_mora` for the first uncovered installment (`i == covered`) using only the newly accrued mora for the current period. It did not include mora already attributed from prior settlements. When `Installment.allocate` ran `mora_owed = expected_mora - mora_paid`, the `mora_paid` (cumulative from prior allocations) was subtracted from a non-cumulative `expected_mora`, producing an artificially low `mora_owed` and leaving mora unallocated.
+
+**Trigger condition:** Two or more consecutive late payments where the same installment remains uncovered (partial late payments).
+
+**Fix:** `expected_mora = prior_mora + accrued_mora` — sum the mora already allocated from prior settlements before adding the newly accrued amount. This makes the `i == covered` branch cumulative, matching the pattern already used for fully-covered installments (`i < covered`).
+
+**Lesson:** When a derived quantity (expected_mora) participates in a subtraction against a cumulative counter (mora_paid), the derived quantity must also be cumulative. Mixing period-level and cumulative values in the same expression produces silent under-distribution.

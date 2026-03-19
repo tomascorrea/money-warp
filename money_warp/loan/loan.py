@@ -1194,12 +1194,14 @@ class Loan:
 
             expected_fine = self.fines_applied.get(entry.due_date, Money.zero())
 
+            prior_mora = Money(sum(a.mora_allocated.raw_amount for a in allocs))
+
             if i < covered:
-                expected_mora = Money(sum(a.mora_allocated.raw_amount for a in allocs))
+                expected_mora = prior_mora
             elif i == covered and entry.due_date < as_of_date.date():
                 if last_payment_date is not None:
                     total_days = (as_of_date - last_payment_date).days
-                    _, expected_mora = self._compute_accrued_interest(
+                    _, accrued_mora = self._compute_accrued_interest(
                         total_days,
                         principal_balance,
                         entry.due_date,
@@ -1207,12 +1209,13 @@ class Loan:
                     )
                 else:
                     days_overdue = (as_of_date.date() - entry.due_date).days
-                    _, expected_mora = self._compute_accrued_interest(
+                    _, accrued_mora = self._compute_accrued_interest(
                         days_overdue,
                         principal_balance,
                         entry.due_date,
                         to_datetime(entry.due_date),
                     )
+                expected_mora = prior_mora + accrued_mora
             else:
                 expected_mora = Money.zero()
 
