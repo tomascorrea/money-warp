@@ -1,6 +1,6 @@
 """Tests for InvertedPriceScheduler (Constant Amortization System)."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -15,9 +15,9 @@ def basic_loan_params():
         "principal": Money("10000.00"),
         "interest_rate": InterestRate("5% annual"),
         "due_dates": [
-            datetime(2024, 1, 15, tzinfo=timezone.utc),
-            datetime(2024, 2, 15, tzinfo=timezone.utc),
-            datetime(2024, 3, 15, tzinfo=timezone.utc),
+            date(2024, 1, 15),
+            date(2024, 2, 15),
+            date(2024, 3, 15),
         ],
         "disbursement_date": datetime(2023, 12, 16, tzinfo=timezone.utc),
     }
@@ -115,7 +115,7 @@ def test_inverted_price_scheduler_vs_price_scheduler_interest_comparison(basic_l
 # Edge case tests
 def test_inverted_price_scheduler_single_payment(basic_loan_params):
     single_payment_params = basic_loan_params.copy()
-    single_payment_params["due_dates"] = [datetime(2024, 1, 15, tzinfo=timezone.utc)]
+    single_payment_params["due_dates"] = [date(2024, 1, 15)]
 
     schedule = InvertedPriceScheduler.generate_schedule(**single_payment_params)
 
@@ -128,7 +128,7 @@ def test_inverted_price_scheduler_zero_interest_rate():
     schedule = InvertedPriceScheduler.generate_schedule(
         Money("1000"),
         InterestRate("0% annual"),
-        [datetime(2024, 1, 15, tzinfo=timezone.utc), datetime(2024, 2, 15, tzinfo=timezone.utc)],
+        [date(2024, 1, 15), date(2024, 2, 15)],
         datetime(2023, 12, 16, tzinfo=timezone.utc),
     )
 
@@ -144,9 +144,9 @@ def test_inverted_price_scheduler_irregular_payment_dates():
         Money("3000"),
         InterestRate("6% annual"),
         [
-            datetime(2024, 1, 10, tzinfo=timezone.utc),  # 25 days from disbursement
-            datetime(2024, 2, 20, tzinfo=timezone.utc),  # 41 days from previous
-            datetime(2024, 4, 5, tzinfo=timezone.utc),  # 45 days from previous
+            date(2024, 1, 10),  # 25 days from disbursement
+            date(2024, 2, 20),  # 41 days from previous
+            date(2024, 4, 5),  # 45 days from previous
         ],
         datetime(2023, 12, 16, tzinfo=timezone.utc),
     )
@@ -167,7 +167,7 @@ def test_inverted_price_scheduler_high_precision_calculations():
     schedule = InvertedPriceScheduler.generate_schedule(
         Money("12345.67"),
         InterestRate("4.321% annual"),
-        [datetime(2024, i, 1, tzinfo=timezone.utc) for i in range(1, 13)],  # 12 monthly payments
+        [date(2024, i, 1) for i in range(1, 13)],  # 12 monthly payments
         datetime(2023, 12, 1, tzinfo=timezone.utc),
     )
 

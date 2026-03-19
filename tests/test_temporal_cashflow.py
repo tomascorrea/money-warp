@@ -1,7 +1,7 @@
 """Tests for temporal CashFlowItem behavior (resolve, update, delete, Warp)."""
 
 import copy
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from money_warp import (
     CashFlow,
@@ -146,8 +146,8 @@ def test_warp_overrides_time_context():
         Money("10000"),
         InterestRate("5% annual"),
         [
-            datetime(2024, 2, 1, tzinfo=timezone.utc),
-            datetime(2024, 3, 1, tzinfo=timezone.utc),
+            date(2024, 2, 1),
+            date(2024, 3, 1),
         ],
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )

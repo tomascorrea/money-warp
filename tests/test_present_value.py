@@ -1,6 +1,6 @@
 """Tests for present value calculations."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -234,9 +234,9 @@ def test_present_value_with_time_machine_philosophy():
         Money("10000"),
         InterestRate("5% annual"),
         [
-            datetime(2024, 1, 15, tzinfo=timezone.utc),
-            datetime(2024, 2, 15, tzinfo=timezone.utc),
-            datetime(2024, 3, 15, tzinfo=timezone.utc),
+            date(2024, 1, 15),
+            date(2024, 2, 15),
+            date(2024, 3, 15),
         ],
         datetime(2023, 12, 16, tzinfo=timezone.utc),
     )

@@ -105,7 +105,7 @@ DueDatesType(impl_type=JSON)
 | Bind (Python -> DB) | `[d.isoformat() for d in value]` |
 | Result (DB -> Python) | `[date.fromisoformat(s) for s in value]` |
 
-`None` passes through in both directions. The bridge's `_parse_due_dates` handles `date`, `datetime`, and `str` elements so that models using `DueDatesType` and models using raw `JSON` columns both work with `@loan_bridge`.
+`None` passes through in both directions. **`_parse_due_dates`** (used when loading a loan from ORM columns) accepts `date`, `datetime`, or ISO `str` per list element, normalizes each to a calendar **`date`**, and returns **`List[date]`** for `Loan(...)`. That way models using `DueDatesType` and models using raw `JSON` columns both work with `@loan_bridge`.
 
 ### settlement_bridge
 

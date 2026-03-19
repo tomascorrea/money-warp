@@ -117,21 +117,21 @@ def _resolve_settlement_info(cls, settlements_attr):
     }
 
 
-def _parse_due_dates(raw: List[Union[str, date, datetime]]) -> List[datetime]:
-    """Convert a list of due dates to timezone-aware datetimes.
+def _parse_due_dates(raw: List[Union[str, date, datetime]]) -> List[date]:
+    """Convert a list of due dates to :class:`~datetime.date` objects.
 
     Accepts ISO strings (raw ``JSON`` column), :class:`~datetime.date`
     objects (from :class:`~money_warp.ext.sa.types.DueDatesType`), or
     :class:`~datetime.datetime` objects.
     """
-    result: List[datetime] = []
+    result: List[date] = []
     for d in raw:
         if isinstance(d, datetime):
-            result.append(ensure_aware(d))
+            result.append(d.date())
         elif isinstance(d, date):
-            result.append(ensure_aware(datetime(d.year, d.month, d.day)))
+            result.append(d)
         else:
-            result.append(ensure_aware(datetime.fromisoformat(d)))
+            result.append(date.fromisoformat(d))
     return result
 
 

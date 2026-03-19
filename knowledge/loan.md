@@ -8,13 +8,15 @@ The `Loan` class is a state machine that models a personal loan with daily-compo
 |---|---|---|---|
 | `principal` | `Money` | required | Must be positive |
 | `interest_rate` | `InterestRate` | required | Annual rate |
-| `due_dates` | `List[datetime]` | required | Sorted automatically |
+| `due_dates` | `List[date]` | required | Sorted automatically (calendar due dates) |
 | `disbursement_date` | `Optional[datetime]` | now | When funds are released; must be strictly before first due date |
 | `scheduler` | `Optional[Type[BaseScheduler]]` | `PriceScheduler` | Amortization strategy |
 | `fine_rate` | `Optional[InterestRate]` | `InterestRate("2% annual")` | Fine rate applied to expected payment |
 | `grace_period_days` | `int` | `0` | Days after due date before fines apply |
 | `mora_interest_rate` | `Optional[InterestRate]` | `interest_rate` | Rate used for mora (late) interest; defaults to the base rate |
 | `mora_strategy` | `MoraStrategy` | `COMPOUND` | How mora interest is computed (see Mora Strategy below) |
+
+`Loan` also keeps `_actual_payment_datetimes: List[datetime]`, one entry per `record_payment` call, so settlements and cash-flow grouping use full timestamps while schedule rows use calendar `due_date: date` values.
 
 ## Three-Date Payment Model
 
@@ -85,11 +87,11 @@ Always returns the static schedule based on original loan terms, ignoring any pa
 
 ### PaymentScheduleEntry
 
-Each entry contains: `payment_number`, `due_date`, `days_in_period`, `beginning_balance`, `payment_amount`, `principal_payment`, `interest_payment`, `ending_balance`. The schedule auto-calculates `total_payments`, `total_interest`, and `total_principal`.
+Each entry contains: `payment_number`, `due_date` (`date`), `days_in_period`, `beginning_balance`, `payment_amount`, `principal_payment`, `interest_payment`, `ending_balance`. The schedule auto-calculates `total_payments`, `total_interest`, and `total_principal`.
 
 ## Schedulers
 
-All schedulers implement `BaseScheduler.generate_schedule(principal, interest_rate, due_dates, disbursement_date) -> PaymentSchedule`.
+All schedulers implement `BaseScheduler.generate_schedule(principal, interest_rate, due_dates: List[date], disbursement_date: datetime) -> PaymentSchedule`.
 
 ### PriceScheduler (French Amortization)
 
@@ -126,7 +128,7 @@ A late payment incurs two costs, both handled automatically by `pay_installment`
 
 ### Fines
 
-- `calculate_late_fines(as_of_date)` scans all due dates up to `as_of_date`, applies one fine per missed due date (never duplicated), and stores them in `fines_applied: Dict[datetime, Money]`.
+- `calculate_late_fines(as_of_date)` scans all due dates up to `as_of_date`, applies one fine per missed due date (never duplicated), and stores them in `fines_applied: Dict[date, Money]`.
 - `is_payment_late(due_date, as_of_date)` respects `grace_period_days`.
 - `is_paid_off` requires zero `current_balance` (principal, interest, mora, and fines all zero).
 - Fine amounts are calculated from the **original** schedule (`get_original_schedule`), not the rebuilt schedule.
@@ -219,7 +221,7 @@ A loan is **not** a group of installments. Installments are a **consequence** of
 
 A frozen dataclass representing one period of the repayment plan. Built from the original schedule on demand. Warp-aware: all fields reflect the state at `self.now()`.
 
-Fields: `number`, `due_date`, `days_in_period`, `expected_payment`, `expected_principal`, `expected_interest`, `expected_mora`, `expected_fine`, `principal_paid`, `interest_paid`, `mora_paid`, `fine_paid`, `allocations: List[SettlementAllocation]`.
+Fields: `number`, `due_date` (`date`), `days_in_period`, `expected_payment`, `expected_principal`, `expected_interest`, `expected_mora`, `expected_fine`, `principal_paid`, `interest_paid`, `mora_paid`, `fine_paid`, `allocations: List[SettlementAllocation]`.
 
 Computed properties:
 - `balance: Money` — the amount still owed to fully settle this installment: `(expected_principal + expected_interest + expected_mora + expected_fine) - (principal_paid + interest_paid + mora_paid + fine_paid)`. Clamped to zero.

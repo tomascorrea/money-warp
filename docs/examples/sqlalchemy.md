@@ -83,7 +83,7 @@ class LoanRecord(Base):
     principal = Column(MoneyType())
     interest_rate = Column(InterestRateType(representation="json"))
     disbursement_date = Column(DateTime)
-    due_dates = Column(JSON)
+    due_dates = Column(JSON)  # JSON array of ISO dates; bridge loads as list[date] for Loan
     fine_rate = Column(InterestRateType(representation="json"), nullable=True)
     grace_period_days = Column(Integer(), nullable=True)
     mora_interest_rate = Column(InterestRateType(representation="json"), nullable=True)
@@ -172,7 +172,7 @@ class Loan(Base):
     principal = Column(MoneyType())
     interest_rate = Column(InterestRateType(representation="json"))
     disbursement_date = Column(DateTime)
-    due_dates = Column(JSON)
+    due_dates = Column(JSON)  # ISO date strings -> list[date] when building Loan
     settlements = relationship("Settlement", order_by="Settlement.payment_date")
 
 engine = create_engine("sqlite:///:memory:")

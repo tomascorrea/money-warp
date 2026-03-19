@@ -6,7 +6,7 @@ All datetimes produced by the library are timezone-aware.
 
 import functools
 import inspect
-from datetime import datetime, timezone, tzinfo
+from datetime import date, datetime, timezone, tzinfo
 from typing import Callable, TypeVar, Union
 from zoneinfo import ZoneInfo
 
@@ -44,6 +44,18 @@ def ensure_aware(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=_default_tz)
     return dt
+
+
+def to_date(dt: Union[date, datetime]) -> date:
+    """Extract the calendar date from a datetime, or return a date as-is."""
+    if isinstance(dt, datetime):
+        return dt.date()
+    return dt
+
+
+def to_datetime(d: date) -> datetime:
+    """Convert a calendar date to a timezone-aware datetime at midnight."""
+    return ensure_aware(datetime.combine(d, datetime.min.time()))
 
 
 def tz_aware(func: F) -> F:

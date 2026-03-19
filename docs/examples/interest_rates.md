@@ -215,7 +215,7 @@ def compare_mortgage_rates(principal, loan_term_years, rates):
     """Compare different mortgage rates."""
     
     from money_warp import Money, Loan
-    from datetime import datetime, timedelta
+    from datetime import date, timedelta
     
     principal = Money(principal)
     
@@ -223,7 +223,7 @@ def compare_mortgage_rates(principal, loan_term_years, rates):
     print("=" * 60)
     
     # Generate monthly payment schedule
-    start_date = datetime(2024, 1, 1)
+    start_date = date(2024, 1, 1)
     num_payments = loan_term_years * 12
     due_dates = [start_date + timedelta(days=30*i) for i in range(1, num_payments + 1)]
     

@@ -28,7 +28,7 @@ pip install money-warp[sa]            # SQLAlchemy types + bridge
 Let's start with a simple loan analysis - the most common use case:
 
 ```python
-from datetime import datetime, timedelta
+from datetime import date, timedelta
 from money_warp import Money, InterestRate, Loan
 
 # Create a $10,000 personal loan at 8% annual interest
@@ -36,7 +36,7 @@ principal = Money("10000.00")
 rate = InterestRate("8% a")  # 8% annually
 
 # Set up monthly payments for 2 years (24 payments)
-start_date = datetime(2024, 1, 1)
+start_date = date(2024, 1, 1)
 due_dates = [start_date + timedelta(days=30*i) for i in range(1, 25)]
 
 # Create the loan
@@ -101,6 +101,8 @@ Notice how the interest portion decreases and principal portion increases over t
 Now let's track what actually happens when you make payments:
 
 ```python
+from datetime import datetime
+
 # Record some actual payments
 loan.record_payment(Money("452.27"), datetime(2024, 2, 1), "First payment")
 loan.record_payment(Money("500.00"), datetime(2024, 3, 1), "Extra payment")  # Paid extra!

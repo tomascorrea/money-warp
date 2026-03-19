@@ -1,6 +1,6 @@
 """Simplified Loan class that delegates calculations to configurable scheduler."""
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from enum import Enum
 from typing import Dict, List, Optional, Type
 
@@ -11,7 +11,7 @@ from ..rate import Rate
 from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
 from ..tax.base import BaseTax, TaxResult
 from ..time_context import TimeContext
-from ..tz import tz_aware
+from ..tz import to_datetime, tz_aware
 from .installment import Installment
 from .settlement import AnticipationResult, Settlement, SettlementAllocation
 
@@ -45,21 +45,21 @@ class Loan:
 
     Examples:
         >>> from money_warp import Loan, Money, InterestRate
-        >>> from datetime import datetime
+        >>> from datetime import date, datetime
         >>> from decimal import Decimal
         >>>
         >>> # Basic loan with default fine settings
         >>> loan = Loan(
         ...     Money("10000"),
         ...     InterestRate("5% annual"),
-        ...     [datetime(2024, 2, 1), datetime(2024, 3, 1)]
+        ...     [date(2024, 2, 1), date(2024, 3, 1)]
         ... )
         >>>
         >>> # Loan with custom fine settings
         >>> loan = Loan(
         ...     Money("10000"),
         ...     InterestRate("5% annual"),
-        ...     [datetime(2024, 2, 1)],
+        ...     [date(2024, 2, 1)],
         ...     fine_rate=Decimal("0.05"),  # 5% fine
         ...     grace_period_days=7  # 7-day grace period
         ... )
@@ -78,7 +78,7 @@ class Loan:
         self,
         principal: Money,
         interest_rate: InterestRate,
-        due_dates: List[datetime],
+        due_dates: List[date],
         disbursement_date: Optional[datetime] = None,
         scheduler: Optional[Type[BaseScheduler]] = None,
         fine_rate: Optional[InterestRate] = None,
@@ -109,16 +109,16 @@ class Loan:
         Examples:
             >>> # Basic loan with default 2% fine, no grace period
             >>> loan = Loan(Money("10000"), InterestRate("5% annual"),
-            ...            [datetime(2024, 2, 1)])
+            ...            [date(2024, 2, 1)])
             >>>
             >>> # Loan with custom 5% fine and 3-day grace period
             >>> loan = Loan(Money("10000"), InterestRate("5% annual"),
-            ...            [datetime(2024, 2, 1)],
+            ...            [date(2024, 2, 1)],
             ...            fine_rate=InterestRate("5% annual"), grace_period_days=3)
             >>>
             >>> # Loan with separate mora interest rate
             >>> loan = Loan(Money("10000"), InterestRate("5% annual"),
-            ...            [datetime(2024, 2, 1)],
+            ...            [date(2024, 2, 1)],
             ...            mora_interest_rate=InterestRate("12% annual"))
         """
         # Validate inputs first
@@ -137,7 +137,7 @@ class Loan:
         self.mora_strategy = mora_strategy
         self.due_dates = sorted(due_dates)
         self.disbursement_date = disbursement_date if disbursement_date is not None else self._time_ctx.now()
-        if self.disbursement_date >= self.due_dates[0]:
+        if self.disbursement_date.date() >= self.due_dates[0]:
             raise ValueError("disbursement_date must be before the first due date")
         self.scheduler = scheduler or PriceScheduler
         self.fine_rate = fine_rate if fine_rate is not None else InterestRate("2% annual")
@@ -149,7 +149,8 @@ class Loan:
         self._all_payments: List[CashFlowItem] = []  # All payments ever made
         self._payment_item_offsets: List[int] = []  # Start index in _all_payments for each payment
         self._actual_schedule_entries: List[PaymentScheduleEntry] = []  # Actual payment history as schedule entries
-        self.fines_applied: Dict[datetime, Money] = {}  # Track fines applied per due date
+        self._actual_payment_datetimes: List[datetime] = []  # Full timestamps for each record_payment call
+        self.fines_applied: Dict[date, Money] = {}  # Track fines applied per due date
         self._tax_cache: Optional[Dict[str, TaxResult]] = None
 
     @property
@@ -296,8 +297,7 @@ class Loan:
             as_of_date = self.now()
         return (as_of_date - self.last_payment_date).days
 
-    @tz_aware
-    def get_expected_payment_amount(self, due_date: datetime) -> Money:
+    def get_expected_payment_amount(self, due_date: date) -> Money:
         """
         Get the expected payment amount for a specific due date from the original schedule.
 
@@ -325,7 +325,7 @@ class Loan:
         raise ValueError(f"Could not find payment amount for due date {due_date}")
 
     @tz_aware
-    def is_payment_late(self, due_date: datetime, as_of_date: Optional[datetime] = None) -> bool:
+    def is_payment_late(self, due_date: date, as_of_date: Optional[datetime] = None) -> bool:
         """
         Check if a payment is late considering the grace period.
 
@@ -341,7 +341,7 @@ class Loan:
 
         effective_due_date = due_date + timedelta(days=self.grace_period_days)
 
-        return as_of_date > effective_due_date
+        return as_of_date.date() > effective_due_date
 
     @tz_aware
     def calculate_late_fines(self, as_of_date: Optional[datetime] = None) -> Money:
@@ -383,7 +383,7 @@ class Loan:
 
         return new_fines_applied
 
-    def _has_payment_for_due_date(self, due_date: datetime, as_of_date: datetime) -> bool:
+    def _has_payment_for_due_date(self, due_date: date, as_of_date: datetime) -> bool:
         """
         Check if sufficient payment has been made for a specific due date.
 
@@ -392,29 +392,22 @@ class Loan:
         """
         expected_payment = self.get_expected_payment_amount(due_date)
 
-        # Get all payments made on the due date (exact date match for installment payments)
-        # This handles the common case where installment payments are made on the due date
-        # Use _all_payments and filter by as_of_date instead of _actual_payments
         exact_date_payments = [
             payment
             for payment in self._all_payments
-            if payment.datetime.date() == due_date.date()
+            if payment.datetime.date() == due_date
             and payment.datetime <= as_of_date
             and payment.category in ("principal", "interest", "fine")
         ]
 
         total_paid_on_due_date = sum((payment.amount for payment in exact_date_payments), Money.zero())
 
-        # If exact date payment covers the expected amount, consider it paid
-        # Use a small tolerance for floating point precision issues (1 cent)
         tolerance = Money("0.01")
         if total_paid_on_due_date >= (expected_payment - tolerance):
             return True
 
-        # Fallback: check payments made in a reasonable window around the due date
-        # (for cases where payments might be made slightly before or after)
-        window_start = due_date - timedelta(days=3)  # 3 days before
-        window_end = min(as_of_date, due_date + timedelta(days=1))  # up to 1 day after, but not future
+        window_start = to_datetime(due_date - timedelta(days=3))
+        window_end = min(as_of_date, to_datetime(due_date + timedelta(days=1)))
 
         window_payments = [
             payment
@@ -426,8 +419,6 @@ class Loan:
 
         total_paid_in_window = sum((payment.amount for payment in window_payments), Money.zero())
 
-        # Consider payment made if we've received at least the expected amount in the window
-        # Use a small tolerance for floating point precision issues (1 cent)
         tolerance = Money("0.01")
         return total_paid_in_window >= (expected_payment - tolerance)
 
@@ -451,10 +442,10 @@ class Loan:
 
         Examples:
             >>> from money_warp import Loan, Money, InterestRate
-            >>> from datetime import datetime
+            >>> from datetime import date
             >>>
             >>> loan = Loan(Money("10000"), InterestRate("5% annual"),
-            ...            [datetime(2024, 1, 15), datetime(2024, 2, 15)])
+            ...            [date(2024, 1, 15), date(2024, 2, 15)])
             >>>
             >>> # Get present value using loan's own rate (should be close to zero)
             >>> pv = loan.present_value()
@@ -500,17 +491,17 @@ class Loan:
 
         Examples:
             >>> from money_warp import Loan, Money, InterestRate, Warp
-            >>> from datetime import datetime
+            >>> from datetime import date
             >>>
             >>> loan = Loan(Money("10000"), InterestRate("5% annual"),
-            ...            [datetime(2024, 1, 15), datetime(2024, 2, 15)])
+            ...            [date(2024, 1, 15), date(2024, 2, 15)])
             >>>
             >>> # Get IRR - should be close to loan's interest rate
             >>> loan_irr = loan.irr()
             >>> print(f"Loan IRR: {loan_irr}")
             >>>
             >>> # Get IRR from a specific date using Time Machine
-            >>> with Warp(loan, datetime(2024, 1, 10)) as warped_loan:
+            >>> with Warp(loan, date(2024, 1, 10)) as warped_loan:
             ...     past_irr = warped_loan.irr()
             >>> print(f"IRR from past perspective: {past_irr}")
         """
@@ -592,10 +583,11 @@ class Loan:
         schedule = self.get_original_schedule()
 
         for entry in schedule:
+            due_dt = to_datetime(entry.due_date)
             items.append(
                 CashFlowItem(
                     Money(-entry.interest_payment.raw_amount),
-                    entry.due_date,
+                    due_dt,
                     f"Interest payment {entry.payment_number}",
                     "interest",
                     kind=expected,
@@ -605,7 +597,7 @@ class Loan:
             items.append(
                 CashFlowItem(
                     Money(-entry.principal_payment.raw_amount),
-                    entry.due_date,
+                    due_dt,
                     f"Principal payment {entry.payment_number}",
                     "principal",
                     kind=expected,
@@ -641,7 +633,7 @@ class Loan:
         self,
         days: int,
         principal_balance: Money,
-        due_date: Optional[datetime],
+        due_date: Optional[date],
         last_payment_date: Optional[datetime],
     ) -> tuple:
         """
@@ -654,7 +646,7 @@ class Loan:
         if due_date is None or last_payment_date is None:
             return self.interest_rate.accrue(principal_balance, days), Money.zero()
 
-        regular_days = (due_date - last_payment_date).days
+        regular_days = (due_date - last_payment_date.date()).days
 
         if regular_days <= 0:
             return Money.zero(), self.mora_interest_rate.accrue(principal_balance, days)
@@ -679,7 +671,7 @@ class Loan:
         days: int,
         principal_balance: Money,
         description: Optional[str],
-        due_date: Optional[datetime] = None,
+        due_date: Optional[date] = None,
         last_payment_date: Optional[datetime] = None,
     ) -> tuple:
         """
@@ -820,10 +812,11 @@ class Loan:
             ending_balance = Money.zero()
 
         payment_number = len(self._actual_schedule_entries) + 1
+        self._actual_payment_datetimes.append(payment_date)
         self._actual_schedule_entries.append(
             PaymentScheduleEntry(
                 payment_number=payment_number,
-                due_date=payment_date,
+                due_date=payment_date.date(),
                 days_in_period=days,
                 beginning_balance=principal_balance,
                 payment_amount=amount - fine_paid,
@@ -862,7 +855,7 @@ class Loan:
         """
         payment_date = self.now()
         next_due = self._next_unpaid_due_date()
-        interest_date = max(payment_date, next_due)
+        interest_date = max(payment_date, to_datetime(next_due))
         return self.record_payment(
             amount,
             payment_date=payment_date,
@@ -951,7 +944,7 @@ class Loan:
             kept_items.append(
                 CashFlowItem(
                     Money(-entry.payment_amount.raw_amount),
-                    entry.due_date,
+                    to_datetime(entry.due_date),
                     f"Kept payment {entry.payment_number}",
                     "kept_payment",
                 )
@@ -1049,12 +1042,13 @@ class Loan:
         if entry_index == 0:
             last_pay_date = self.disbursement_date
         else:
-            last_pay_date = self._actual_schedule_entries[entry_index - 1].due_date
+            last_pay_date = self._actual_payment_datetimes[entry_index - 1]
 
+        payment_dt = self._actual_payment_datetimes[entry_index]
         installments = self._build_installments_snapshot(
             allocations_by_number,
             entry.beginning_balance,
-            entry.due_date,
+            payment_dt,
             last_pay_date,
         )
         allocations = self._build_settlement_allocations(
@@ -1068,7 +1062,7 @@ class Loan:
 
         return Settlement(
             payment_amount=payment_amount,
-            payment_date=entry.due_date,
+            payment_date=payment_dt,
             fine_paid=fine_paid,
             interest_paid=interest_paid,
             mora_paid=mora_paid,
@@ -1154,7 +1148,7 @@ class Loan:
         allocs_by_number: Dict[int, List[SettlementAllocation]] = {}
         result: List[Settlement] = []
         for i, entry in enumerate(self._actual_schedule_entries):
-            if entry.due_date > current_time:
+            if self._actual_payment_datetimes[i] > current_time:
                 break
             settlement = self._compute_settlement(i, allocs_by_number)
             for a in settlement.allocations:
@@ -1205,7 +1199,7 @@ class Loan:
 
             if i < covered:
                 expected_mora = Money(sum(a.mora_allocated.raw_amount for a in allocs))
-            elif i == covered and entry.due_date < as_of_date:
+            elif i == covered and entry.due_date < as_of_date.date():
                 if last_payment_date is not None:
                     total_days = (as_of_date - last_payment_date).days
                     _, expected_mora = self._compute_accrued_interest(
@@ -1215,12 +1209,12 @@ class Loan:
                         last_payment_date,
                     )
                 else:
-                    days_overdue = (as_of_date - entry.due_date).days
+                    days_overdue = (as_of_date.date() - entry.due_date).days
                     _, expected_mora = self._compute_accrued_interest(
                         days_overdue,
                         principal_balance,
                         entry.due_date,
-                        entry.due_date,
+                        to_datetime(entry.due_date),
                     )
             else:
                 expected_mora = Money.zero()
@@ -1279,7 +1273,7 @@ class Loan:
                 break
         return covered
 
-    def _next_unpaid_due_date(self) -> datetime:
+    def _next_unpaid_due_date(self) -> date:
         """
         Find the next due date that hasn't been fully paid yet.
 
@@ -1312,8 +1306,8 @@ class Loan:
             items.append(
                 CashFlowItem(
                     fine_amount,
-                    due_date + timedelta(days=self.grace_period_days + 1),
-                    f"Late payment fine applied for {due_date.date()}",
+                    to_datetime(due_date + timedelta(days=self.grace_period_days + 1)),
+                    f"Late payment fine applied for {due_date}",
                     "fine",
                     time_context=self._time_ctx,
                 )
@@ -1373,7 +1367,7 @@ class Loan:
         if remaining_principal.is_zero() or remaining_principal.is_negative():
             return PaymentSchedule(entries=actual_entries)
 
-        last_payment_date = actual_entries[-1].due_date
+        last_payment_date = self._actual_payment_datetimes[-1]
         projected_schedule = self.scheduler.generate_schedule(
             remaining_principal,
             self.interest_rate,

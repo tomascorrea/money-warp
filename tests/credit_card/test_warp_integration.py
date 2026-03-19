@@ -1,6 +1,6 @@
 """Tests for CreditCard + Warp integration."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -81,7 +81,7 @@ def test_warp_credit_card_and_loan_concurrently():
     loan = Loan(
         Money("10000"),
         InterestRate("5% annual"),
-        [datetime(2024, 2, 1, tzinfo=timezone.utc)],
+        [date(2024, 2, 1)],
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 

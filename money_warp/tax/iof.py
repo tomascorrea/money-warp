@@ -100,7 +100,7 @@ class IOF(BaseTax):
 
         for entry in schedule:
             days = min(
-                (entry.due_date - disbursement_date).days,
+                (entry.due_date - disbursement_date.date()).days,
                 self._max_daily_days,
             )
             principal_raw = entry.principal_payment.raw_amount

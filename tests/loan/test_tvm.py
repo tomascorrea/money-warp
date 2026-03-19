@@ -1,6 +1,6 @@
 """Tests for Loan present value and IRR (time value of money) methods."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from money_warp import InterestRate, Loan, Money, Rate, Warp
 
@@ -9,7 +9,7 @@ def test_loan_present_value_with_own_rate():
     loan = Loan(
         Money("10000"),
         InterestRate("5% annual"),
-        [datetime(2024, 1, 15, tzinfo=timezone.utc), datetime(2024, 2, 15, tzinfo=timezone.utc)],
+        [date(2024, 1, 15), date(2024, 2, 15)],
         datetime(2023, 12, 16, tzinfo=timezone.utc),
     )
 
@@ -28,7 +28,7 @@ def test_loan_present_value_with_different_rate():
     loan = Loan(
         Money("10000"),
         InterestRate("5% annual"),
-        [datetime(2024, 1, 15, tzinfo=timezone.utc), datetime(2024, 2, 15, tzinfo=timezone.utc)],
+        [date(2024, 1, 15), date(2024, 2, 15)],
         datetime(2023, 12, 16, tzinfo=timezone.utc),
     )
 
@@ -46,7 +46,7 @@ def test_loan_present_value_with_custom_valuation_date():
     loan = Loan(
         Money("5000"),
         InterestRate("4% annual"),
-        [datetime(2024, 6, 1, tzinfo=timezone.utc), datetime(2024, 12, 1, tzinfo=timezone.utc)],
+        [date(2024, 6, 1), date(2024, 12, 1)],
         datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -63,7 +63,7 @@ def test_loan_present_value_uses_current_time_by_default():
     loan = Loan(
         Money("1000"),
         InterestRate("3% annual"),
-        [datetime(2024, 12, 31, tzinfo=timezone.utc)],
+        [date(2024, 12, 31)],
         datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -80,7 +80,7 @@ def test_loan_present_value_with_time_machine():
     loan = Loan(
         Money("2000"),
         InterestRate("4% annual"),
-        [datetime(2024, 6, 1, tzinfo=timezone.utc), datetime(2024, 12, 1, tzinfo=timezone.utc)],
+        [date(2024, 6, 1), date(2024, 12, 1)],
         datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -104,9 +104,9 @@ def test_loan_present_value_different_discount_rates():
         Money("10000"),
         InterestRate("6% annual"),
         [
-            datetime(2024, 6, 1, tzinfo=timezone.utc),
-            datetime(2025, 6, 1, tzinfo=timezone.utc),
-            datetime(2026, 6, 1, tzinfo=timezone.utc),
+            date(2024, 6, 1),
+            date(2025, 6, 1),
+            date(2026, 6, 1),
         ],
         datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
@@ -124,7 +124,7 @@ def test_loan_irr_basic():
     loan = Loan(
         Money("10000"),
         InterestRate("5% annual"),
-        [datetime(2024, 1, 15, tzinfo=timezone.utc), datetime(2024, 2, 15, tzinfo=timezone.utc)],
+        [date(2024, 1, 15), date(2024, 2, 15)],
         datetime(2023, 12, 16, tzinfo=timezone.utc),
     )
 
@@ -144,7 +144,7 @@ def test_loan_irr_with_time_machine_for_valuation():
     loan = Loan(
         Money("5000"),
         InterestRate("4% annual"),
-        [datetime(2024, 6, 1, tzinfo=timezone.utc), datetime(2024, 12, 1, tzinfo=timezone.utc)],
+        [date(2024, 6, 1), date(2024, 12, 1)],
         datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -162,7 +162,7 @@ def test_loan_irr_with_custom_guess():
     loan = Loan(
         Money("2000"),
         InterestRate("6% annual"),
-        [datetime(2024, 6, 1, tzinfo=timezone.utc), datetime(2024, 12, 1, tzinfo=timezone.utc)],
+        [date(2024, 6, 1), date(2024, 12, 1)],
         datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -179,7 +179,7 @@ def test_loan_irr_with_time_machine():
     loan = Loan(
         Money("3000"),
         InterestRate("7% annual"),
-        [datetime(2024, 6, 1, tzinfo=timezone.utc), datetime(2024, 12, 1, tzinfo=timezone.utc)],
+        [date(2024, 6, 1), date(2024, 12, 1)],
         datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -203,7 +203,7 @@ def test_loan_irr_multiple_payments():
     loan = Loan(
         Money("12000"),
         InterestRate("5.5% annual"),
-        [datetime(2024, i, 1) for i in range(1, 7)],  # 6 monthly payments
+        [date(2024, i, 1) for i in range(1, 7)],  # 6 monthly payments
         datetime(2023, 12, 1, tzinfo=timezone.utc),
     )
 

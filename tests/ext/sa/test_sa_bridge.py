@@ -1,7 +1,7 @@
 # ruff: noqa: A003
 """Tests for settlement_bridge, loan_bridge, balance, and balance_at."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -443,7 +443,7 @@ def _make_reference_loan():
     return Loan(
         Money("10000"),
         InterestRate("10% a"),
-        [datetime(2024, 2, 1, tzinfo=timezone.utc), datetime(2024, 3, 1, tzinfo=timezone.utc)],
+        [date(2024, 2, 1), date(2024, 3, 1)],
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 

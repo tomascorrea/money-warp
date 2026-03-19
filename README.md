@@ -44,12 +44,13 @@ pip install money-warp[sa]            # SQLAlchemy types + bridge
 ```python
 from datetime import datetime, timezone
 from money_warp import Money, InterestRate, Loan, generate_monthly_dates
+from money_warp.tz import to_date
 
 principal = Money("10000.00")
 rate = InterestRate("5% a")  # 5% annually
 
 start_date = datetime(2024, 1, 15, tzinfo=timezone.utc)
-due_dates = generate_monthly_dates(start_date, 12)
+due_dates = [to_date(d) for d in generate_monthly_dates(start_date, 12)]
 
 loan = Loan(principal, rate, due_dates)
 
@@ -67,9 +68,9 @@ Travel to any date and see the loan exactly as it was -- payments, interest, fin
 
 ```python
 from money_warp import Warp, Loan, Money, InterestRate
-from datetime import datetime
+from datetime import date, datetime
 
-loan = Loan(Money("10000"), InterestRate("5% a"), [datetime(2024, 1, 15)])
+loan = Loan(Money("10000"), InterestRate("5% a"), [date(2024, 1, 15)])
 loan.record_payment(Money("500"), datetime(2024, 1, 10))
 loan.record_payment(Money("600"), datetime(2024, 2, 10))
 loan.record_payment(Money("700"), datetime(2024, 3, 10))

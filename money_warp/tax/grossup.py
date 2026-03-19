@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -36,7 +36,7 @@ class GrossupResult:
         requested_amount: Money,
         total_tax: Money,
         interest_rate: InterestRate,
-        due_dates: list[datetime],
+        due_dates: list[date],
         disbursement_date: datetime,
         scheduler: type[BaseScheduler],
         taxes: list[BaseTax],
@@ -89,7 +89,7 @@ def _snap_to_cents(
     solved_p: float,
     requested_amount: Money,
     interest_rate: InterestRate,
-    due_dates: list[datetime],
+    due_dates: list[date],
     disbursement_date: datetime,
     scheduler: type[BaseScheduler],
     taxes: list[BaseTax],
@@ -131,7 +131,7 @@ def _snap_to_cents(
 def _compute_total_tax(
     principal: Money,
     interest_rate: InterestRate,
-    due_dates: list[datetime],
+    due_dates: list[date],
     disbursement_date: datetime,
     scheduler: type[BaseScheduler],
     taxes: list[BaseTax],
@@ -147,7 +147,7 @@ def _compute_total_tax(
 def grossup(
     requested_amount: Money,
     interest_rate: InterestRate,
-    due_dates: list[datetime],
+    due_dates: list[date],
     disbursement_date: datetime,
     scheduler: type[BaseScheduler],
     taxes: list[BaseTax],
@@ -225,7 +225,7 @@ def grossup(
 def grossup_loan(
     requested_amount: Money,
     interest_rate: InterestRate,
-    due_dates: list[datetime],
+    due_dates: list[date],
     disbursement_date: datetime,
     scheduler: type[BaseScheduler],
     taxes: list[BaseTax],

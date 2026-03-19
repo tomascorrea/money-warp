@@ -17,12 +17,14 @@ Records a payment at the current date (`self.now()`). Interest accrual depends o
 
 ```python
 from datetime import datetime
+
 from money_warp import Loan, Money, InterestRate, Warp, generate_monthly_dates
+from money_warp.tz import to_date
 
 loan = Loan(
     Money("10000"),
     InterestRate("5% a"),
-    generate_monthly_dates(datetime(2024, 2, 1), 12),
+    [to_date(d) for d in generate_monthly_dates(datetime(2024, 2, 1), 12)],
 )
 
 # Pay on time using the Time Machine
@@ -58,18 +60,25 @@ loan.record_payment(Money("856.07"), datetime(2024, 3, 1), "March payment")
 Configure fines and grace periods when creating a loan:
 
 ```python
+from datetime import datetime
+
+from money_warp import InterestRate, Loan, Money, generate_monthly_dates
+from money_warp.tz import to_date
+
+_due = [to_date(d) for d in generate_monthly_dates(datetime(2024, 2, 1), 12)]
+
 # Default: 2% fine, no grace period
 loan = Loan(
     Money("10000"),
     InterestRate("5% a"),
-    generate_monthly_dates(datetime(2024, 2, 1), 12),
+    _due,
 )
 
 # Custom: 5% fine with a 7-day grace period
 loan = Loan(
     Money("10000"),
     InterestRate("5% a"),
-    generate_monthly_dates(datetime(2024, 2, 1), 12),
+    _due,
     fine_rate=InterestRate("5% annual"),
     grace_period_days=7,
 )
@@ -85,17 +94,19 @@ loan = Loan(
 ### Checking for Late Payments
 
 ```python
-from datetime import datetime
+from datetime import date, datetime
+
 from money_warp import Loan, Money, InterestRate, generate_monthly_dates
+from money_warp.tz import to_date
 
 loan = Loan(
     Money("10000"),
     InterestRate("5% a"),
-    generate_monthly_dates(datetime(2024, 2, 1), 3),
+    [to_date(d) for d in generate_monthly_dates(datetime(2024, 2, 1), 3)],
 )
 
 # Is the February payment late as of February 15?
-is_late = loan.is_payment_late(datetime(2024, 2, 1), as_of_date=datetime(2024, 2, 15))
+is_late = loan.is_payment_late(date(2024, 2, 1), as_of_date=datetime(2024, 2, 15))
 print(f"Late? {is_late}")  # True — no payment was made
 ```
 
@@ -125,10 +136,14 @@ When a borrower pays late, they are charged extra interest for the days beyond t
 On-time and early payments produce only a regular interest item (no mora).
 
 ```python
+from datetime import date, datetime
+
+from money_warp import InterestRate, Loan, Money, Warp
+
 loan = Loan(
     Money("10000"),
     InterestRate("6% a"),
-    [datetime(2024, 2, 1), datetime(2024, 3, 1), datetime(2024, 4, 1)],
+    [date(2024, 2, 1), date(2024, 3, 1), date(2024, 4, 1)],
     disbursement_date=datetime(2024, 1, 1),
 )
 
@@ -159,20 +174,22 @@ A large late payment naturally covers the missed installment **and** eats into f
 A grace period delays when fines are applied. If `grace_period_days=7`, a payment due on February 1st is not considered late until February 8th.
 
 ```python
-from decimal import Decimal
+from datetime import date, datetime
+
+from money_warp import InterestRate, Loan, Money
 
 loan = Loan(
     Money("10000"),
     InterestRate("5% a"),
-    [datetime(2024, 2, 1)],
+    [date(2024, 2, 1)],
     grace_period_days=7,
 )
 
 # Not late on February 5 (within grace period)
-print(loan.is_payment_late(datetime(2024, 2, 1), datetime(2024, 2, 5)))  # False
+print(loan.is_payment_late(date(2024, 2, 1), datetime(2024, 2, 5)))  # False
 
 # Late on February 9 (grace period expired)
-print(loan.is_payment_late(datetime(2024, 2, 1), datetime(2024, 2, 9)))  # True
+print(loan.is_payment_late(date(2024, 2, 1), datetime(2024, 2, 9)))  # True
 ```
 
 Note: the grace period only affects **fines**. Mora interest always accrues for every day past the due date, regardless of the grace period.
@@ -216,24 +233,26 @@ A loan is not a group of installments. Installments are **consequences** of the 
 Access the repayment plan via `loan.installments`. Each `Installment` shows expected amounts, actual paid amounts, and detailed per-payment allocations.
 
 ```python
-from money_warp import Loan, Money, InterestRate, generate_monthly_dates
 from datetime import datetime
+
+from money_warp import Loan, Money, InterestRate, generate_monthly_dates
+from money_warp.tz import to_date, to_datetime
 
 loan = Loan(
     Money("10000"),
     InterestRate("6% a"),
-    generate_monthly_dates(datetime(2025, 2, 1), 3),
+    [to_date(d) for d in generate_monthly_dates(datetime(2025, 2, 1), 3)],
     disbursement_date=datetime(2025, 1, 1),
 )
 
 # Before any payments: all unpaid
 for inst in loan.installments:
-    print(f"#{inst.number} due {inst.due_date.date()}: "
+    print(f"#{inst.number} due {inst.due_date}: "
           f"{inst.expected_payment} — paid: {inst.is_fully_paid}")
 
-# After a payment: first installment is paid
+# After a payment: first installment is paid (payment_date is a datetime)
 schedule = loan.get_original_schedule()
-loan.record_payment(schedule[0].payment_amount, schedule[0].due_date)
+loan.record_payment(schedule[0].payment_amount, to_datetime(schedule[0].due_date))
 
 inst = loan.installments[0]
 print(f"#{inst.number} is_fully_paid={inst.is_fully_paid}")

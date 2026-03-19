@@ -1,6 +1,6 @@
 """Inverted Price scheduler implementing Constant Amortization System (SAC)."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import List
 
@@ -27,7 +27,7 @@ class InvertedPriceScheduler(BaseScheduler):
 
     @classmethod
     def generate_schedule(
-        cls, principal: Money, interest_rate: InterestRate, due_dates: List[datetime], disbursement_date: datetime
+        cls, principal: Money, interest_rate: InterestRate, due_dates: List[date], disbursement_date: datetime
     ) -> PaymentSchedule:
         """
         Generate Constant Amortization Schedule with fixed principal payments.
@@ -56,7 +56,7 @@ class InvertedPriceScheduler(BaseScheduler):
 
         for i, due_date in enumerate(due_dates):
             # Calculate days since last payment (or disbursement)
-            prev_date = disbursement_date if i == 0 else due_dates[i - 1]
+            prev_date = disbursement_date.date() if i == 0 else due_dates[i - 1]
             days = (due_date - prev_date).days
 
             # Store beginning balance

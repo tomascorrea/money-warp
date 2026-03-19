@@ -1,6 +1,6 @@
 """Tests for Internal Rate of Return (IRR) calculations."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -79,7 +79,7 @@ def test_irr_with_time_machine_for_specific_date(simple_investment):
     loan = Loan(
         Money("1000"),
         InterestRate("10% annual"),
-        [datetime(2024, 12, 31, tzinfo=timezone.utc)],
+        [date(2024, 12, 31)],
         datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 

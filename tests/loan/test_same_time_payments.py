@@ -1,6 +1,6 @@
 """Tests for multiple payments recorded at the exact same datetime."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -14,8 +14,8 @@ def two_installment_loan():
         Money("10000.00"),
         InterestRate("6% a"),
         [
-            datetime(2025, 2, 1, tzinfo=timezone.utc),
-            datetime(2025, 3, 1, tzinfo=timezone.utc),
+            date(2025, 2, 1),
+            date(2025, 3, 1),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )

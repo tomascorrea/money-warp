@@ -1,6 +1,6 @@
 """Tests for Loan balance properties and balance composition."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from money_warp import InterestRate, Loan, Money, Warp
 
@@ -8,7 +8,7 @@ from money_warp import InterestRate, Loan, Money, Warp
 def test_loan_initial_current_balance():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
     disbursement_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
     loan = Loan(principal, rate, due_dates, disbursement_date=disbursement_date)
@@ -21,7 +21,7 @@ def test_loan_initial_current_balance():
 def test_loan_last_payment_date_initial():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
     disbursement_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
     loan = Loan(principal, rate, due_dates, disbursement_date)
@@ -31,7 +31,7 @@ def test_loan_last_payment_date_initial():
 def test_loan_days_since_last_payment_initial():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
     disbursement_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
     loan = Loan(principal, rate, due_dates, disbursement_date)
@@ -42,7 +42,7 @@ def test_loan_days_since_last_payment_initial():
 def test_loan_days_since_last_payment_defaults_to_now():
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     # Should not raise error and return some number
@@ -54,7 +54,7 @@ def test_loan_principal_balance_initial():
     """Test principal_balance property returns original principal initially."""
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
 
@@ -65,7 +65,7 @@ def test_loan_principal_balance_after_payment():
     """Test principal_balance decreases after principal payments."""
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
     initial_principal = loan.principal_balance
@@ -82,7 +82,7 @@ def test_loan_principal_balance_zero_after_full_payment():
     """Test principal_balance becomes zero after full principal is paid."""
     principal = Money("1000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
 
@@ -96,7 +96,7 @@ def test_loan_interest_balance_initial_zero():
     """Test interest_balance is zero at disbursement time."""
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
     disbursement_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
     loan = Loan(principal, rate, due_dates, disbursement_date=disbursement_date)
@@ -109,7 +109,7 @@ def test_loan_interest_balance_grows_over_time():
     """Test interest_balance increases over time."""
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
 
@@ -127,7 +127,7 @@ def test_loan_interest_balance_resets_after_payment():
     """Test interest_balance resets after interest payment."""
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
 
@@ -148,7 +148,7 @@ def test_loan_current_balance_composition():
     """Test current_balance equals sum of four component balances."""
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     loan = Loan(
         principal,
@@ -175,7 +175,7 @@ def test_loan_balance_components_with_payments():
     """Test balance components work correctly with multiple payments."""
     principal = Money("10000.00")
     rate = InterestRate("5% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc), datetime(2024, 3, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1), date(2024, 3, 1)]
 
     loan = Loan(principal, rate, due_dates, disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc))
 
@@ -197,7 +197,7 @@ def test_loan_balance_components_with_fines_and_payments():
     """Test balance components with fines and payments interaction."""
     principal = Money("5000.00")
     rate = InterestRate("6% a")
-    due_dates = [datetime(2024, 2, 1, tzinfo=timezone.utc)]
+    due_dates = [date(2024, 2, 1)]
 
     loan = Loan(
         principal,

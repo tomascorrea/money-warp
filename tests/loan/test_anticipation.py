@@ -1,6 +1,6 @@
 """Tests for installment anticipation (calculate_anticipation, anticipate_payment)."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 from hypothesis import given, settings
@@ -17,9 +17,9 @@ def three_installment_loan():
         Money("10000"),
         InterestRate("12% annual"),
         [
-            datetime(2024, 2, 1, tzinfo=timezone.utc),
-            datetime(2024, 3, 1, tzinfo=timezone.utc),
-            datetime(2024, 4, 1, tzinfo=timezone.utc),
+            date(2024, 2, 1),
+            date(2024, 3, 1),
+            date(2024, 4, 1),
         ],
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
@@ -31,12 +31,12 @@ def six_installment_loan():
         Money("60000"),
         InterestRate("12% annual"),
         [
-            datetime(2024, 2, 1, tzinfo=timezone.utc),
-            datetime(2024, 3, 1, tzinfo=timezone.utc),
-            datetime(2024, 4, 1, tzinfo=timezone.utc),
-            datetime(2024, 5, 1, tzinfo=timezone.utc),
-            datetime(2024, 6, 1, tzinfo=timezone.utc),
-            datetime(2024, 7, 1, tzinfo=timezone.utc),
+            date(2024, 2, 1),
+            date(2024, 3, 1),
+            date(2024, 4, 1),
+            date(2024, 5, 1),
+            date(2024, 6, 1),
+            date(2024, 7, 1),
         ],
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
@@ -145,9 +145,9 @@ def test_anticipation_with_sac_scheduler():
         Money("10000"),
         InterestRate("12% annual"),
         [
-            datetime(2024, 2, 1, tzinfo=timezone.utc),
-            datetime(2024, 3, 1, tzinfo=timezone.utc),
-            datetime(2024, 4, 1, tzinfo=timezone.utc),
+            date(2024, 2, 1),
+            date(2024, 3, 1),
+            date(2024, 4, 1),
         ],
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
         scheduler=InvertedPriceScheduler,
@@ -175,9 +175,9 @@ def test_anticipation_full_lifecycle_zeroes_balance():
         Money("10000"),
         InterestRate("12% annual"),
         [
-            datetime(2024, 2, 1, tzinfo=timezone.utc),
-            datetime(2024, 3, 1, tzinfo=timezone.utc),
-            datetime(2024, 4, 1, tzinfo=timezone.utc),
+            date(2024, 2, 1),
+            date(2024, 3, 1),
+            date(2024, 4, 1),
         ],
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
@@ -195,7 +195,11 @@ def test_anticipation_full_lifecycle_zeroes_balance():
     kept = [e for e in loan.get_original_schedule().entries if e.payment_number != 3]
 
     for entry in kept:
-        loan.record_payment(entry.payment_amount, entry.due_date)
+        d = entry.due_date
+        loan.record_payment(
+            entry.payment_amount,
+            datetime(d.year, d.month, d.day, tzinfo=timezone.utc),
+        )
 
     tolerance = Money("0.10")
     assert loan.principal_balance < tolerance
@@ -209,9 +213,9 @@ def test_anticipation_all_remaining_full_payoff():
         Money("10000"),
         InterestRate("12% annual"),
         [
-            datetime(2024, 2, 1, tzinfo=timezone.utc),
-            datetime(2024, 3, 1, tzinfo=timezone.utc),
-            datetime(2024, 4, 1, tzinfo=timezone.utc),
+            date(2024, 2, 1),
+            date(2024, 3, 1),
+            date(2024, 4, 1),
         ],
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
@@ -257,12 +261,12 @@ def test_kept_installments_unchanged_regardless_of_anticipation(anticipated, day
         Money("60000"),
         InterestRate("12% annual"),
         [
-            datetime(2024, 2, 1, tzinfo=timezone.utc),
-            datetime(2024, 3, 1, tzinfo=timezone.utc),
-            datetime(2024, 4, 1, tzinfo=timezone.utc),
-            datetime(2024, 5, 1, tzinfo=timezone.utc),
-            datetime(2024, 6, 1, tzinfo=timezone.utc),
-            datetime(2024, 7, 1, tzinfo=timezone.utc),
+            date(2024, 2, 1),
+            date(2024, 3, 1),
+            date(2024, 4, 1),
+            date(2024, 5, 1),
+            date(2024, 6, 1),
+            date(2024, 7, 1),
         ],
         disbursement_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
     )

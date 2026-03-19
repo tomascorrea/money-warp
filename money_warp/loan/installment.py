@@ -1,7 +1,7 @@
 """Installment data structure for loan repayment plans."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date
 from typing import List, Tuple
 
 from ..money import Money
@@ -24,7 +24,7 @@ class Installment:
     """
 
     number: int
-    due_date: datetime
+    due_date: date
     days_in_period: int
     expected_payment: Money
     expected_principal: Money

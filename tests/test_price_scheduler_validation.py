@@ -1,6 +1,6 @@
 """Validation tests for PriceScheduler against known loan calculation principles."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -19,7 +19,7 @@ def test_price_scheduler_reference_values():
 
     # 10 payments, 1 day apart each
     disbursement_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
-    due_dates = [datetime(2024, 1, i + 2, tzinfo=timezone.utc) for i in range(10)]  # Jan 2, 3, 4, ..., 11
+    due_dates = [date(2024, 1, i + 2) for i in range(10)]  # Jan 2, 3, 4, ..., 11
 
     schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date)
 
@@ -73,7 +73,8 @@ def test_price_scheduler_zero_interest_validation():
 
     # 12 monthly payments
     start_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
-    due_dates = [start_date + timedelta(days=30 * i) for i in range(1, 13)]
+    anchor = date(2024, 1, 1)
+    due_dates = [anchor + timedelta(days=30 * i) for i in range(1, 13)]
     disbursement_date = start_date
 
     schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date)
@@ -98,7 +99,7 @@ def test_price_scheduler_single_payment_validation():
 
     # Single payment after 1 year
     disbursement_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
-    due_dates = [datetime(2024, 12, 31, tzinfo=timezone.utc)]  # 365 days later
+    due_dates = [date(2024, 12, 31)]  # 365 days later
 
     schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date)
 
@@ -125,7 +126,8 @@ def test_price_scheduler_short_term_validation():
 
     # 6 monthly payments
     start_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
-    due_dates = [start_date + timedelta(days=30 * i) for i in range(1, 7)]
+    anchor = date(2024, 1, 1)
+    due_dates = [anchor + timedelta(days=30 * i) for i in range(1, 7)]
     disbursement_date = start_date
 
     schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date)
@@ -155,10 +157,10 @@ def test_price_scheduler_irregular_schedule_validation():
     # Irregular payment schedule
     disbursement_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
     due_dates = [
-        datetime(2024, 2, 15, tzinfo=timezone.utc),  # 45 days
-        datetime(2024, 4, 1, tzinfo=timezone.utc),  # 45 days later
-        datetime(2024, 6, 1, tzinfo=timezone.utc),  # 61 days later
-        datetime(2024, 8, 15, tzinfo=timezone.utc),  # 75 days later
+        date(2024, 2, 15),  # 45 days
+        date(2024, 4, 1),  # 45 days later
+        date(2024, 6, 1),  # 61 days later
+        date(2024, 8, 15),  # 75 days later
     ]
 
     schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date)
@@ -190,7 +192,8 @@ def test_price_scheduler_high_precision_validation():
 
     # 24 monthly payments
     start_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
-    due_dates = [start_date + timedelta(days=30 * i) for i in range(1, 25)]
+    anchor = date(2024, 1, 1)
+    due_dates = [anchor + timedelta(days=30 * i) for i in range(1, 25)]
     disbursement_date = start_date
 
     schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date)
@@ -221,7 +224,8 @@ def test_price_scheduler_parametrized_validation(principal_amount, annual_rate, 
 
     # Generate monthly payment schedule
     start_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
-    due_dates = [start_date + timedelta(days=30 * i) for i in range(1, num_payments + 1)]
+    anchor = date(2024, 1, 1)
+    due_dates = [anchor + timedelta(days=30 * i) for i in range(1, num_payments + 1)]
     disbursement_date = start_date
 
     schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date)

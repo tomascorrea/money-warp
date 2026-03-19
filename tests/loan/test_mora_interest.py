@@ -1,6 +1,6 @@
 """Tests for mora interest: extra daily-compounded interest accrued beyond the due date."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -13,7 +13,7 @@ def test_late_payment_produces_separate_mora_interest_item():
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -31,7 +31,7 @@ def test_mora_interest_equals_difference_between_total_and_regular():
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -54,7 +54,7 @@ def test_regular_interest_matches_scheduled_interest():
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -75,12 +75,12 @@ def test_total_interest_on_late_payment_matches_manual_calculation(late_days):
     """Sum of regular + mora matches daily-compounded accrual from disbursement to payment date."""
     principal = Money("10000.00")
     rate = InterestRate("6% a")
-    due_date = datetime(2025, 2, 1, tzinfo=timezone.utc)
+    due_date = date(2025, 2, 1)
     disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
 
     loan = Loan(principal, rate, [due_date], disbursement_date=disbursement)
     payment_date = due_date + timedelta(days=late_days)
-    total_days = (payment_date - disbursement).days
+    total_days = (payment_date - disbursement.date()).days
 
     daily_rate = rate.to_daily().as_decimal()
     expected_total = Decimal("10000") * ((1 + daily_rate) ** total_days - 1)
@@ -98,7 +98,7 @@ def test_on_time_payment_produces_no_mora_interest_item():
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -116,7 +116,7 @@ def test_early_payment_produces_no_mora_interest_item():
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -131,11 +131,11 @@ def test_on_time_interest_unchanged():
     """On-time payment still charges interest exactly up to the due date (regression guard)."""
     principal = Money("10000.00")
     rate = InterestRate("6% a")
-    due_date = datetime(2025, 2, 1, tzinfo=timezone.utc)
+    due_date = date(2025, 2, 1)
     disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
 
     loan = Loan(principal, rate, [due_date], disbursement_date=disbursement)
-    days_to_due = (due_date - disbursement).days
+    days_to_due = (due_date - disbursement.date()).days
 
     daily_rate = rate.to_daily().as_decimal()
     expected_interest = Decimal("10000") * ((1 + daily_rate) ** days_to_due - 1)
@@ -156,7 +156,7 @@ def test_mora_rate_defaults_to_base_rate():
     loan = Loan(
         Money("10000.00"),
         rate,
-        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -168,7 +168,7 @@ def test_mora_strategy_defaults_to_compound():
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
-        [datetime(2025, 2, 1, tzinfo=timezone.utc)],
+        [date(2025, 2, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -180,7 +180,7 @@ def test_on_time_payment_unaffected_by_custom_mora_rate():
     base_rate = InterestRate("6% a")
     mora_rate = InterestRate("24% a")
     disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
-    due_date = datetime(2025, 2, 1, tzinfo=timezone.utc)
+    due_date = date(2025, 2, 1)
 
     loan = Loan(
         Money("10000.00"),
@@ -191,7 +191,7 @@ def test_on_time_payment_unaffected_by_custom_mora_rate():
     )
 
     daily_base = base_rate.to_daily().as_decimal()
-    days = (due_date - disbursement).days
+    days = (due_date - disbursement.date()).days
     expected_interest = Decimal("10000") * ((1 + daily_base) ** days - 1)
 
     with Warp(loan, due_date) as warped:
@@ -209,7 +209,7 @@ def test_mora_with_custom_rate_compound_strategy():
     base_rate = InterestRate("6% a")
     mora_rate = InterestRate("12% a")
     disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
-    due_date = datetime(2025, 2, 1, tzinfo=timezone.utc)
+    due_date = date(2025, 2, 1)
     payment_date = datetime(2025, 2, 15, tzinfo=timezone.utc)
 
     loan = Loan(
@@ -221,8 +221,8 @@ def test_mora_with_custom_rate_compound_strategy():
         mora_strategy=MoraStrategy.COMPOUND,
     )
 
-    regular_days = (due_date - disbursement).days  # 31
-    mora_days = (payment_date - due_date).days  # 14
+    regular_days = (due_date - disbursement.date()).days  # 31
+    mora_days = (payment_date.date() - due_date).days  # 14
 
     daily_base = base_rate.to_daily().as_decimal()
     daily_mora = mora_rate.to_daily().as_decimal()
@@ -244,7 +244,7 @@ def test_mora_with_custom_rate_simple_strategy():
     base_rate = InterestRate("6% a")
     mora_rate = InterestRate("12% a")
     disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
-    due_date = datetime(2025, 2, 1, tzinfo=timezone.utc)
+    due_date = date(2025, 2, 1)
     payment_date = datetime(2025, 2, 15, tzinfo=timezone.utc)
 
     loan = Loan(
@@ -256,7 +256,7 @@ def test_mora_with_custom_rate_simple_strategy():
         mora_strategy=MoraStrategy.SIMPLE,
     )
 
-    mora_days = (payment_date - due_date).days  # 14
+    mora_days = (payment_date.date() - due_date).days  # 14
     daily_mora = mora_rate.to_daily().as_decimal()
     expected_mora = principal * ((1 + daily_mora) ** mora_days - 1)
 
@@ -272,7 +272,7 @@ def test_simple_vs_compound_mora_compound_produces_more():
     base_rate = InterestRate("6% a")
     mora_rate = InterestRate("12% a")
     disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
-    due_date = datetime(2025, 2, 1, tzinfo=timezone.utc)
+    due_date = date(2025, 2, 1)
     payment_date = datetime(2025, 2, 15, tzinfo=timezone.utc)
 
     loan_compound = Loan(
@@ -309,10 +309,10 @@ def test_regular_interest_unchanged_regardless_of_mora_rate():
     base_rate = InterestRate("6% a")
     mora_rate = InterestRate("24% a")
     disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
-    due_date = datetime(2025, 2, 1, tzinfo=timezone.utc)
+    due_date = date(2025, 2, 1)
     payment_date = datetime(2025, 2, 15, tzinfo=timezone.utc)
 
-    regular_days = (due_date - disbursement).days
+    regular_days = (due_date - disbursement.date()).days
     daily_base = base_rate.to_daily().as_decimal()
     expected_regular = Decimal("10000") * ((1 + daily_base) ** regular_days - 1)
 
@@ -348,11 +348,11 @@ def test_total_interest_with_custom_mora_rate_matches_manual(mora_rate_str, stra
     base_rate = InterestRate("6% a")
     mora_rate = InterestRate(mora_rate_str)
     disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
-    due_date = datetime(2025, 2, 1, tzinfo=timezone.utc)
+    due_date = date(2025, 2, 1)
     payment_date = datetime(2025, 2, 15, tzinfo=timezone.utc)
 
-    regular_days = (due_date - disbursement).days
-    mora_days = (payment_date - due_date).days
+    regular_days = (due_date - disbursement.date()).days
+    mora_days = (payment_date.date() - due_date).days
 
     daily_base = base_rate.to_daily().as_decimal()
     daily_mora = mora_rate.to_daily().as_decimal()
@@ -392,11 +392,11 @@ def test_interest_and_mora_balance_uses_mora_rate_when_past_due():
     base_rate = InterestRate("6% a")
     mora_rate = InterestRate("24% a")
     disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
-    due_date = datetime(2025, 2, 1, tzinfo=timezone.utc)
+    due_date = date(2025, 2, 1)
     check_date = datetime(2025, 2, 15, tzinfo=timezone.utc)
 
-    regular_days = (due_date - disbursement).days
-    mora_days = (check_date - due_date).days
+    regular_days = (due_date - disbursement.date()).days
+    mora_days = (check_date.date() - due_date).days
 
     daily_base = base_rate.to_daily().as_decimal()
     daily_mora = mora_rate.to_daily().as_decimal()
@@ -423,10 +423,10 @@ def test_interest_balance_uses_base_rate_when_not_late():
     base_rate = InterestRate("6% a")
     mora_rate = InterestRate("24% a")
     disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
-    due_date = datetime(2025, 2, 1, tzinfo=timezone.utc)
+    due_date = date(2025, 2, 1)
     check_date = datetime(2025, 1, 20, tzinfo=timezone.utc)
 
-    days = (check_date - disbursement).days
+    days = (check_date.date() - disbursement.date()).days
     daily_base = base_rate.to_daily().as_decimal()
     expected = principal * ((1 + daily_base) ** days - 1)
 
@@ -449,11 +449,11 @@ def test_current_balance_reflects_mora_rate_when_past_due():
     base_rate = InterestRate("6% a")
     mora_rate = InterestRate("24% a")
     disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
-    due_date = datetime(2025, 2, 1, tzinfo=timezone.utc)
+    due_date = date(2025, 2, 1)
     check_date = datetime(2025, 2, 15, tzinfo=timezone.utc)
 
-    regular_days = (due_date - disbursement).days
-    mora_days = (check_date - due_date).days
+    regular_days = (due_date - disbursement.date()).days
+    mora_days = (check_date.date() - due_date).days
 
     daily_base = base_rate.to_daily().as_decimal()
     daily_mora = mora_rate.to_daily().as_decimal()
