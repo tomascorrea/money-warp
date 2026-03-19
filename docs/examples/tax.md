@@ -10,7 +10,7 @@ IOF has two components applied to each installment's principal payment:
 - **Additional rate**: a flat percentage applied once per installment
 
 ```python
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from money_warp import IOF, Money, InterestRate, PriceScheduler
 
@@ -22,7 +22,7 @@ iof = IOF(daily_rate="0.0082%", additional_rate="0.38%")
 
 # Generate a schedule and calculate IOF
 disbursement = datetime(2024, 1, 1)
-due_dates = [datetime(2024, 2, 1), datetime(2024, 3, 1), datetime(2024, 4, 1)]
+due_dates = [date(2024, 2, 1), date(2024, 3, 1), date(2024, 4, 1)]
 schedule = PriceScheduler.generate_schedule(
     Money("10000"), InterestRate("2% m"), due_dates, disbursement
 )
@@ -93,10 +93,13 @@ The difference between modes is at most 1 cent per installment. Use `PER_COMPONE
 Attach taxes to a `Loan` for reporting. The loan lazily computes and caches tax amounts from the original schedule:
 
 ```python
+from datetime import datetime
+
 from money_warp import Loan, Money, InterestRate, IndividualIOF, generate_monthly_dates
+from money_warp.tz import to_date
 
 iof = IndividualIOF()
-due_dates = generate_monthly_dates(datetime(2024, 2, 1), 12)
+due_dates = [to_date(d) for d in generate_monthly_dates(datetime(2024, 2, 1), 12)]
 
 loan = Loan(
     Money("10000"),
@@ -122,10 +125,13 @@ When taxes are present, `generate_expected_cash_flow()` includes a `"tax"` item 
 When the tax is financed (incorporated into the principal), the borrower receives at least the "requested amount" after tax deduction. The `grossup()` function uses `scipy.optimize.brentq` (bracketed bisection) to find the principal where `principal - tax(principal) >= requested_amount`, then snaps the result to a clean cent-aligned principal. In most cases the net equals the requested amount exactly; in rare rounding-boundary cases the borrower receives up to 1 cent more (never less).
 
 ```python
-from money_warp import grossup, Money, InterestRate, PriceScheduler, IndividualIOF
+from datetime import datetime
+
+from money_warp import grossup, Money, InterestRate, PriceScheduler, IndividualIOF, generate_monthly_dates
+from money_warp.tz import to_date
 
 iof = IndividualIOF()
-due_dates = generate_monthly_dates(datetime(2024, 2, 1), 12)
+due_dates = [to_date(d) for d in generate_monthly_dates(datetime(2024, 2, 1), 12)]
 
 result = grossup(
     requested_amount=Money("10000"),
@@ -150,10 +156,13 @@ print(f"Net disbursement: {loan.net_disbursement}")  # ~= 10,000
 Most of the time you want the grossed-up `Loan` directly. The `grossup_loan()` function does `grossup(...).to_loan(...)` in a single call:
 
 ```python
-from money_warp import grossup_loan, Money, InterestRate, PriceScheduler, IndividualIOF
+from datetime import datetime
+
+from money_warp import grossup_loan, Money, InterestRate, PriceScheduler, IndividualIOF, generate_monthly_dates
+from money_warp.tz import to_date
 
 iof = IndividualIOF()
-due_dates = generate_monthly_dates(datetime(2024, 2, 1), 12)
+due_dates = [to_date(d) for d in generate_monthly_dates(datetime(2024, 2, 1), 12)]
 
 loan = grossup_loan(
     requested_amount=Money("10000"),

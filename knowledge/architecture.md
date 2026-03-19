@@ -93,7 +93,7 @@ This keeps the source of truth minimal and avoids stale derived data.
 
 ### Flexible Scheduling via Due Dates
 
-Rather than encoding "monthly" or "bi-weekly" into the loan, the constructor accepts `due_dates: List[datetime]`. This supports irregular schedules, seasonal payments, and custom arrangements. Convenience functions in `date_utils.py` generate common date patterns.
+Rather than encoding "monthly" or "bi-weekly" into the loan, the constructor accepts `due_dates: List[date]` (calendar due dates). This supports irregular schedules, seasonal payments, and custom arrangements. Convenience functions in `date_utils.py` return `List[datetime]`; use `tz.to_date()` element-wise when passing their output into `Loan` and schedulers.
 
 ### Three-Date Payment Model
 

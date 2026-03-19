@@ -5,14 +5,15 @@
 ## Basic Time Travel
 
 ```python
+from datetime import date, datetime
+
 from money_warp import Warp, Loan, Money, InterestRate
-from datetime import datetime
 
 # Create a loan
 loan = Loan(
     Money("10000"), 
     InterestRate("5% annual"), 
-    [datetime(2024, 1, 15), datetime(2024, 2, 15), datetime(2024, 3, 15)]
+    [date(2024, 1, 15), date(2024, 2, 15), date(2024, 3, 15)]
 )
 
 # Make some payments
@@ -104,9 +105,13 @@ except InvalidDateError as e:
 ## Real-World Scenario: Payment Analysis
 
 ```python
+from datetime import date, datetime
+
+from money_warp import InterestRate, Loan, Money, Warp
+
 # Analyze loan performance at different points in time
 loan = Loan(Money("50000"), InterestRate("4.5% annual"), 
-           [datetime(2024, i, 1) for i in range(1, 13)])  # Monthly payments
+           [date(2024, i, 1) for i in range(1, 13)])  # Monthly payments
 
 # Record some irregular payments
 loan.record_payment(Money("4500"), datetime(2024, 1, 1), "On time")

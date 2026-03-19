@@ -15,7 +15,7 @@ Rather than scattering `ensure_aware()` calls in every method body, the `@tz_awa
 - `datetime` values through `ensure_aware`
 - `list` values whose first element is a `datetime` element-wise
 
-Everything else (including `None` for optional params) passes through untouched. This keeps method bodies free of boilerplate.
+Everything else (including `None` for optional params) passes through untouched. Lists are only coerced when the first element is a `datetime`; `List[date]` arguments (e.g. loan `due_dates`) are left as-is. This keeps method bodies free of boilerplate.
 
 ### No New Dependencies
 
@@ -29,6 +29,8 @@ Uses `zoneinfo.ZoneInfo` from the standard library (Python 3.9+). The project re
 | `set_tz(tz)` | function | Set the default timezone (string or `tzinfo`) |
 | `now()` | function | `datetime.now(get_tz())` — always aware |
 | `ensure_aware(dt)` | function | Attach default tz to naive dt; pass aware dt through |
+| `to_date(dt)` | function | Calendar `date` from a `datetime`, or pass through an existing `date` |
+| `to_datetime(d)` | function | Midnight on `d` as a timezone-aware `datetime` (via `ensure_aware`) |
 | `tz_aware` | decorator | Coerce all datetime args of the decorated callable |
 | `default_time_source` | instance | `_DefaultTimeSource` whose `.now()` delegates to `now()` |
 

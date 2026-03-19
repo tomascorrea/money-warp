@@ -124,14 +124,16 @@ short_term = generate_custom_interval_dates(datetime(2024, 1, 1), 12, 10)
 
 ## Integration with Loans
 
-All date generation functions work seamlessly with MoneyWarp loans:
+Generators return `List[datetime]`; `Loan` expects calendar `due_dates: List[date]`. Convert with `to_date` from `money_warp.tz`:
 
 ```python
-from money_warp import Loan, Money, InterestRate, generate_monthly_dates
 from datetime import datetime
 
-# Generate payment dates
-due_dates = generate_monthly_dates(datetime(2024, 1, 15), 24)
+from money_warp import Loan, Money, InterestRate, generate_monthly_dates
+from money_warp.tz import to_date
+
+# Generate payment dates, then strip to calendar dates for the loan
+due_dates = [to_date(d) for d in generate_monthly_dates(datetime(2024, 1, 15), 24)]
 
 # Create loan with generated dates
 loan = Loan(
@@ -197,12 +199,14 @@ quarter_dates = generate_quarterly_dates(datetime(2024, 3, 31), 4)
 ### Mortgage with Monthly Payments
 
 ```python
-from money_warp import Loan, Money, InterestRate, generate_monthly_dates
 from datetime import datetime
+
+from money_warp import Loan, Money, InterestRate, generate_monthly_dates
+from money_warp.tz import to_date
 
 # 30-year mortgage starting mid-month
 start_date = datetime(2024, 1, 15)
-payment_dates = generate_monthly_dates(start_date, 360)  # 30 years * 12 months
+payment_dates = [to_date(d) for d in generate_monthly_dates(start_date, 360)]  # 30 years * 12 months
 
 mortgage = Loan(
     principal=Money("400000"),  # $400k house
@@ -218,8 +222,13 @@ print(f"Final payment: {payment_dates[-1]}")
 ### Bi-weekly Auto Loan
 
 ```python
+from datetime import datetime
+
+from money_warp import Loan, Money, InterestRate, generate_biweekly_dates
+from money_warp.tz import to_date
+
 # Bi-weekly auto loan (pays off faster)
-biweekly_dates = generate_biweekly_dates(datetime(2024, 1, 5), 130)  # ~5 years
+biweekly_dates = [to_date(d) for d in generate_biweekly_dates(datetime(2024, 1, 5), 130)]  # ~5 years
 
 auto_loan = Loan(
     principal=Money("35000"),
@@ -233,8 +242,13 @@ print(f"Bi-weekly auto loan: {len(biweekly_dates)} payments")
 ### Business Quarterly Loan
 
 ```python
+from datetime import datetime
+
+from money_warp import Loan, Money, InterestRate, generate_quarterly_dates
+from money_warp.tz import to_date
+
 # Business loan with quarterly payments
-quarterly_dates = generate_quarterly_dates(datetime(2024, 3, 31), 20)  # 5 years
+quarterly_dates = [to_date(d) for d in generate_quarterly_dates(datetime(2024, 3, 31), 20)]  # 5 years
 
 business_loan = Loan(
     principal=Money("100000"),
@@ -302,7 +316,7 @@ except ValueError as e:
 - **Consistent behavior**: All functions follow the same patterns
 
 ### Immediate Integration
-- **Loan compatibility**: Generated dates work directly with `Loan` objects
+- **Loan compatibility**: Pass `[to_date(d) for d in dates]` into `Loan` — generators yield `datetime`, loan due dates are `date`
 - **Time Machine support**: All dates work with `Warp` for temporal analysis
 - **Schedule generation**: Seamless integration with payment schedulers
 

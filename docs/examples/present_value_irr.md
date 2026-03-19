@@ -175,13 +175,15 @@ print(f"MIRR (360-day year): {mirr_banker}")
 Calculate loan PV from borrower's perspective:
 
 ```python
-from money_warp import Loan
+from datetime import date, datetime
+
+from money_warp import InterestRate, Loan, Money
 
 # Create a loan
 loan = Loan(
     principal=Money("10000"),
     interest_rate=InterestRate("5% annual"),
-    due_dates=[datetime(2024, 6, 1), datetime(2024, 12, 1)],
+    due_dates=[date(2024, 6, 1), date(2024, 12, 1)],
     disbursement_date=datetime(2024, 1, 1)
 )
 
@@ -199,7 +201,11 @@ print(f"PV at 8%: {pv_market_rate}")  # Negative from borrower's perspective
 Calculate loan's effective rate. The loan automatically passes its own `year_size` to the IRR calculation, so loans created with `YearSize.banker` compute IRR using a 360-day year:
 
 ```python
-# Loan IRR (should equal the loan's interest rate)
+from datetime import date, datetime
+
+from money_warp import InterestRate, Loan, Money, YearSize
+
+# Loan IRR (should equal the loan's interest rate); assumes `loan` from previous example
 loan_irr = loan.irr()
 print(f"Loan IRR: {loan_irr}")  # Should be ~5%
 
@@ -211,7 +217,7 @@ print(f"Loan IRR with guess: {loan_irr_guess}")  # Same result
 banker_loan = Loan(
     principal=Money("10000"),
     interest_rate=InterestRate("5% annual", year_size=YearSize.banker),
-    due_dates=[datetime(2024, 6, 1), datetime(2024, 12, 1)],
+    due_dates=[date(2024, 6, 1), date(2024, 12, 1)],
     disbursement_date=datetime(2024, 1, 1)
 )
 banker_loan_irr = banker_loan.irr()

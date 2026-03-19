@@ -70,27 +70,29 @@ set_tz("UTC")  # reset
 You don't need to explicitly call `ensure_aware()` — all public APIs handle it automatically. Naive datetimes work as input for convenience:
 
 ```python
-from datetime import datetime
+from datetime import date, datetime
 from money_warp import Loan, Money, InterestRate, generate_monthly_dates
+from money_warp.tz import to_date
 
-# Naive datetimes are silently coerced to UTC
+# Naive datetimes are silently coerced to UTC for disbursement_date.
+# Due dates are calendar dates; convert generator output with to_date.
 loan = Loan(
     Money("10000"),
     InterestRate("5% a"),
-    generate_monthly_dates(datetime(2024, 2, 1), 12),
+    [to_date(d) for d in generate_monthly_dates(datetime(2024, 2, 1), 12)],
     disbursement_date=datetime(2024, 1, 1),
 )
 
-# All stored datetimes are now timezone-aware
+# Disbursement stays a timezone-aware datetime; due_dates are date objects
 print(loan.disbursement_date)  # 2024-01-01 00:00:00+00:00
-print(loan.due_dates[0])       # 2024-02-01 00:00:00+00:00
+print(loan.due_dates[0])       # 2024-02-01
 ```
 
 The same applies to `CashFlowItem`, `Warp`, `record_payment`, and all other datetime-accepting APIs.
 
 ## The `@tz_aware` Decorator
 
-Under the hood, MoneyWarp uses a `@tz_aware` decorator on public API methods. This decorator inspects function arguments and converts any `datetime` (or `list[datetime]`) to timezone-aware before the function body runs.
+Under the hood, MoneyWarp uses a `@tz_aware` decorator on public API methods. This decorator inspects function arguments and converts any `datetime` (or lists whose first element is a `datetime`) to timezone-aware before the function body runs. Lists of `date` (e.g. loan `due_dates`) are unchanged.
 
 You can use it in your own code if you integrate with MoneyWarp:
 
@@ -116,14 +118,12 @@ When writing tests against MoneyWarp, you can either:
 2. **Use explicit `tzinfo=timezone.utc`** — for clarity and to match the stored values exactly
 
 ```python
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-# Both approaches work for input
-loan = Loan(Money("1000"), InterestRate("5% a"), [datetime(2024, 2, 1)])
-loan = Loan(Money("1000"), InterestRate("5% a"), [datetime(2024, 2, 1, tzinfo=timezone.utc)])
+# Due dates are calendar dates
+loan = Loan(Money("1000"), InterestRate("5% a"), [date(2024, 2, 1)])
 
-# For assertions, use aware datetimes to match stored values
-assert loan.due_dates[0] == datetime(2024, 2, 1, tzinfo=timezone.utc)
+assert loan.due_dates[0] == date(2024, 2, 1)
 ```
 
 ## Public API
@@ -134,4 +134,6 @@ assert loan.due_dates[0] == datetime(2024, 2, 1, tzinfo=timezone.utc)
 | `set_tz(tz)` | Sets the default timezone (string or `tzinfo`) |
 | `now()` | Returns `datetime.now()` in the configured timezone |
 | `ensure_aware(dt)` | Coerces a naive datetime; passes aware datetimes through |
+| `to_date(dt)` | Calendar `date` from a `datetime`, or pass through `date` |
+| `to_datetime(d)` | Midnight on a `date` as timezone-aware `datetime` |
 | `tz_aware` | Decorator that coerces `datetime` arguments automatically |

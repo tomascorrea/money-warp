@@ -74,7 +74,7 @@ class TaxResult:
 @dataclass
 class TaxInstallmentDetail:
     payment_number: int
-    due_date: datetime
+    due_date: date
     principal_payment: Money
     tax_amount: Money
 ```
@@ -132,7 +132,7 @@ Both inherit all behavior from `IOF` -- no new calculation logic.
 def grossup(
     requested_amount: Money,
     interest_rate: InterestRate,
-    due_dates: List[datetime],
+    due_dates: List[date],
     disbursement_date: datetime,
     scheduler: Type[BaseScheduler],
     taxes: List[BaseTax],
@@ -155,7 +155,7 @@ Creates a Loan with the grossed-up principal, `is_grossed_up=True`, and all sche
 def grossup_loan(
     requested_amount: Money,
     interest_rate: InterestRate,
-    due_dates: List[datetime],
+    due_dates: List[date],
     disbursement_date: datetime,
     scheduler: Type[BaseScheduler],
     taxes: List[BaseTax],

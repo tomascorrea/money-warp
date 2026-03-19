@@ -38,6 +38,8 @@ All generators raise `ValueError` for non-positive `num_payments`. `generate_cus
 
 All return `List[datetime]` with the first element equal to `start_date`.
 
+`Loan` and schedulers take `due_dates: List[date]`. Map generator output with `money_warp.tz.to_date` per element (or build `date` lists directly).
+
 ## Key Learnings
 
 ### Day-of-month drift in chained relativedelta (fixed 2026-02-23)
