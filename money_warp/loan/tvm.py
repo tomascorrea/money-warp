@@ -16,6 +16,7 @@ from ..tz import to_datetime, tz_aware
 
 if TYPE_CHECKING:
     from .loan import Loan
+    from .settlement import AnticipationResult
 
 
 @tz_aware

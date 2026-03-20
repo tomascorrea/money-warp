@@ -2,15 +2,15 @@
 
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import FrozenSet, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 from ..money import Money
 from ..time_context import TimeContext
 from ..tz import default_time_source, tz_aware
 from .entry import (
-    CategoryInput,
     CashFlowEntry,
     CashFlowType,
+    CategoryInput,
     ExpectedCashFlowEntry,
     HappenedCashFlowEntry,
     _normalize_category,

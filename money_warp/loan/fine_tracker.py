@@ -113,9 +113,7 @@ class FineTracker:
         exact_date_payments = [
             p
             for p in all_payments
-            if p.datetime.date() == due_date
-            and p.datetime <= as_of
-            and not p.category.isdisjoint(_PAYMENT_CATEGORIES)
+            if p.datetime.date() == due_date and p.datetime <= as_of and not p.category.isdisjoint(_PAYMENT_CATEGORIES)
         ]
         total_on_date = sum((p.amount for p in exact_date_payments), Money.zero())
         if total_on_date >= (expected_payment - _TOLERANCE):

@@ -26,10 +26,7 @@ scheduler_st = st.sampled_from([PriceScheduler, InvertedPriceScheduler])
 
 
 def _build_loan(principal, annual_rate, num_installments, scheduler):
-    due_dates = [
-        (DISBURSEMENT + timedelta(days=30 * (i + 1))).date()
-        for i in range(num_installments)
-    ]
+    due_dates = [(DISBURSEMENT + timedelta(days=30 * (i + 1))).date() for i in range(num_installments)]
     return Loan(
         Money(str(principal)),
         InterestRate(f"{annual_rate}% a"),
@@ -41,32 +38,28 @@ def _build_loan(principal, annual_rate, num_installments, scheduler):
 
 def assert_fully_allocated(settlement: Settlement) -> None:
     """Assert the three allocation invariants on a settlement."""
-    assert settlement.total_paid == settlement.payment_amount, (
-        f"Component sum {settlement.total_paid} != payment {settlement.payment_amount}"
-    )
+    assert (
+        settlement.total_paid == settlement.payment_amount
+    ), f"Component sum {settlement.total_paid} != payment {settlement.payment_amount}"
 
     alloc_fine = Money(sum((a.fine_allocated.raw_amount for a in settlement.allocations), Decimal(0)))
     alloc_interest = Money(sum((a.interest_allocated.raw_amount for a in settlement.allocations), Decimal(0)))
     alloc_mora = Money(sum((a.mora_allocated.raw_amount for a in settlement.allocations), Decimal(0)))
     alloc_principal = Money(sum((a.principal_allocated.raw_amount for a in settlement.allocations), Decimal(0)))
 
-    assert alloc_fine == settlement.fine_paid, (
-        f"Allocation fine sum {alloc_fine} != fine_paid {settlement.fine_paid}"
-    )
-    assert alloc_interest == settlement.interest_paid, (
-        f"Allocation interest sum {alloc_interest} != interest_paid {settlement.interest_paid}"
-    )
-    assert alloc_mora == settlement.mora_paid, (
-        f"Allocation mora sum {alloc_mora} != mora_paid {settlement.mora_paid}"
-    )
-    assert alloc_principal == settlement.principal_paid, (
-        f"Allocation principal sum {alloc_principal} != principal_paid {settlement.principal_paid}"
-    )
+    assert alloc_fine == settlement.fine_paid, f"Allocation fine sum {alloc_fine} != fine_paid {settlement.fine_paid}"
+    assert (
+        alloc_interest == settlement.interest_paid
+    ), f"Allocation interest sum {alloc_interest} != interest_paid {settlement.interest_paid}"
+    assert alloc_mora == settlement.mora_paid, f"Allocation mora sum {alloc_mora} != mora_paid {settlement.mora_paid}"
+    assert (
+        alloc_principal == settlement.principal_paid
+    ), f"Allocation principal sum {alloc_principal} != principal_paid {settlement.principal_paid}"
 
     alloc_total = Money(sum((a.total_allocated.raw_amount for a in settlement.allocations), Decimal(0)))
-    assert alloc_total == settlement.payment_amount, (
-        f"Allocation total {alloc_total} != payment {settlement.payment_amount}"
-    )
+    assert (
+        alloc_total == settlement.payment_amount
+    ), f"Allocation total {alloc_total} != payment {settlement.payment_amount}"
 
 
 @given(
@@ -77,9 +70,7 @@ def assert_fully_allocated(settlement: Settlement) -> None:
     payment_fraction=payment_fraction_st,
 )
 @settings(max_examples=50)
-def test_on_time_payment_fully_allocated(
-    principal, annual_rate, num_installments, scheduler, payment_fraction
-):
+def test_on_time_payment_fully_allocated(principal, annual_rate, num_installments, scheduler, payment_fraction):
     """Paying on the due date: all money is accounted for."""
     loan = _build_loan(principal, annual_rate, num_installments, scheduler)
     due_date_dt = datetime(
@@ -90,10 +81,9 @@ def test_on_time_payment_fully_allocated(
     )
 
     with Warp(loan, due_date_dt) as warped:
-        amount = Money(str(
-            (warped.current_balance.raw_amount * Decimal(str(payment_fraction)))
-            .quantize(Decimal("0.01"))
-        ))
+        amount = Money(
+            str((warped.current_balance.raw_amount * Decimal(str(payment_fraction))).quantize(Decimal("0.01")))
+        )
         if amount.is_zero() or amount.is_negative():
             return
         settlement = warped.pay_installment(amount)
@@ -126,10 +116,9 @@ def test_early_payment_fully_allocated(
         return
 
     with Warp(loan, early_dt) as warped:
-        amount = Money(str(
-            (warped.current_balance.raw_amount * Decimal(str(payment_fraction)))
-            .quantize(Decimal("0.01"))
-        ))
+        amount = Money(
+            str((warped.current_balance.raw_amount * Decimal(str(payment_fraction))).quantize(Decimal("0.01")))
+        )
         if amount.is_zero() or amount.is_negative():
             return
         settlement = warped.pay_installment(amount)
@@ -160,10 +149,9 @@ def test_late_payment_with_fines_fully_allocated(
     late_dt = due_date_dt + timedelta(days=days_late)
 
     with Warp(loan, late_dt) as warped:
-        amount = Money(str(
-            (warped.current_balance.raw_amount * Decimal(str(payment_fraction)))
-            .quantize(Decimal("0.01"))
-        ))
+        amount = Money(
+            str((warped.current_balance.raw_amount * Decimal(str(payment_fraction))).quantize(Decimal("0.01")))
+        )
         if amount.is_zero() or amount.is_negative():
             return
         settlement = warped.pay_installment(amount)
@@ -201,10 +189,9 @@ def test_multiple_sequential_payments_all_fully_allocated(
         with Warp(loan, due_date_dt) as warped:
             if warped.is_paid_off:
                 break
-            amount = Money(str(
-                (warped.current_balance.raw_amount * Decimal(str(fractions[i])))
-                .quantize(Decimal("0.01"))
-            ))
+            amount = Money(
+                str((warped.current_balance.raw_amount * Decimal(str(fractions[i]))).quantize(Decimal("0.01")))
+            )
             if amount.is_zero() or amount.is_negative():
                 continue
             warped.pay_installment(amount)

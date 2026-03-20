@@ -1,10 +1,10 @@
 """Settlement and installment computation from payment data."""
 
 from datetime import date, datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from ..money import Money
-from ..scheduler import PaymentSchedule, PaymentScheduleEntry
+from ..scheduler import PaymentSchedule
 from ..tz import to_datetime
 from .installment import Installment
 from .interest_calculator import InterestCalculator

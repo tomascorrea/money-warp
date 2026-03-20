@@ -274,7 +274,6 @@ class Loan:
         """Current datetime (Warp-aware via shared TimeContext)."""
         return self._time_ctx.now()
 
-
     def _on_warp(self, target_date: datetime) -> None:
         """Hook called by Warp after overriding TimeContext."""
         self.calculate_late_fines()
@@ -464,18 +463,23 @@ class Loan:
         except ValueError:
             next_due = None
 
-        settlement_num, fine_paid, interest_paid, mora_paid, principal_paid, ending_balance = (
-            self._ledger.allocate_payment(
-                amount,
-                payment_date,
-                days,
-                principal_balance,
-                description,
-                self._interest,
-                self.fine_balance,
-                due_date=next_due,
-                last_payment_date=last_pay_date,
-            )
+        (
+            settlement_num,
+            fine_paid,
+            interest_paid,
+            mora_paid,
+            principal_paid,
+            ending_balance,
+        ) = self._ledger.allocate_payment(
+            amount,
+            payment_date,
+            days,
+            principal_balance,
+            description,
+            self._interest,
+            self.fine_balance,
+            due_date=next_due,
+            last_payment_date=last_pay_date,
         )
 
         allocs_by_number: Dict[int, List[SettlementAllocation]] = {}
