@@ -295,7 +295,7 @@ class Loan:
         """Get the number of days since the last payment as of a given date (defaults to current time)."""
         if as_of_date is None:
             as_of_date = self.now()
-        return (as_of_date - self.last_payment_date).days
+        return (as_of_date.date() - self.last_payment_date.date()).days
 
     def get_expected_payment_amount(self, due_date: date) -> Money:
         """
@@ -618,7 +618,7 @@ class Loan:
         """
         prior_items = [p for p in self._all_payments if p.datetime <= payment_date]
         last_pay_date = prior_items[-1].datetime if prior_items else self.disbursement_date
-        days = (interest_date - last_pay_date).days
+        days = (interest_date.date() - last_pay_date.date()).days
 
         principal_balance = self.principal
         for p in self._all_payments:
@@ -1200,7 +1200,7 @@ class Loan:
                 expected_mora = prior_mora
             elif i == covered and entry.due_date < as_of_date.date():
                 if last_payment_date is not None:
-                    total_days = (as_of_date - last_payment_date).days
+                    total_days = (as_of_date.date() - last_payment_date.date()).days
                     _, accrued_mora = self._compute_accrued_interest(
                         total_days,
                         principal_balance,
