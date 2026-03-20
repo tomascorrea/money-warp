@@ -14,6 +14,7 @@ from ..tz import to_datetime, tz_aware
 from .fine_tracker import FineTracker, _get_expected_payment
 from .installment import Installment
 from .interest_calculator import InterestCalculator, MoraStrategy
+from .payment_ledger import PaymentLedger
 from .settlement import AnticipationResult, Settlement, SettlementAllocation
 from .tvm import loan_calculate_anticipation, loan_irr, loan_present_value
 
@@ -138,35 +139,35 @@ class Loan:
         self.taxes: List[BaseTax] = taxes or []
         self.is_grossed_up = is_grossed_up
 
-        # State tracking
-        self._all_payments: List[CashFlowItem] = []  # All payments ever made
-        self._payment_item_offsets: List[int] = []  # Start index in _all_payments for each payment
-        self._actual_schedule_entries: List[PaymentScheduleEntry] = []  # Actual payment history as schedule entries
-        self._actual_payment_datetimes: List[datetime] = []  # Full timestamps for each record_payment call
+        # Shared payment CashFlow — single source of truth for payment items
+        self._payment_cf = CashFlow.empty()
+        self._ledger = PaymentLedger(self._payment_cf, self._time_ctx)
         self._tax_cache: Optional[Dict[str, TaxResult]] = None
 
     @property
-    def _actual_payments(self) -> List[CashFlowItem]:
-        """Get actual payments that have occurred up to the current time."""
-        current_time = self.now()
-        return [payment for payment in self._all_payments if payment.datetime <= current_time]
+    def _all_payments(self) -> List:
+        """All payment entries (backward-compat, delegates to ledger)."""
+        return self._ledger.all_payment_items
+
+    @property
+    def _actual_payments(self) -> List:
+        """Payment entries visible at the current time (backward-compat)."""
+        return self._ledger.actual_payment_items
+
+    @property
+    def _actual_schedule_entries(self) -> List[PaymentScheduleEntry]:
+        """Schedule entries derived from ledger snapshots (backward-compat)."""
+        return self._ledger.actual_schedule_entries()
+
+    @property
+    def _actual_payment_datetimes(self) -> List[datetime]:
+        """Payment datetimes derived from ledger snapshots (backward-compat)."""
+        return self._ledger.actual_payment_datetimes()
 
     @property
     def principal_balance(self) -> Money:
         """Get the current principal balance (original principal minus principal payments)."""
-        balance = self.principal
-
-        # Apply all principal payments made up to current time (respecting warped time)
-        current_time = self.now()
-        for payment in self._all_payments:
-            if payment.datetime <= current_time and "principal" in payment.category:
-                balance = balance - payment.amount
-
-        # Ensure balance doesn't go negative
-        if balance.is_negative():
-            balance = Money.zero()
-
-        return balance
+        return self._ledger.principal_balance(self.principal)
 
     def _accrued_interest_components(self) -> tuple:
         """Return ``(regular, mora)`` accrued interest since last payment.
@@ -217,9 +218,7 @@ class Loan:
     @property
     def last_payment_date(self) -> datetime:
         """Get the date of the last payment made, or disbursement date if no payments."""
-        current_time = self.now()
-        actual_payments = [payment for payment in self._all_payments if payment.datetime <= current_time]
-        return actual_payments[-1].datetime if actual_payments else self.disbursement_date
+        return self._ledger.last_payment_date(self.disbursement_date)
 
     @property
     def fines_applied(self) -> Dict[date, Money]:
@@ -408,26 +407,10 @@ class Loan:
         return CashFlow(items)
 
     def _compute_interest_snapshot(self, payment_date: datetime, interest_date: datetime) -> tuple:
-        """
-        Snapshot interest parameters before mutating _all_payments.
-
-        Returns (days, principal_balance, last_pay_date) where days is the
-        accrual period from the last payment to interest_date, principal_balance
-        is the outstanding principal as of payment_date, and last_pay_date is
-        the date of the most recent prior payment (or disbursement_date).
-        """
-        prior_items = [p for p in self._all_payments if p.datetime <= payment_date]
-        last_pay_date = prior_items[-1].datetime if prior_items else self.disbursement_date
-        days = (interest_date.date() - last_pay_date.date()).days
-
-        principal_balance = self.principal
-        for p in self._all_payments:
-            if p.datetime <= payment_date and "principal" in p.category:
-                principal_balance = principal_balance - p.amount
-        if principal_balance.is_negative():
-            principal_balance = Money.zero()
-
-        return days, principal_balance, last_pay_date
+        """Delegate to PaymentLedger."""
+        return self._ledger.compute_interest_snapshot(
+            payment_date, interest_date, self.principal, self.disbursement_date
+        )
 
     def _compute_accrued_interest(
         self,
@@ -449,82 +432,21 @@ class Loan:
         due_date: Optional[date] = None,
         last_payment_date: Optional[datetime] = None,
     ) -> tuple:
-        """
-        Allocate a payment across fines, interest, mora interest, and principal.
+        """Delegate to PaymentLedger.allocate_payment.
 
         Returns (fine_paid, interest_paid, mora_paid, principal_paid).
-        Appends CashFlowItems to _all_payments as a side effect.
         """
-        remaining = amount
-        label = description or f"Payment on {payment_date.date()}"
-
-        fine_paid = Money.zero()
-        current_fines = self.fine_balance
-        if current_fines.is_positive() and remaining.is_positive():
-            fine_paid = Money(min(current_fines.raw_amount, remaining.raw_amount))
-            self._all_payments.append(
-                CashFlowItem(fine_paid, payment_date, f"Fine payment - {label}", "fine", time_context=self._time_ctx)
-            )
-            remaining = remaining - fine_paid
-
-        interest_paid = Money.zero()
-        mora_paid = Money.zero()
-        if remaining.is_positive() and principal_balance.is_positive() and days > 0:
-            regular_accrued, mora_accrued = self._compute_accrued_interest(
-                days,
-                principal_balance,
-                due_date,
-                last_payment_date,
-            )
-            total_accrued = regular_accrued + mora_accrued
-            total_interest_to_pay = Money(min(total_accrued.raw_amount, remaining.raw_amount))
-
-            if total_interest_to_pay.is_positive():
-                if total_interest_to_pay >= total_accrued:
-                    regular_amount, mora_amount = regular_accrued, mora_accrued
-                else:
-                    regular_amount = Money(min(regular_accrued.raw_amount, total_interest_to_pay.raw_amount))
-                    mora_amount = total_interest_to_pay - regular_amount
-
-                if regular_amount.is_positive():
-                    self._all_payments.append(
-                        CashFlowItem(
-                            regular_amount,
-                            payment_date,
-                            f"Interest portion - {label}",
-                            "interest",
-                            time_context=self._time_ctx,
-                        )
-                    )
-                    interest_paid = regular_amount
-
-                if mora_amount.is_positive():
-                    self._all_payments.append(
-                        CashFlowItem(
-                            mora_amount,
-                            payment_date,
-                            f"Mora interest - {label}",
-                            "mora_interest",
-                            time_context=self._time_ctx,
-                        )
-                    )
-                    mora_paid = mora_amount
-
-                remaining = remaining - interest_paid - mora_paid
-
-        principal_paid = Money.zero()
-        if remaining.is_positive():
-            principal_paid = remaining
-            self._all_payments.append(
-                CashFlowItem(
-                    principal_paid,
-                    payment_date,
-                    f"Principal portion - {label}",
-                    "principal",
-                    time_context=self._time_ctx,
-                )
-            )
-
+        _, fine_paid, interest_paid, mora_paid, principal_paid, _ = self._ledger.allocate_payment(
+            amount,
+            payment_date,
+            days,
+            principal_balance,
+            description,
+            self._interest,
+            self.fine_balance,
+            due_date=due_date,
+            last_payment_date=last_payment_date,
+        )
         return fine_paid, interest_paid, mora_paid, principal_paid
 
     @tz_aware
@@ -570,44 +492,27 @@ class Loan:
         except ValueError:
             next_due = None
 
-        self._payment_item_offsets.append(len(self._all_payments))
-
-        fine_paid, interest_paid, mora_paid, principal_paid = self._allocate_payment(
-            amount,
-            payment_date,
-            days,
-            principal_balance,
-            description,
-            due_date=next_due,
-            last_payment_date=last_pay_date,
-        )
-
-        ending_balance = principal_balance - principal_paid
-        if ending_balance.is_negative():
-            ending_balance = Money.zero()
-
-        payment_number = len(self._actual_schedule_entries) + 1
-        self._actual_payment_datetimes.append(payment_date)
-        self._actual_schedule_entries.append(
-            PaymentScheduleEntry(
-                payment_number=payment_number,
-                due_date=payment_date.date(),
-                days_in_period=days,
-                beginning_balance=principal_balance,
-                payment_amount=amount - fine_paid,
-                principal_payment=principal_paid,
-                interest_payment=interest_paid + mora_paid,
-                ending_balance=ending_balance,
+        settlement_num, fine_paid, interest_paid, mora_paid, principal_paid, ending_balance = (
+            self._ledger.allocate_payment(
+                amount,
+                payment_date,
+                days,
+                principal_balance,
+                description,
+                self._interest,
+                self.fine_balance,
+                due_date=next_due,
+                last_payment_date=last_pay_date,
             )
         )
 
         allocs_by_number: Dict[int, List[SettlementAllocation]] = {}
-        for i in range(payment_number - 1):
+        for i in range(settlement_num - 1):
             prev = self._compute_settlement(i, allocs_by_number)
             for a in prev.allocations:
                 allocs_by_number.setdefault(a.installment_number, []).append(a)
 
-        return self._compute_settlement(payment_number - 1, allocs_by_number)
+        return self._compute_settlement(settlement_num - 1, allocs_by_number)
 
     def pay_installment(self, amount: Money, description: Optional[str] = None) -> Settlement:
         """
@@ -702,30 +607,12 @@ class Loan:
                     break
 
     def _extract_payment_items(self, entry_index: int) -> Dict[str, Money]:
-        """Extract fine/interest/mora/principal from _all_payments for a given payment event.
+        """Extract fine/interest/mora/principal for a given settlement (0-based index).
 
-        Each record_payment call records its starting offset in
-        _payment_item_offsets, so we slice _all_payments directly by position
-        rather than relying on datetime boundaries.
+        Uses category tags (settlement:N) to query the shared CashFlow
+        instead of offset-based slicing.
         """
-        categories = ("fine", "interest", "mora_interest", "principal")
-        result: Dict[str, Money] = {c: Money.zero() for c in categories}
-
-        start = self._payment_item_offsets[entry_index]
-        end = (
-            self._payment_item_offsets[entry_index + 1]
-            if entry_index + 1 < len(self._payment_item_offsets)
-            else len(self._all_payments)
-        )
-
-        for idx in range(start, end):
-            item = self._all_payments[idx]
-            for cat in categories:
-                if cat in item.category:
-                    result[cat] = result[cat] + item.amount
-                    break
-
-        return result
+        return self._ledger.items_for_settlement(entry_index + 1)
 
     def _compute_settlement(
         self,
