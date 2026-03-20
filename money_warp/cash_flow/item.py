@@ -2,16 +2,18 @@
 
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import List, Optional, Tuple, Union
+from typing import FrozenSet, List, Optional, Tuple, Union
 
 from ..money import Money
 from ..time_context import TimeContext
 from ..tz import default_time_source, tz_aware
 from .entry import (
+    CategoryInput,
     CashFlowEntry,
     CashFlowType,
     ExpectedCashFlowEntry,
     HappenedCashFlowEntry,
+    _normalize_category,
 )
 
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -37,7 +39,7 @@ class CashFlowItem:
         amount: Union[Money, Decimal, str, int, float, CashFlowEntry] = _SENTINEL,
         datetime: Optional["datetime"] = None,
         description: Optional[str] = None,
-        category: Optional[str] = None,
+        category: CategoryInput = None,
         *,
         kind: CashFlowType = CashFlowType.HAPPENED,
         entry: Optional[CashFlowEntry] = None,
@@ -55,7 +57,7 @@ class CashFlowItem:
                 amount=money,
                 datetime=datetime,
                 description=description,
-                category=category,
+                category=_normalize_category(category),
             )
         else:
             raise TypeError(

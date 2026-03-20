@@ -21,4 +21,4 @@ def test_refund_zero_amount_raises(card):
 
 def test_refund_stores_category(card):
     card.refund(Money("50.00"), datetime(2024, 1, 5, tzinfo=timezone.utc))
-    assert card.cash_flow.raw_items()[0].category == "refund"
+    assert "refund" in card.cash_flow.raw_items()[0].category

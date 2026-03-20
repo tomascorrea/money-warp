@@ -48,4 +48,4 @@ def test_purchase_stores_description(card):
 
 def test_purchase_stores_category(card):
     card.purchase(Money("50.00"), datetime(2024, 1, 5, tzinfo=timezone.utc))
-    assert card.cash_flow.raw_items()[0].category == "purchase"
+    assert "purchase" in card.cash_flow.raw_items()[0].category

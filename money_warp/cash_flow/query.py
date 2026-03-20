@@ -52,7 +52,12 @@ class CashFlowQuery:
         if key == "kind":
             return [i for i in items if i.kind == value]
         elif key == "category":
-            return [i for i in items if i.category == value]
+            if isinstance(value, str):
+                return [i for i in items if value in i.category]
+            if isinstance(value, (set, frozenset)):
+                required = frozenset(value)
+                return [i for i in items if required <= i.category]
+            return items
         elif key == "description":
             return [i for i in items if i.description == value]
         elif key.startswith("amount"):

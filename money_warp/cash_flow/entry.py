@@ -4,9 +4,22 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import FrozenSet, Optional, Set, Union
 
 from ..money import Money
+
+CategoryInput = Union[str, Set[str], FrozenSet[str], None]
+
+
+def _normalize_category(value: CategoryInput) -> FrozenSet[str]:
+    """Convert any category input to a canonical frozenset."""
+    if isinstance(value, frozenset):
+        return value
+    if isinstance(value, str):
+        return frozenset({value})
+    if isinstance(value, set):
+        return frozenset(value)
+    return frozenset()
 
 
 class CashFlowType(str, Enum):
@@ -26,12 +39,15 @@ class CashFlowEntry(ABC):
 
     Time-awareness and versioning live in :class:`CashFlowItem`, which
     wraps one or more ``CashFlowEntry`` instances in a timeline.
+
+    ``category`` is a frozenset of string tags. A single string is
+    normalized to ``frozenset({string})`` by :class:`CashFlowItem`.
     """
 
     amount: Money
     datetime: datetime
     description: Optional[str] = None
-    category: Optional[str] = None
+    category: FrozenSet[str] = frozenset()
 
     @property
     @abstractmethod

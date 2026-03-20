@@ -33,4 +33,4 @@ def test_payment_negative_amount_raises(card):
 
 def test_payment_stores_category(card):
     card.pay(Money("100.00"), datetime(2024, 1, 5, tzinfo=timezone.utc))
-    assert card.cash_flow.raw_items()[0].category == "payment"
+    assert "payment" in card.cash_flow.raw_items()[0].category
