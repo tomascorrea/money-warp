@@ -71,11 +71,14 @@ These are distinct concepts:
 
 ### Payment Allocation
 
-All payment methods allocate funds in strict priority order:
+All payment methods allocate funds **per-installment** in strict sequential order. Within each installment, the priority is:
 
-1. **Outstanding fines** first
-2. **Accrued interest** (daily-compounded since last payment, up to `interest_date`; split into regular + mora when late)
-3. **Principal** remainder
+1. **Fine** for this installment
+2. **Mora interest** for this installment
+3. **Regular interest** for this installment
+4. **Principal** for this installment
+
+Installment 1 is fully addressed before installment 2 receives anything. This means inst 1's mora interest is paid before inst 2's fine — the allocation order applies *within* each installment, not across all installments at once.
 
 Interest days and principal balance are pre-computed at the top of `record_payment` using `payment_date` as the filter for existing payments, before any internal state is mutated.
 
@@ -240,7 +243,7 @@ Field semantics:
 - `*_paid` fields are aggregated totals from all settlement allocations attributed to this installment.
 - `allocations` is the reverse view of Settlement: all `SettlementAllocation`s that touched this installment.
 - Created via `Installment.from_schedule_entry(entry, allocations, expected_mora, expected_fine)`.
-- `allocate(fine, mora, interest, principal)` — distributes four component pools against remaining obligations, returns `(SettlementAllocation, remaining_fine, remaining_mora, remaining_interest, remaining_principal)`. Used by `_build_settlement_allocations` to walk through installments in order.
+- `allocate_from_payment(remaining, fine_remaining, mora_remaining, interest_remaining)` — allocates from a single remaining payment amount in priority order (fine → mora → interest → principal). Each component is capped by both the installment's remaining obligation and the running cap. Returns `(SettlementAllocation, updated_remaining, updated_fine_remaining, updated_mora_remaining, updated_interest_remaining)`. Used by `SettlementEngine.allocate_payment_per_installment` to walk through installments in order.
 - `PaymentScheduleEntry` remains the internal scheduler data structure. `Installment` is the public-facing API.
 
 ### Settlement (`loan.settlements`, returned by payment methods)
@@ -256,12 +259,16 @@ Fields: `payment_amount`, `payment_date`, `fine_paid`, `interest_paid`, `mora_pa
 
 #### Per-Installment Allocation
 
-Each component (fine, mora, interest, principal) is distributed as a **separate pool** across installments in order. The four pools come from `_allocate_payment` (loan-level totals). Each installment's `allocate()` method caps each component at the installment's remaining obligation for that component:
+Payments are allocated **per-installment in strict sequential order**. Within each installment the priority is fine → mora → interest → principal. Installment 1's obligations are fully addressed before installment 2 receives anything.
 
-1. Build an installment snapshot (`_build_installments_snapshot`) reflecting all prior settlement allocations — avoids circular dependency with `self.settlements`.
-2. For each installment in order, `Installment.allocate(fine_pool, mora_pool, interest_pool, principal_pool)` takes what's owed per component, returns the allocation and remaining pools.
-3. Fully-paid installments consume nothing and are skipped.
-4. When the loan is fully paid off (ending_balance ≈ 0), installments whose principal is fully covered are marked `is_fully_covered` even if their scheduled interest wasn't allocated from this specific payment.
+The allocation is performed by `SettlementEngine.allocate_payment_per_installment(amount, installments, ending_balance, fine_cap, interest_cap, mora_cap)`. The caps bound the total that may be allocated to each non-principal category — during live allocation they come from loan-level accrual (preserving early-payment discounts); during reconstruction they match recorded CashFlowItem totals.
+
+1. Build an installment snapshot (`_build_pre_settlement_installments`) reflecting all prior settlement allocations — avoids circular dependency with `self.settlements`.
+2. For each installment in order, `Installment.allocate_from_payment(remaining, fine_remaining, mora_remaining, interest_remaining)` processes fine → mora → interest → principal sequentially, each capped by both the installment's remaining obligation and the running cap.
+3. Principal allocation is further capped by reserving funds for later installments' interest and mora: `available_for_principal = remaining - (interest_remaining + mora_remaining)`.
+4. After the installment loop, any remaining cap amounts (interest/mora spill from schedule rounding) are attributed to their respective totals, not to principal.
+5. Sub-cent allocations (< 0.01) are included in the component totals for precision but excluded from the `allocations` list to avoid dust entries.
+6. When the loan is fully paid off (ending_balance ≈ 0), installments whose principal is fully covered are marked `is_fully_covered`.
 
 The `settlements` property maintains a running `allocations_by_number` dict so each settlement sees the cumulative allocation state from prior settlements.
 
@@ -361,3 +368,25 @@ Sugar methods (`pay_installment`, `anticipate_payment`) use `self.now()` for the
 **Fix:** `expected_mora = prior_mora + accrued_mora` — sum the mora already allocated from prior settlements before adding the newly accrued amount. This makes the `i == covered` branch cumulative, matching the pattern already used for fully-covered installments (`i < covered`).
 
 **Lesson:** When a derived quantity (expected_mora) participates in a subtraction against a cumulative counter (mora_paid), the derived quantity must also be cumulative. Mixing period-level and cumulative values in the same expression produces silent under-distribution.
+
+### Payment allocation order was loan-level, not per-installment (fixed 2026-03-20)
+
+**Symptom:** When all 6 installments were overdue and the borrower made a partial payment (R$ 382.97), fines were spread across all 6 installments first (R$ 45.90), then mora interest (R$ 250.49), then regular interest (R$ 86.62) — leaving nothing for principal. The payment "disappeared" into penalties without retiring any principal.
+
+**Root cause:** The allocation logic treated each component (fine, mora, interest, principal) as a **separate pool** distributed across all installments. This meant installment 6's fine was paid before installment 1's mora interest, violating the intended priority.
+
+**Fix:** Rewrote allocation to be strictly **per-installment sequential**. `SettlementEngine.allocate_payment_per_installment` walks installments in order. Within each, `Installment.allocate_from_payment` applies fine → mora → interest → principal. Only after inst 1 is fully addressed does inst 2 receive anything. Running caps (`fine_remaining`, `mora_remaining`, `interest_remaining`) prevent over-allocation beyond loan-level accruals. The same method is used for both live allocation and reconstruction (ensuring consistency).
+
+**Lesson:** When allocation priority is defined as "fine before mora before interest before principal," clarify whether that order applies *across the loan* or *within each installment*. The per-installment interpretation is correct for Brazilian lending: installment 1's mora interest is more urgent than installment 2's fine.
+
+### Sub-cent precision loss in allocation loop (fixed 2026-03-20)
+
+**Symptom:** After making all scheduled payments on a 12-installment loan, the balance was R$ 5.17 instead of zero. SA integration tests showed a ~0.001 discrepancy between Python replay and stored settlement balances, cascading to ~0.01 per settlement.
+
+**Root cause:** `Money.is_zero()` and `Money.is_positive()` use `real_amount` (rounded to 2 decimal places). When the PriceScheduler rounds interest to 2dp but accrued interest has full precision, the difference (e.g., 0.00132) creates a sub-cent remainder. The allocation loop's `remaining.is_zero()` check treated this as zero and broke early. The spill logic's `remaining.is_positive()` also treated it as non-positive. The sub-cent amount was silently lost — not attributed to interest, principal, or anything. Over 12 installments the losses compounded to R$ 5.17.
+
+**Fix:** Use `raw_amount` comparisons in the allocation loop: `not remaining.raw_amount` instead of `remaining.is_zero()`, `remaining.raw_amount > 0` instead of `remaining.is_positive()`, and `allocation.total_allocated.raw_amount <= 0` instead of `not allocation.total_allocated.is_positive()`. This preserves full precision for accounting while keeping `Money`'s 2dp semantics for business display.
+
+Sub-cent allocations (where `total_allocated.real_amount` rounds to zero) are included in the component totals but excluded from the `allocations` list. This ensures correct totals without creating dust entries in the per-installment breakdown.
+
+**Lesson:** `Money`'s `real_amount`-based comparisons (`is_zero`, `is_positive`, `>`, `<`) are correct for business display but dangerous in accounting loops where sub-cent values compound. Use `raw_amount` in tight allocation loops. The allocation pipeline has two audiences: the CashFlowItem totals (need full precision) and the per-installment breakdown (display-level precision is fine).

@@ -432,7 +432,9 @@ class Loan:
         """
         Record an actual payment made on the loan with automatic allocation.
 
-        Payment allocation priority: Fines -> Interest -> Principal
+        Payment allocation priority (per installment):
+        Fine -> Mora Interest -> Interest -> Principal.
+        Installment 1 is fully addressed before installment 2.
 
         Args:
             amount: Total payment amount (positive value)
@@ -463,23 +465,27 @@ class Loan:
         except ValueError:
             next_due = None
 
-        (
-            settlement_num,
-            fine_paid,
-            interest_paid,
-            mora_paid,
-            principal_paid,
-            ending_balance,
-        ) = self._ledger.allocate_payment(
-            amount,
-            payment_date,
-            days,
-            principal_balance,
-            description,
-            self._interest,
-            self.fine_balance,
-            due_date=next_due,
-            last_payment_date=last_pay_date,
+        interest_accrued, mora_accrued = self._compute_accrued_interest(
+            days, principal_balance, next_due, last_pay_date
+        )
+
+        installments = self._build_pre_settlement_installments(
+            principal_balance, payment_date, last_pay_date
+        )
+
+        ending_balance = principal_balance
+        fine_paid, mora_paid, interest_paid, principal_paid, _ = (
+            SettlementEngine.allocate_payment_per_installment(
+                amount, installments, ending_balance,
+                fine_cap=self.fine_balance,
+                interest_cap=interest_accrued,
+                mora_cap=mora_accrued,
+            )
+        )
+
+        settlement_num, ending_balance = self._ledger.record_allocation(
+            fine_paid, mora_paid, interest_paid, principal_paid,
+            payment_date, days, principal_balance, description,
         )
 
         allocs_by_number: Dict[int, List[SettlementAllocation]] = {}
@@ -489,6 +495,33 @@ class Loan:
                 allocs_by_number.setdefault(a.installment_number, []).append(a)
 
         return self._compute_settlement(settlement_num - 1, allocs_by_number)
+
+    def _build_pre_settlement_installments(
+        self,
+        principal_balance: Money,
+        payment_date: datetime,
+        last_payment_date: Optional[datetime],
+    ) -> List[Installment]:
+        """Build an installment snapshot reflecting all prior settlements.
+
+        Called *before* a new payment is recorded so that
+        :meth:`SettlementEngine.allocate_payment_per_installment` can
+        determine per-installment obligations.
+        """
+        allocs_by_number: Dict[int, List[SettlementAllocation]] = {}
+        for i in range(self._ledger.settlement_count):
+            prev = self._compute_settlement(i, allocs_by_number)
+            for a in prev.allocations:
+                allocs_by_number.setdefault(a.installment_number, []).append(a)
+
+        return self._settlements_engine.build_installments_snapshot(
+            allocs_by_number,
+            principal_balance,
+            payment_date,
+            self.get_original_schedule(),
+            self.fines_applied,
+            last_payment_date=last_payment_date,
+        )
 
     def pay_installment(self, amount: Money, description: Optional[str] = None) -> Settlement:
         """
