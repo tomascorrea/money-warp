@@ -11,6 +11,7 @@ from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, Pr
 from ..tax.base import BaseTax, TaxResult
 from ..time_context import TimeContext
 from ..tz import to_datetime, tz_aware
+from .fine_tracker import FineTracker, _get_expected_payment
 from .installment import Installment
 from .interest_calculator import InterestCalculator, MoraStrategy
 from .settlement import AnticipationResult, Settlement, SettlementAllocation
@@ -132,6 +133,7 @@ class Loan:
         self.scheduler = scheduler or PriceScheduler
         self.fine_rate = fine_rate if fine_rate is not None else InterestRate("2% annual")
         self.grace_period_days = grace_period_days
+        self._fines = FineTracker(self.fine_rate, grace_period_days, self._time_ctx)
         self.taxes: List[BaseTax] = taxes or []
         self.is_grossed_up = is_grossed_up
 
@@ -140,7 +142,6 @@ class Loan:
         self._payment_item_offsets: List[int] = []  # Start index in _all_payments for each payment
         self._actual_schedule_entries: List[PaymentScheduleEntry] = []  # Actual payment history as schedule entries
         self._actual_payment_datetimes: List[datetime] = []  # Full timestamps for each record_payment call
-        self.fines_applied: Dict[date, Money] = {}  # Track fines applied per due date
         self._tax_cache: Optional[Dict[str, TaxResult]] = None
 
     @property
@@ -220,24 +221,23 @@ class Loan:
         return actual_payments[-1].datetime if actual_payments else self.disbursement_date
 
     @property
+    def fines_applied(self) -> Dict[date, Money]:
+        """Fine amounts applied per due date (delegates to FineTracker)."""
+        return self._fines.fines_applied
+
+    @fines_applied.setter
+    def fines_applied(self, value: Dict[date, Money]) -> None:
+        self._fines.fines_applied = value
+
+    @property
     def total_fines(self) -> Money:
         """Get the total amount of fines applied to this loan."""
-        if not self.fines_applied:
-            return Money.zero()
-        return Money(sum(fine.raw_amount for fine in self.fines_applied.values()))
+        return self._fines.total_fines
 
     @property
     def fine_balance(self) -> Money:
         """Unpaid fine amount (total fines applied minus fines paid)."""
-        total_fines = self.total_fines
-
-        fines_paid = Money.zero()
-        for payment in self._actual_payments:
-            if "fine" in payment.category:
-                fines_paid = fines_paid + payment.amount
-
-        outstanding = total_fines - fines_paid
-        return outstanding if outstanding.is_positive() else Money.zero()
+        return self._fines.fine_balance(self._actual_payments)
 
     @property
     def tax_amounts(self) -> Dict[str, TaxResult]:
@@ -278,7 +278,7 @@ class Loan:
 
     def _on_warp(self, target_date: datetime) -> None:
         """Hook called by Warp after overriding TimeContext."""
-        self.calculate_late_fines(target_date)
+        self.calculate_late_fines()
 
     @tz_aware
     def days_since_last_payment(self, as_of_date: Optional[datetime] = None) -> int:
@@ -288,130 +288,19 @@ class Loan:
         return (as_of_date.date() - self.last_payment_date.date()).days
 
     def get_expected_payment_amount(self, due_date: date) -> Money:
-        """
-        Get the expected payment amount for a specific due date from the original schedule.
-
-        This always references the original loan terms (not the rebuilt schedule),
-        which is important for fine calculations.
-
-        Args:
-            due_date: The due date to get the expected payment for
-
-        Returns:
-            The expected payment amount for that due date
-
-        Raises:
-            ValueError: If the due date is not in the loan's due dates
-        """
-        if due_date not in self.due_dates:
-            raise ValueError(f"Due date {due_date} is not in loan's due dates")
-
-        schedule = self.get_original_schedule()
-
-        for entry in schedule:
-            if entry.due_date == due_date:
-                return entry.payment_amount
-
-        raise ValueError(f"Could not find payment amount for due date {due_date}")
+        """Get the expected payment amount for a specific due date from the original schedule."""
+        return _get_expected_payment(due_date, self.due_dates, self.get_original_schedule())
 
     @tz_aware
     def is_payment_late(self, due_date: date, as_of_date: Optional[datetime] = None) -> bool:
-        """
-        Check if a payment is late considering the grace period.
+        """Check if a payment is late considering the grace period."""
+        return self._fines.is_payment_late(due_date, as_of_date)
 
-        Args:
-            due_date: The payment due date to check
-            as_of_date: The date to check against (defaults to current time)
-
-        Returns:
-            True if the payment is late (past due date + grace period), False otherwise
-        """
-        if as_of_date is None:
-            as_of_date = self.now()
-
-        effective_due_date = due_date + timedelta(days=self.grace_period_days)
-
-        return as_of_date.date() > effective_due_date
-
-    @tz_aware
     def calculate_late_fines(self, as_of_date: Optional[datetime] = None) -> Money:
-        """
-        Calculate and apply late payment fines for any new late payments.
-
-        Args:
-            as_of_date: The date to calculate fines as of (defaults to current time)
-
-        Returns:
-            The total amount of new fines applied
-        """
-        if as_of_date is None:
-            as_of_date = self.now()
-
-        new_fines_applied = Money.zero()
-
-        # Check each due date for late payments
-        for due_date in self.due_dates:
-            # Skip if we've already applied a fine for this due date
-            if due_date in self.fines_applied:
-                continue
-
-            # Skip if payment is not yet late
-            if not self.is_payment_late(due_date, as_of_date):
-                continue
-
-            # Check if payment has been made for this due date
-            payment_made = self._has_payment_for_due_date(due_date, as_of_date)
-
-            if not payment_made:
-                # Apply fine: percentage of expected payment amount
-                expected_payment = self.get_expected_payment_amount(due_date)
-                fine_amount = Money(expected_payment.raw_amount * self.fine_rate.as_decimal())
-
-                # Record the fine
-                self.fines_applied[due_date] = fine_amount
-                new_fines_applied = new_fines_applied + fine_amount
-
-        return new_fines_applied
-
-    def _has_payment_for_due_date(self, due_date: date, as_of_date: datetime) -> bool:
-        """
-        Check if sufficient payment has been made for a specific due date.
-
-        This checks if the total payment amount (all categories) made on or around
-        the due date meets or exceeds the expected installment payment.
-        """
-        expected_payment = self.get_expected_payment_amount(due_date)
-
-        _payment_categories = frozenset({"principal", "interest", "fine"})
-        exact_date_payments = [
-            payment
-            for payment in self._all_payments
-            if payment.datetime.date() == due_date
-            and payment.datetime <= as_of_date
-            and not payment.category.isdisjoint(_payment_categories)
-        ]
-
-        total_paid_on_due_date = sum((payment.amount for payment in exact_date_payments), Money.zero())
-
-        tolerance = Money("0.01")
-        if total_paid_on_due_date >= (expected_payment - tolerance):
-            return True
-
-        window_start = to_datetime(due_date - timedelta(days=3))
-        window_end = min(as_of_date, to_datetime(due_date + timedelta(days=1)))
-
-        window_payments = [
-            payment
-            for payment in self._all_payments
-            if window_start <= payment.datetime <= window_end
-            and payment.datetime <= as_of_date
-            and not payment.category.isdisjoint(_payment_categories)
-        ]
-
-        total_paid_in_window = sum((payment.amount for payment in window_payments), Money.zero())
-
-        tolerance = Money("0.01")
-        return total_paid_in_window >= (expected_payment - tolerance)
+        """Calculate and apply late payment fines for any new late payments."""
+        return self._fines.calculate_late_fines(
+            self.due_dates, self.get_original_schedule(), self._all_payments, as_of=as_of_date
+        )
 
     @tz_aware
     def present_value(
