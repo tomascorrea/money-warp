@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Iterator, List, Optional, Union
 
 from ..money import Money
-from .entry import CashFlowEntry, CashFlowType
+from .entry import CategoryInput, CashFlowEntry, CashFlowType
 from .item import CashFlowItem
 from .query import CashFlowQuery
 
@@ -40,7 +40,7 @@ class CashFlow:
         amount: Union[Money, Decimal, str, int, float],
         datetime: datetime,
         description: Optional[str] = None,
-        category: Optional[str] = None,
+        category: CategoryInput = None,
         *,
         kind: CashFlowType = CashFlowType.HAPPENED,
     ) -> None:

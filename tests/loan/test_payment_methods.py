@@ -36,7 +36,7 @@ def test_pay_installment_charges_interest_to_due_date():
     # pay_installment on Jan 15 should charge interest for 31 days (to Feb 1 due date)
     with Warp(loan, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("5000.00"))
-        interest_items = [p for p in warped._all_payments if p.category == "interest"]
+        interest_items = [p for p in warped._all_payments if "interest" in p.category]
         assert len(interest_items) == 1
 
         daily_rate = InterestRate("6% a").to_daily().as_decimal()
@@ -55,13 +55,13 @@ def test_pay_installment_no_discount_vs_anticipate_discount():
     loan1 = Loan(principal, rate, due_dates, disbursement_date=disbursement)
     with Warp(loan1, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped1:
         warped1.pay_installment(Money("5000.00"))
-        installment_interest = [p for p in warped1._all_payments if p.category == "interest"]
+        installment_interest = [p for p in warped1._all_payments if "interest" in p.category]
 
     # anticipate_payment: interest for 14 days (disbursement to payment date)
     loan2 = Loan(principal, rate, due_dates, disbursement_date=disbursement)
     with Warp(loan2, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped2:
         warped2.anticipate_payment(Money("5000.00"))
-        anticipate_interest = [p for p in warped2._all_payments if p.category == "interest"]
+        anticipate_interest = [p for p in warped2._all_payments if "interest" in p.category]
 
     assert installment_interest[0].amount > anticipate_interest[0].amount
 
@@ -77,12 +77,12 @@ def test_pay_installment_more_principal_with_anticipate():
     loan1 = Loan(principal, rate, due_dates, disbursement_date=disbursement)
     with Warp(loan1, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped1:
         warped1.pay_installment(payment)
-        installment_principal = [p for p in warped1._all_payments if p.category == "principal"]
+        installment_principal = [p for p in warped1._all_payments if "principal" in p.category]
 
     loan2 = Loan(principal, rate, due_dates, disbursement_date=disbursement)
     with Warp(loan2, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped2:
         warped2.anticipate_payment(payment)
-        anticipate_principal = [p for p in warped2._all_payments if p.category == "principal"]
+        anticipate_principal = [p for p in warped2._all_payments if "principal" in p.category]
 
     assert anticipate_principal[0].amount > installment_principal[0].amount
 
@@ -113,7 +113,7 @@ def test_anticipate_payment_charges_interest_only_for_elapsed_days():
 
     with Warp(loan, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
         warped.anticipate_payment(Money("5000.00"))
-        interest_items = [p for p in warped._all_payments if p.category == "interest"]
+        interest_items = [p for p in warped._all_payments if "interest" in p.category]
 
         daily_rate = InterestRate("6% a").to_daily().as_decimal()
         expected_interest = Decimal("10000") * ((1 + daily_rate) ** 14 - 1)
@@ -193,7 +193,7 @@ def test_record_payment_with_explicit_interest_date():
         interest_date=datetime(2025, 2, 1, tzinfo=timezone.utc),
     )
 
-    interest_items = [p for p in loan._all_payments if p.category == "interest"]
+    interest_items = [p for p in loan._all_payments if "interest" in p.category]
     daily_rate = InterestRate("6% a").to_daily().as_decimal()
     expected_interest = Decimal("10000") * ((1 + daily_rate) ** 31 - 1)
     assert interest_items[0].amount == Money(expected_interest)
@@ -209,7 +209,7 @@ def test_record_payment_interest_date_defaults_to_payment_date():
 
     loan.record_payment(Money("5000.00"), payment_date=datetime(2025, 1, 15, tzinfo=timezone.utc))
 
-    interest_items = [p for p in loan._all_payments if p.category == "interest"]
+    interest_items = [p for p in loan._all_payments if "interest" in p.category]
     daily_rate = InterestRate("6% a").to_daily().as_decimal()
     expected_interest = Decimal("10000") * ((1 + daily_rate) ** 14 - 1)
     assert interest_items[0].amount == Money(expected_interest)

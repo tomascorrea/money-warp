@@ -29,7 +29,7 @@ def test_cash_flow_item_creation_with_all_fields():
     assert item.amount == Money("500.00")
     assert item.datetime == datetime(2024, 1, 15, 10, 0, tzinfo=timezone.utc)
     assert item.description == "Loan payment"
-    assert item.category == "payment"
+    assert "payment" in item.category
 
 
 def test_cash_flow_item_creation_minimal_fields():
@@ -37,7 +37,7 @@ def test_cash_flow_item_creation_minimal_fields():
     assert item.amount == Money("100.00")
     assert item.datetime == datetime(2024, 1, 15, 10, 0, tzinfo=timezone.utc)
     assert item.description is None
-    assert item.category is None
+    assert not item.category
 
 
 # CashFlowItem Flow Direction Tests
@@ -117,7 +117,7 @@ def test_cash_flow_item_repr_representation():
     item = CashFlowItem(Money("100.50"), datetime(2024, 1, 15, 10, 30, tzinfo=timezone.utc), "Payment", "loan")
     expected = (
         "CashFlowItem(amount=Money(100.50), datetime=datetime.datetime(2024, 1, 15, 10, 30,"
-        " tzinfo=datetime.timezone.utc), description='Payment', category='loan',"
+        " tzinfo=datetime.timezone.utc), description='Payment', category=frozenset({'loan'}),"
         " kind=<CashFlowType.HAPPENED: 'happened'>)"
     )
     assert repr(item) == expected
@@ -453,7 +453,7 @@ def test_cash_flow_query_filter_by_category():
 
     loan_items = cf.query.filter_by(category="loan").all()
     assert len(loan_items) == 1
-    assert loan_items[0].category == "loan"
+    assert "loan" in loan_items[0].category
 
 
 def test_cash_flow_query_filter_by_amount_gt():
@@ -653,7 +653,7 @@ def test_cash_flow_query_to_cash_flow():
     loan_cf = cf.query.filter_by(category="loan").to_cash_flow()
     assert isinstance(loan_cf, CashFlow)
     assert len(loan_cf) == 1
-    assert loan_cf[0].category == "loan"
+    assert "loan" in loan_cf[0].category
 
 
 def test_cash_flow_query_iteration():
@@ -875,4 +875,4 @@ def test_cash_flow_add_with_kind():
         kind=CashFlowType.EXPECTED,
     )
     assert cf[0].kind == CashFlowType.EXPECTED
-    assert cf[0].category == "disbursement"
+    assert "disbursement" in cf[0].category

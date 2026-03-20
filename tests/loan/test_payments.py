@@ -32,9 +32,8 @@ def test_loan_record_payment_creates_interest_and_principal_items():
     assert len(loan._actual_payments) == 2
 
     # Check categories
-    categories = [payment.category for payment in loan._actual_payments]
-    assert "interest" in categories
-    assert "principal" in categories
+    assert any("interest" in p.category for p in loan._actual_payments)
+    assert any("principal" in p.category for p in loan._actual_payments)
 
 
 def test_loan_record_payment_updates_last_payment_date():

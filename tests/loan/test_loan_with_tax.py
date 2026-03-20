@@ -84,31 +84,31 @@ def test_loan_tax_amounts_has_per_installment_details(loan_with_tax):
 
 def test_loan_cash_flow_includes_tax_item(loan_with_tax):
     cf = loan_with_tax.generate_expected_cash_flow()
-    tax_items = [item for item in cf if item.category == "tax"]
+    tax_items = [item for item in cf if "tax" in item.category]
     assert len(tax_items) == 1
 
 
 def test_loan_cash_flow_tax_item_amount(loan_with_tax):
     cf = loan_with_tax.generate_expected_cash_flow()
-    tax_items = [item for item in cf if item.category == "tax"]
+    tax_items = [item for item in cf if "tax" in item.category]
     assert tax_items[0].amount == -loan_with_tax.total_tax
 
 
 def test_loan_cash_flow_disbursement_is_principal_when_not_grossed_up(loan_with_tax):
     cf = loan_with_tax.generate_expected_cash_flow()
-    disbursement_items = [item for item in cf if item.category == "disbursement"]
+    disbursement_items = [item for item in cf if "disbursement" in item.category]
     assert disbursement_items[0].amount == loan_with_tax.principal
 
 
 def test_loan_without_tax_cash_flow_has_no_tax_item(loan_without_tax):
     cf = loan_without_tax.generate_expected_cash_flow()
-    tax_items = [item for item in cf if item.category == "tax"]
+    tax_items = [item for item in cf if "tax" in item.category]
     assert len(tax_items) == 0
 
 
 def test_loan_without_tax_cash_flow_disbursement_is_principal(loan_without_tax):
     cf = loan_without_tax.generate_expected_cash_flow()
-    disbursement_items = [item for item in cf if item.category == "disbursement"]
+    disbursement_items = [item for item in cf if "disbursement" in item.category]
     assert disbursement_items[0].amount == loan_without_tax.principal
 
 
@@ -207,7 +207,7 @@ def test_grossup_loan_cash_flow_has_no_tax_item():
         taxes=[IOF(daily_rate="0.0082%", additional_rate="0.38%")],
     )
     cf = loan.generate_expected_cash_flow()
-    tax_items = [item for item in cf if item.category == "tax"]
+    tax_items = [item for item in cf if "tax" in item.category]
     assert len(tax_items) == 0
 
 
@@ -221,7 +221,7 @@ def test_grossup_loan_cash_flow_disbursement_equals_net_disbursement():
         taxes=[IOF(daily_rate="0.0082%", additional_rate="0.38%")],
     )
     cf = loan.generate_expected_cash_flow()
-    disbursement_items = [item for item in cf if item.category == "disbursement"]
+    disbursement_items = [item for item in cf if "disbursement" in item.category]
     assert disbursement_items[0].amount == loan.net_disbursement
 
 

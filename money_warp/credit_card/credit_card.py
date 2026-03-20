@@ -337,9 +337,11 @@ class CreditCard:
 
     def _raw_balance(self) -> Money:
         """Sum of debits minus credits (resolved items only)."""
-        debits = (self.cash_flow.query.filter_by(predicate=lambda i: i.category in _DEBIT_CATEGORIES)).sum_amounts()
+        debits = (
+            self.cash_flow.query.filter_by(predicate=lambda i: not i.category.isdisjoint(_DEBIT_CATEGORIES))
+        ).sum_amounts()
         credit_total = (
-            self.cash_flow.query.filter_by(predicate=lambda i: i.category in _CREDIT_CATEGORIES)
+            self.cash_flow.query.filter_by(predicate=lambda i: not i.category.isdisjoint(_CREDIT_CATEGORIES))
         ).sum_amounts()
         return debits - credit_total
 

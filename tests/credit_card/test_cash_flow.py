@@ -17,7 +17,7 @@ def test_cash_flow_contains_purchase(card):
         items = list(cf)
         assert len(items) == 1
         assert items[0].amount == Money("100.00")
-        assert items[0].category == "purchase"
+        assert "purchase" in items[0].category
 
 
 @xfail_cash_flow
@@ -43,7 +43,7 @@ def test_cash_flow_includes_interest_charge(card):
     card.purchase(Money("1000.00"), datetime(2024, 1, 10, tzinfo=timezone.utc))
     with Warp(card, datetime(2024, 2, 29, tzinfo=timezone.utc)) as w:
         cf = w.get_cash_flow()
-        interest_items = [i for i in cf if i.category == "interest_charge"]
+        interest_items = [i for i in cf if "interest_charge" in i.category]
         assert len(interest_items) >= 1
         assert interest_items[0].amount.is_positive()
 
@@ -53,6 +53,6 @@ def test_cash_flow_includes_fine_charge(card):
     card.purchase(Money("500.00"), datetime(2024, 1, 10, tzinfo=timezone.utc))
     with Warp(card, datetime(2024, 2, 29, tzinfo=timezone.utc)) as w:
         cf = w.get_cash_flow()
-        fine_items = [i for i in cf if i.category == "fine_charge"]
+        fine_items = [i for i in cf if "fine_charge" in i.category]
         assert len(fine_items) >= 1
         assert fine_items[0].amount.is_positive()

@@ -167,7 +167,7 @@ class Loan:
         # Apply all principal payments made up to current time (respecting warped time)
         current_time = self.now()
         for payment in self._all_payments:
-            if payment.datetime <= current_time and payment.category == "principal":
+            if payment.datetime <= current_time and "principal" in payment.category:
                 balance = balance - payment.amount
 
         # Ensure balance doesn't go negative
@@ -243,7 +243,7 @@ class Loan:
 
         fines_paid = Money.zero()
         for payment in self._actual_payments:
-            if payment.category == "fine":
+            if "fine" in payment.category:
                 fines_paid = fines_paid + payment.amount
 
         outstanding = total_fines - fines_paid
@@ -392,12 +392,13 @@ class Loan:
         """
         expected_payment = self.get_expected_payment_amount(due_date)
 
+        _payment_categories = frozenset({"principal", "interest", "fine"})
         exact_date_payments = [
             payment
             for payment in self._all_payments
             if payment.datetime.date() == due_date
             and payment.datetime <= as_of_date
-            and payment.category in ("principal", "interest", "fine")
+            and not payment.category.isdisjoint(_payment_categories)
         ]
 
         total_paid_on_due_date = sum((payment.amount for payment in exact_date_payments), Money.zero())
@@ -414,7 +415,7 @@ class Loan:
             for payment in self._all_payments
             if window_start <= payment.datetime <= window_end
             and payment.datetime <= as_of_date
-            and payment.category in ("principal", "interest", "fine")
+            and not payment.category.isdisjoint(_payment_categories)
         ]
 
         total_paid_in_window = sum((payment.amount for payment in window_payments), Money.zero())
@@ -622,7 +623,7 @@ class Loan:
 
         principal_balance = self.principal
         for p in self._all_payments:
-            if p.datetime <= payment_date and p.category == "principal":
+            if p.datetime <= payment_date and "principal" in p.category:
                 principal_balance = principal_balance - p.amount
         if principal_balance.is_negative():
             principal_balance = Money.zero()
@@ -985,7 +986,7 @@ class Loan:
             entry = item.resolve()
             if entry is None:
                 continue
-            if entry.category not in ("interest", "principal"):
+            if entry.category.isdisjoint({"interest", "principal"}):
                 continue
             desc = entry.description or ""
             for num in removed_set:
@@ -1012,8 +1013,10 @@ class Loan:
 
         for idx in range(start, end):
             item = self._all_payments[idx]
-            if item.category in categories:
-                result[item.category] = result[item.category] + item.amount
+            for cat in categories:
+                if cat in item.category:
+                    result[cat] = result[cat] + item.amount
+                    break
 
         return result
 
