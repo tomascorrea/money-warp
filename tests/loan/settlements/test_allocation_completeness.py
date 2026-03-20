@@ -119,8 +119,7 @@ def test_early_payment_fully_allocated(
         amount = Money(
             str((warped.current_balance.raw_amount * Decimal(str(payment_fraction))).quantize(Decimal("0.01")))
         )
-        if amount.is_zero() or amount.is_negative():
-            return
+
         settlement = warped.pay_installment(amount)
 
     assert_fully_allocated(settlement)
@@ -152,8 +151,7 @@ def test_late_payment_with_fines_fully_allocated(
         amount = Money(
             str((warped.current_balance.raw_amount * Decimal(str(payment_fraction))).quantize(Decimal("0.01")))
         )
-        if amount.is_zero() or amount.is_negative():
-            return
+
         settlement = warped.pay_installment(amount)
 
     assert_fully_allocated(settlement)
@@ -187,13 +185,11 @@ def test_multiple_sequential_payments_all_fully_allocated(
         )
 
         with Warp(loan, due_date_dt) as warped:
-            if warped.is_paid_off:
-                break
+
             amount = Money(
                 str((warped.current_balance.raw_amount * Decimal(str(fractions[i]))).quantize(Decimal("0.01")))
             )
-            if amount.is_zero() or amount.is_negative():
-                continue
+
             warped.pay_installment(amount)
 
     for settlement in loan.settlements:
