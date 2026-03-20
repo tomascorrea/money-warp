@@ -47,6 +47,101 @@ class SettlementEngine:
         return covered
 
     # ------------------------------------------------------------------
+    # Per-installment payment allocation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def allocate_payment_per_installment(
+        amount: Money,
+        installments: List[Installment],
+        ending_balance: Money,
+        fine_cap: Money,
+        interest_cap: Money,
+        mora_cap: Money,
+    ) -> tuple:
+        """Allocate a payment across installments in priority order.
+
+        Each installment is processed sequentially.  Within each
+        installment the priority is fine -> mora -> interest -> principal.
+        Installment 1's obligations are fully addressed before
+        installment 2 receives anything.
+
+        *fine_cap*, *interest_cap*, and *mora_cap* bound the total
+        amount that may be allocated to each category.  During live
+        allocation these come from the loan-level accrual (preserving
+        the early-payment discount).  During reconstruction they match
+        the recorded CashFlowItem totals.
+
+        Any payment remainder after all installment obligations are met
+        is attributed to principal (overpayment).
+
+        Returns:
+            ``(fine_total, mora_total, interest_total, principal_total,
+            allocations)`` where *allocations* is a list of
+            :class:`SettlementAllocation`.
+        """
+        loan_fully_paid = ending_balance <= _COVERAGE_TOLERANCE
+        remaining = amount
+        fine_remaining = fine_cap
+        mora_remaining = mora_cap
+        interest_remaining = interest_cap
+        fine_total = Money.zero()
+        mora_total = Money.zero()
+        interest_total = Money.zero()
+        principal_total = Money.zero()
+        allocations: List[SettlementAllocation] = []
+
+        for inst in installments:
+            if not remaining.raw_amount:
+                break
+
+            allocation, remaining, fine_remaining, mora_remaining, interest_remaining = inst.allocate_from_payment(
+                remaining,
+                fine_remaining,
+                mora_remaining,
+                interest_remaining,
+            )
+
+            if allocation.total_allocated.raw_amount <= 0:
+                continue
+
+            fine_total = fine_total + allocation.fine_allocated
+            mora_total = mora_total + allocation.mora_allocated
+            interest_total = interest_total + allocation.interest_allocated
+            principal_total = principal_total + allocation.principal_allocated
+
+            if not allocation.total_allocated.is_positive():
+                continue
+
+            if loan_fully_paid and not allocation.is_fully_covered:
+                principal_owed = inst.expected_principal - inst.principal_paid
+                if allocation.principal_allocated >= (principal_owed - _COVERAGE_TOLERANCE):
+                    allocation = SettlementAllocation(
+                        installment_number=allocation.installment_number,
+                        principal_allocated=allocation.principal_allocated,
+                        interest_allocated=allocation.interest_allocated,
+                        mora_allocated=allocation.mora_allocated,
+                        fine_allocated=allocation.fine_allocated,
+                        is_fully_covered=True,
+                    )
+
+            allocations.append(allocation)
+
+        if remaining.raw_amount > 0:
+            mora_spill = Money(min(remaining.raw_amount, mora_remaining.raw_amount))
+            remaining = remaining - mora_spill
+            mora_total = mora_total + mora_spill
+
+            interest_spill = Money(min(remaining.raw_amount, interest_remaining.raw_amount))
+            remaining = remaining - interest_spill
+            interest_total = interest_total + interest_spill
+
+            if remaining.raw_amount > 0:
+                principal_total = principal_total + remaining
+
+        return fine_total, mora_total, interest_total, principal_total, allocations
+
+    # ------------------------------------------------------------------
     # Settlement construction
     # ------------------------------------------------------------------
 
@@ -118,52 +213,22 @@ class SettlementEngine:
         principal_paid: Money,
         ending_balance: Money,
     ) -> List[SettlementAllocation]:
-        """Distribute a payment's components across installments."""
-        loan_fully_paid = ending_balance <= _COVERAGE_TOLERANCE
-        remaining_fine = fine_paid
-        remaining_mora = mora_paid
-        remaining_interest = interest_paid
-        remaining_principal = principal_paid
+        """Reconstruct per-installment allocations from recorded totals.
 
-        allocations: List[SettlementAllocation] = []
-        for inst in installments:
-            if (
-                remaining_fine.is_zero()
-                and remaining_mora.is_zero()
-                and remaining_interest.is_zero()
-                and remaining_principal.is_zero()
-            ):
-                break
-
-            allocation, remaining_fine, remaining_mora, remaining_interest, remaining_principal = inst.allocate(
-                remaining_fine,
-                remaining_mora,
-                remaining_interest,
-                remaining_principal,
-            )
-            total = (
-                allocation.principal_allocated
-                + allocation.interest_allocated
-                + allocation.mora_allocated
-                + allocation.fine_allocated
-            )
-            if not total.is_positive():
-                continue
-
-            if loan_fully_paid and not allocation.is_fully_covered:
-                principal_owed = inst.expected_principal - inst.principal_paid
-                if allocation.principal_allocated >= (principal_owed - _COVERAGE_TOLERANCE):
-                    allocation = SettlementAllocation(
-                        installment_number=allocation.installment_number,
-                        principal_allocated=allocation.principal_allocated,
-                        interest_allocated=allocation.interest_allocated,
-                        mora_allocated=allocation.mora_allocated,
-                        fine_allocated=allocation.fine_allocated,
-                        is_fully_covered=True,
-                    )
-
-            allocations.append(allocation)
-
+        Uses the same :meth:`allocate_payment_per_installment` logic so
+        that reconstruction and live allocation are always consistent.
+        The recorded totals serve as caps so that fines/interest/mora
+        applied by *later* payments don't leak into earlier settlements.
+        """
+        payment_amount = fine_paid + mora_paid + interest_paid + principal_paid
+        _, _, _, _, allocations = self.allocate_payment_per_installment(
+            payment_amount,
+            installments,
+            ending_balance,
+            fine_cap=fine_paid,
+            interest_cap=interest_paid,
+            mora_cap=mora_paid,
+        )
         return allocations
 
     def build_installments_snapshot(

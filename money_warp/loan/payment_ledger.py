@@ -1,14 +1,13 @@
 """Payment recording and querying over a shared CashFlow."""
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 from ..cash_flow import CashFlow, CashFlowItem
 from ..money import Money
 from ..scheduler import PaymentScheduleEntry
 from ..time_context import TimeContext
-from .interest_calculator import InterestCalculator
 
 _ITEM_CATEGORIES = ("fine", "interest", "mora_interest", "principal")
 
@@ -160,36 +159,34 @@ class PaymentLedger:
         return days, principal_balance, last_pay_date
 
     # ------------------------------------------------------------------
-    # Payment allocation  (replaces Loan._allocate_payment)
+    # Payment recording
     # ------------------------------------------------------------------
 
-    def allocate_payment(
+    def record_allocation(
         self,
-        amount: Money,
+        fine_paid: Money,
+        mora_paid: Money,
+        interest_paid: Money,
+        principal_paid: Money,
         payment_date: datetime,
         days: int,
         principal_balance: Money,
-        description: Optional[str],
-        interest_calc: InterestCalculator,
-        fine_balance: Money,
-        due_date: Optional[date] = None,
-        last_payment_date: Optional[datetime] = None,
-    ) -> Tuple[int, Money, Money, Money, Money, Money]:
-        """Allocate a payment and write tagged CashFlowItems to the shared CashFlow.
+        description: Optional[str] = None,
+    ) -> Tuple[int, Money]:
+        """Write pre-computed allocation totals as tagged CashFlowItems.
 
-        Returns (settlement_number, fine_paid, interest_paid, mora_paid,
-        principal_paid, ending_balance).
+        This is a pure recording method — all allocation decisions have
+        already been made by
+        :meth:`SettlementEngine.allocate_payment_per_installment`.
+
+        Returns ``(settlement_number, ending_balance)``.
         """
         self._settlement_count += 1
         settlement_num = self._settlement_count
         tag = f"settlement:{settlement_num}"
-
-        remaining = amount
         label = description or f"Payment on {payment_date.date()}"
 
-        fine_paid = Money.zero()
-        if fine_balance.is_positive() and remaining.is_positive():
-            fine_paid = Money(min(fine_balance.raw_amount, remaining.raw_amount))
+        if fine_paid.is_positive():
             self._cf.add_item(
                 CashFlowItem(
                     fine_paid,
@@ -199,53 +196,30 @@ class PaymentLedger:
                     time_context=self._time_ctx,
                 )
             )
-            remaining = remaining - fine_paid
 
-        interest_paid = Money.zero()
-        mora_paid = Money.zero()
-        if remaining.is_positive() and principal_balance.is_positive() and days > 0:
-            regular_accrued, mora_accrued = interest_calc.compute_accrued_interest(
-                days, principal_balance, due_date, last_payment_date
+        if interest_paid.is_positive():
+            self._cf.add_item(
+                CashFlowItem(
+                    interest_paid,
+                    payment_date,
+                    f"Interest portion - {label}",
+                    frozenset({"interest", tag}),
+                    time_context=self._time_ctx,
+                )
             )
-            total_accrued = regular_accrued + mora_accrued
-            total_interest_to_pay = Money(min(total_accrued.raw_amount, remaining.raw_amount))
 
-            if total_interest_to_pay.is_positive():
-                if total_interest_to_pay >= total_accrued:
-                    regular_amount, mora_amount = regular_accrued, mora_accrued
-                else:
-                    regular_amount = Money(min(regular_accrued.raw_amount, total_interest_to_pay.raw_amount))
-                    mora_amount = total_interest_to_pay - regular_amount
+        if mora_paid.is_positive():
+            self._cf.add_item(
+                CashFlowItem(
+                    mora_paid,
+                    payment_date,
+                    f"Mora interest - {label}",
+                    frozenset({"mora_interest", tag}),
+                    time_context=self._time_ctx,
+                )
+            )
 
-                if regular_amount.is_positive():
-                    self._cf.add_item(
-                        CashFlowItem(
-                            regular_amount,
-                            payment_date,
-                            f"Interest portion - {label}",
-                            frozenset({"interest", tag}),
-                            time_context=self._time_ctx,
-                        )
-                    )
-                    interest_paid = regular_amount
-
-                if mora_amount.is_positive():
-                    self._cf.add_item(
-                        CashFlowItem(
-                            mora_amount,
-                            payment_date,
-                            f"Mora interest - {label}",
-                            frozenset({"mora_interest", tag}),
-                            time_context=self._time_ctx,
-                        )
-                    )
-                    mora_paid = mora_amount
-
-                remaining = remaining - interest_paid - mora_paid
-
-        principal_paid = Money.zero()
-        if remaining.is_positive():
-            principal_paid = remaining
+        if principal_paid.is_positive():
             self._cf.add_item(
                 CashFlowItem(
                     principal_paid,
@@ -269,4 +243,4 @@ class PaymentLedger:
             )
         )
 
-        return settlement_num, fine_paid, interest_paid, mora_paid, principal_paid, ending_balance
+        return settlement_num, ending_balance

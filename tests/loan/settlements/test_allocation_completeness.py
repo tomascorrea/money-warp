@@ -185,7 +185,6 @@ def test_multiple_sequential_payments_all_fully_allocated(
         )
 
         with Warp(loan, due_date_dt) as warped:
-
             amount = Money(
                 str((warped.current_balance.raw_amount * Decimal(str(fractions[i]))).quantize(Decimal("0.01")))
             )

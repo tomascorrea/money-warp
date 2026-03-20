@@ -50,39 +50,55 @@ class Installment:
         """Whether this installment has been fully settled (within rounding tolerance)."""
         return self.balance <= _COVERAGE_TOLERANCE
 
-    def allocate(
+    def allocate_from_payment(
         self,
-        available_fine: Money,
-        available_mora: Money,
-        available_interest: Money,
-        available_principal: Money,
+        remaining: Money,
+        fine_remaining: Money,
+        mora_remaining: Money,
+        interest_remaining: Money,
     ) -> Tuple[SettlementAllocation, Money, Money, Money, Money]:
-        """Allocate available component pools against this installment.
+        """Allocate from a single payment amount in priority order.
 
-        Each component is distributed independently, capped by both the
-        remaining obligation for that component and the available pool.
+        Processes fine -> mora -> interest -> principal sequentially,
+        each capped by both the installment's remaining obligation and
+        the corresponding running cap.
+
+        The running caps prevent over-allocation: during live allocation
+        they reflect the loan-level accrual (e.g. the interest discount
+        for early payments); during reconstruction they match the
+        recorded CashFlowItem totals.
 
         Args:
-            available_fine: Remaining fine pool from the payment.
-            available_mora: Remaining mora pool from the payment.
-            available_interest: Remaining interest pool from the payment.
-            available_principal: Remaining principal pool from the payment.
+            remaining: Unallocated portion of the payment.
+            fine_remaining: Remaining fine cap across all installments.
+            mora_remaining: Remaining mora cap across all installments.
+            interest_remaining: Remaining interest cap across all installments.
 
         Returns:
-            A tuple of (SettlementAllocation, remaining_fine, remaining_mora,
-            remaining_interest, remaining_principal).
+            ``(SettlementAllocation, updated_remaining,
+            updated_fine_remaining, updated_mora_remaining,
+            updated_interest_remaining)``.
         """
         fine_owed = self.expected_fine - self.fine_paid
-        fine_alloc = Money(min(fine_owed.raw_amount, available_fine.raw_amount))
+        fine_alloc = Money(min(fine_owed.raw_amount, remaining.raw_amount, fine_remaining.raw_amount))
+        remaining = remaining - fine_alloc
+        fine_remaining = fine_remaining - fine_alloc
 
         mora_owed = self.expected_mora - self.mora_paid
-        mora_alloc = Money(min(mora_owed.raw_amount, available_mora.raw_amount))
+        mora_alloc = Money(min(mora_owed.raw_amount, remaining.raw_amount, mora_remaining.raw_amount))
+        remaining = remaining - mora_alloc
+        mora_remaining = mora_remaining - mora_alloc
 
         interest_owed = self.expected_interest - self.interest_paid
-        interest_alloc = Money(min(interest_owed.raw_amount, available_interest.raw_amount))
+        interest_alloc = Money(min(interest_owed.raw_amount, remaining.raw_amount, interest_remaining.raw_amount))
+        remaining = remaining - interest_alloc
+        interest_remaining = interest_remaining - interest_alloc
 
         principal_owed = self.expected_principal - self.principal_paid
-        principal_alloc = Money(min(principal_owed.raw_amount, available_principal.raw_amount))
+        reserved = interest_remaining + mora_remaining
+        available_for_principal = remaining - reserved if remaining.raw_amount > reserved.raw_amount else Money.zero()
+        principal_alloc = Money(min(principal_owed.raw_amount, available_for_principal.raw_amount))
+        remaining = remaining - principal_alloc
 
         total = fine_alloc + mora_alloc + interest_alloc + principal_alloc
         is_covered = total >= (self.balance - _COVERAGE_TOLERANCE)
@@ -95,13 +111,7 @@ class Installment:
             fine_allocated=fine_alloc,
             is_fully_covered=is_covered,
         )
-        return (
-            allocation,
-            available_fine - fine_alloc,
-            available_mora - mora_alloc,
-            available_interest - interest_alloc,
-            available_principal - principal_alloc,
-        )
+        return allocation, remaining, fine_remaining, mora_remaining, interest_remaining
 
     @classmethod
     def from_schedule_entry(
