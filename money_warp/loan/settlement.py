@@ -25,6 +25,11 @@ class SettlementAllocation:
     fine_allocated: Money
     is_fully_covered: bool
 
+    @property
+    def total_allocated(self) -> Money:
+        """Sum of all components allocated to this installment."""
+        return self.principal_allocated + self.interest_allocated + self.mora_allocated + self.fine_allocated
+
 
 @dataclass(frozen=True)
 class Settlement:
@@ -43,6 +48,11 @@ class Settlement:
     principal_paid: Money
     remaining_balance: Money
     allocations: List[SettlementAllocation]
+
+    @property
+    def total_paid(self) -> Money:
+        """Sum of all payment components (fine + interest + mora + principal)."""
+        return self.fine_paid + self.interest_paid + self.mora_paid + self.principal_paid
 
 
 @dataclass(frozen=True)
