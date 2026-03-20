@@ -274,9 +274,6 @@ class Loan:
         """Current datetime (Warp-aware via shared TimeContext)."""
         return self._time_ctx.now()
 
-    def date(self) -> datetime:
-        """Current datetime (Warp-aware via shared TimeContext)."""
-        return self._time_ctx.now()
 
     def _on_warp(self, target_date: datetime) -> None:
         """Hook called by Warp after overriding TimeContext."""
@@ -423,33 +420,6 @@ class Loan:
     ) -> tuple:
         """Delegate to InterestCalculator."""
         return self._interest.compute_accrued_interest(days, principal_balance, due_date, last_payment_date)
-
-    def _allocate_payment(
-        self,
-        amount: Money,
-        payment_date: datetime,
-        days: int,
-        principal_balance: Money,
-        description: Optional[str],
-        due_date: Optional[date] = None,
-        last_payment_date: Optional[datetime] = None,
-    ) -> tuple:
-        """Delegate to PaymentLedger.allocate_payment.
-
-        Returns (fine_paid, interest_paid, mora_paid, principal_paid).
-        """
-        _, fine_paid, interest_paid, mora_paid, principal_paid, _ = self._ledger.allocate_payment(
-            amount,
-            payment_date,
-            days,
-            principal_balance,
-            description,
-            self._interest,
-            self.fine_balance,
-            due_date=due_date,
-            last_payment_date=last_payment_date,
-        )
-        return fine_paid, interest_paid, mora_paid, principal_paid
 
     @tz_aware
     def record_payment(
@@ -608,14 +578,6 @@ class Loan:
                     item.delete(effective_date)
                     break
 
-    def _extract_payment_items(self, entry_index: int) -> Dict[str, Money]:
-        """Extract fine/interest/mora/principal for a given settlement (0-based index).
-
-        Uses category tags (settlement:N) to query the shared CashFlow
-        instead of offset-based slicing.
-        """
-        return self._ledger.items_for_settlement(entry_index + 1)
-
     def _compute_settlement(
         self,
         entry_index: int,
@@ -652,8 +614,6 @@ class Loan:
             self.get_original_schedule(),
             self.fines_applied,
         )
-
-    _COVERAGE_TOLERANCE = Money("0.01")
 
     def _covered_due_date_count(self) -> int:
         """How many due dates have been covered by payments so far."""
