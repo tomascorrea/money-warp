@@ -469,23 +469,27 @@ class Loan:
             days, principal_balance, next_due, last_pay_date
         )
 
-        installments = self._build_pre_settlement_installments(
-            principal_balance, payment_date, last_pay_date
-        )
+        installments = self._build_pre_settlement_installments(principal_balance, payment_date, last_pay_date)
 
         ending_balance = principal_balance
-        fine_paid, mora_paid, interest_paid, principal_paid, _ = (
-            SettlementEngine.allocate_payment_per_installment(
-                amount, installments, ending_balance,
-                fine_cap=self.fine_balance,
-                interest_cap=interest_accrued,
-                mora_cap=mora_accrued,
-            )
+        fine_paid, mora_paid, interest_paid, principal_paid, _ = SettlementEngine.allocate_payment_per_installment(
+            amount,
+            installments,
+            ending_balance,
+            fine_cap=self.fine_balance,
+            interest_cap=interest_accrued,
+            mora_cap=mora_accrued,
         )
 
         settlement_num, ending_balance = self._ledger.record_allocation(
-            fine_paid, mora_paid, interest_paid, principal_paid,
-            payment_date, days, principal_balance, description,
+            fine_paid,
+            mora_paid,
+            interest_paid,
+            principal_paid,
+            payment_date,
+            days,
+            principal_balance,
+            description,
         )
 
         allocs_by_number: Dict[int, List[SettlementAllocation]] = {}

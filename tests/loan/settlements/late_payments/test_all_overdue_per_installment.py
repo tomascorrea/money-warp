@@ -6,7 +6,7 @@ interest.  The correct behaviour is to process each installment sequentially:
 fine -> mora -> interest -> principal for inst 1 BEFORE any allocation to inst 2.
 
 Scenario:
-  - 6-installment loan (Mar–Aug 2025), all overdue by Aug 15
+  - 6-installment loan (Mar-Aug 2025), all overdue by Aug 15
   - Single partial payment equal to one scheduled installment amount (354.34)
   - Inst 1 should absorb fine, mora, interest, and partial principal
   - Inst 2+ should receive NOTHING because inst 1 was not fully settled

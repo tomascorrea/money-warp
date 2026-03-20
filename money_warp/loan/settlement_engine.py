@@ -95,10 +95,11 @@ class SettlementEngine:
             if not remaining.raw_amount:
                 break
 
-            allocation, remaining, fine_remaining, mora_remaining, interest_remaining = (
-                inst.allocate_from_payment(
-                    remaining, fine_remaining, mora_remaining, interest_remaining,
-                )
+            allocation, remaining, fine_remaining, mora_remaining, interest_remaining = inst.allocate_from_payment(
+                remaining,
+                fine_remaining,
+                mora_remaining,
+                interest_remaining,
             )
 
             if allocation.total_allocated.raw_amount <= 0:
