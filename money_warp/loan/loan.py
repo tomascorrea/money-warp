@@ -1,7 +1,6 @@
 """Simplified Loan class that delegates calculations to configurable scheduler."""
 
 from datetime import date, datetime, timedelta
-from enum import Enum
 from typing import Dict, List, Optional, Type
 
 from ..cash_flow import CashFlow, CashFlowItem, CashFlowType
@@ -13,18 +12,8 @@ from ..tax.base import BaseTax, TaxResult
 from ..time_context import TimeContext
 from ..tz import to_datetime, tz_aware
 from .installment import Installment
+from .interest_calculator import InterestCalculator, MoraStrategy
 from .settlement import AnticipationResult, Settlement, SettlementAllocation
-
-
-class MoraStrategy(Enum):
-    """Strategy for computing mora (late) interest.
-
-    SIMPLE: mora rate is applied to the outstanding principal only.
-    COMPOUND: mora rate is applied to principal + accrued regular interest.
-    """
-
-    SIMPLE = "simple"
-    COMPOUND = "compound"
 
 
 class Loan:
@@ -135,6 +124,7 @@ class Loan:
         self.interest_rate = interest_rate
         self.mora_interest_rate = mora_interest_rate or interest_rate
         self.mora_strategy = mora_strategy
+        self._interest = InterestCalculator(interest_rate, self.mora_interest_rate, mora_strategy)
         self.due_dates = sorted(due_dates)
         self.disbursement_date = disbursement_date if disbursement_date is not None else self._time_ctx.now()
         if self.disbursement_date.date() >= self.due_dates[0]:
@@ -637,33 +627,8 @@ class Loan:
         due_date: Optional[date],
         last_payment_date: Optional[datetime],
     ) -> tuple:
-        """
-        Compute accrued interest split into regular and mora components.
-
-        Returns (regular_accrued, mora_accrued). All interest is regular when
-        due_date is not provided or the payment is not late. Uses
-        ``mora_interest_rate`` and ``mora_strategy`` for the mora portion.
-        """
-        if due_date is None or last_payment_date is None:
-            return self.interest_rate.accrue(principal_balance, days), Money.zero()
-
-        regular_days = (due_date - last_payment_date.date()).days
-
-        if regular_days <= 0:
-            return Money.zero(), self.mora_interest_rate.accrue(principal_balance, days)
-
-        if regular_days >= days:
-            return self.interest_rate.accrue(principal_balance, days), Money.zero()
-
-        mora_days = days - regular_days
-        regular_accrued = self.interest_rate.accrue(principal_balance, regular_days)
-
-        if self.mora_strategy == MoraStrategy.COMPOUND:
-            mora_accrued = self.mora_interest_rate.accrue(principal_balance + regular_accrued, mora_days)
-        else:
-            mora_accrued = self.mora_interest_rate.accrue(principal_balance, mora_days)
-
-        return regular_accrued, mora_accrued
+        """Delegate to InterestCalculator."""
+        return self._interest.compute_accrued_interest(days, principal_balance, due_date, last_payment_date)
 
     def _allocate_payment(
         self,
