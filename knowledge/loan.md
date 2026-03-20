@@ -334,6 +334,16 @@ Sugar methods (`pay_installment`, `anticipate_payment`) use `self.now()` for the
 
 **Lesson:** Don't use a value that can be non-unique (datetime) as a grouping boundary when a positional invariant (sequential append order) already provides an unambiguous one.
 
+### Day-count mismatch with non-midnight disbursement (fixed 2026-03-20)
+
+**Symptom:** When `disbursement_date` had a non-midnight time component (e.g. 19:53), the first installment was never marked `is_fully_covered` even when the payment was large enough to cover it. The settlement interest was consistently lower than the scheduled interest by about one day's worth.
+
+**Root cause:** The scheduler computes `days_in_period` using date subtraction (`(due_date - prev_date).days`), but `_compute_interest_snapshot` used datetime subtraction (`(interest_date - last_pay_date).days`). Python's `timedelta.days` truncates: `(April 12 00:00 - March 6 19:53).days == 36`, while `(April 12 - March 6).days == 37`. The 1-day shortfall meant settlement interest was less than the schedule expected, so `Installment.allocate` could not fully cover the first installment's interest obligation.
+
+**Fix:** Use `.date()` on both operands in all three day-count calculations: `_compute_interest_snapshot`, `_build_installments_snapshot` (mora days), and `days_since_last_payment`. This aligns with the scheduler's calendar-day convention. Financial day counting operates on dates, not timestamps.
+
+**Lesson:** When one subsystem counts days using dates and another uses datetimes, the results will diverge whenever a timestamp has a non-midnight time. Normalize to the same type (`.date()`) at every day-count boundary.
+
 ### Mora under-distributed across allocations (fixed 2026-03-19)
 
 **Symptom:** `settlement.mora_paid` was consistently higher than `sum(a.mora_allocated for a in settlement.allocations)`. The difference was always positive and exactly equalled the mora allocated to the same installment in prior settlements.
