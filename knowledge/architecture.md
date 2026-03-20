@@ -23,7 +23,14 @@ money_warp/
 │   ├── credit_card.py     # CreditCard state machine
 │   └── statement.py       # Statement (frozen derived view)
 ├── loan/
-│   └── loan.py            # Loan state machine
+│   ├── loan.py               # Loan facade (~760 lines, down from ~1411)
+│   ├── interest_calculator.py # InterestCalculator (stateless rate math)
+│   ├── fine_tracker.py        # FineTracker (fine state + late-payment logic)
+│   ├── payment_ledger.py      # PaymentLedger (CashFlow-backed payment recording)
+│   ├── settlement_engine.py   # SettlementEngine (settlement/installment building)
+│   ├── tvm.py                 # TVM standalone functions (PV, IRR, anticipation)
+│   ├── installment.py         # Installment dataclass
+│   └── settlement.py          # Settlement, SettlementAllocation dataclasses
 ├── scheduler/
 │   ├── base.py            # BaseScheduler (abstract)
 │   ├── price_scheduler.py           # PriceScheduler (French amortization)
@@ -81,15 +88,17 @@ Cash-flow data is separated from time-awareness:
 
 Equality between `CashFlowItem` and `CashFlowEntry` uses Python's reflected-equality protocol — `CashFlowItem.__eq__` resolves and compares against the entry, so both `entry == item` and `item == entry` work transparently. Entries of different kinds (Expected vs Happened) are never equal, even with identical field values.
 
-### Loan as State Machine
+### Loan as Thin Facade
 
-`Loan` does not store multiple cash flow versions. Instead it holds the loan parameters and a list of recorded payments, then generates cash flows on demand:
+`Loan` is a facade that orchestrates five focused components:
 
-- `generate_expected_cash_flow()` — the contractual schedule (via the configured scheduler)
-- `get_actual_cash_flow()` — expected + recorded payments + fine events
-- `current_balance` — computed from principal balance + accrued interest + outstanding fines
+- **`InterestCalculator`** — stateless interest math (regular + mora split).
+- **`FineTracker`** — fine state (`fines_applied`) and late-payment detection.
+- **`PaymentLedger`** — records payments as tagged CashFlowItems in a shared `CashFlow`. Replaces four fragile parallel lists with category-tag queries (`settlement:N`).
+- **`SettlementEngine`** — pure computation of settlements and installments from ledger data.
+- **`tvm.py`** — standalone functions for PV, IRR, and anticipation (eliminates circular imports).
 
-This keeps the source of truth minimal and avoids stale derived data.
+The shared `CashFlow` in the `PaymentLedger` is the single source of truth for payment data. Schedule generation (`generate_expected_cash_flow`, `get_original_schedule`, `get_amortization_schedule`) and cash-flow assembly (`get_actual_cash_flow`) stay in `Loan`.
 
 ### Flexible Scheduling via Due Dates
 
@@ -101,9 +110,11 @@ Every recorded payment carries three dates: `payment_date` (when money moved), `
 
 ### Payment Allocation, Fines, and Mora Interest
 
-All payments allocate funds in strict priority: outstanding fines first, then accrued interest, then principal. Late payments trigger two costs: a flat fine (percentage of the missed installment, calculated from the original schedule) and mora interest (daily-compounded interest for the extra days beyond the due date). When a late payment is recorded, the interest is split into two `CashFlowItem` entries: regular interest (`"interest"`, up to the due date) and mora interest (`"mora_interest"`, beyond the due date). A configurable `grace_period_days` delays fine application. The `fines_applied` dict prevents duplicate fines for the same due date.
+All payments allocate funds in strict priority: outstanding fines first, then accrued interest, then principal. Late payments trigger two costs: a flat fine (percentage of the missed installment, calculated from the original schedule) and mora interest (daily-compounded interest for the extra days beyond the due date). When a late payment is recorded, the interest is split into two `CashFlowItem` entries: regular interest (`"interest"`, up to the due date) and mora interest (`"mora_interest"`, beyond the due date). A configurable `grace_period_days` delays fine application. Fine state is managed by `FineTracker`.
 
-The expected-vs-happened distinction is structural: expected schedule items use `ExpectedCashFlowEntry` (kind=EXPECTED) and recorded payments use `HappenedCashFlowEntry` (kind=HAPPENED). Categories are clean domain names: `"disbursement"`, `"interest"`, `"principal"`, `"fine"`, `"mora_interest"`, `"tax"`.
+Payment items are stored in a shared `CashFlow` via `PaymentLedger`. Each item is tagged with both its type (e.g. `"interest"`) and its settlement group (e.g. `"settlement:1"`) using the `frozenset[str]` category system. This eliminates offset-based grouping and makes same-time-payment bugs impossible by design.
+
+The expected-vs-happened distinction is structural: expected schedule items use `ExpectedCashFlowEntry` (kind=EXPECTED) and recorded payments use `HappenedCashFlowEntry` (kind=HAPPENED). Categories are frozensets of string tags: `{"disbursement"}`, `{"interest"}`, `{"principal"}`, `{"fine"}`, `{"mora_interest"}`, `{"tax"}`, `{"interest", "settlement:1"}`, etc.
 
 ### Timezone-Aware Datetimes
 

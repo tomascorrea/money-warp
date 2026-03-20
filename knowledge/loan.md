@@ -1,6 +1,12 @@
 # Loan
 
-The `Loan` class is a state machine that models a personal loan with daily-compounding interest, configurable schedulers, late-payment fines, and mora interest. It tracks recorded payments and computes balances, cash flows, and amortization schedules on demand.
+The `Loan` class is a facade that models a personal loan with daily-compounding interest, configurable schedulers, late-payment fines, and mora interest. It delegates to five focused components:
+
+- **`InterestCalculator`** (`interest_calculator.py`) — stateless interest math (regular + mora split). Holds `interest_rate`, `mora_interest_rate`, `mora_strategy`.
+- **`FineTracker`** (`fine_tracker.py`) — fine state (`fines_applied: Dict[date, Money]`) and late-payment detection. Named constants for tolerance and window days.
+- **`PaymentLedger`** (`payment_ledger.py`) — records payments as tagged CashFlowItems in a shared `CashFlow`. Category tags like `{"interest", "settlement:1"}` replace offset-based grouping. Stores lightweight `SettlementSnapshot` per settlement (payment_date, days_in_period, beginning_balance, ending_balance).
+- **`SettlementEngine`** (`settlement_engine.py`) — pure computation of `Settlement` and `Installment` objects from ledger queries and the original schedule.
+- **TVM functions** (`tvm.py`) — standalone `loan_present_value`, `loan_irr`, `loan_calculate_anticipation`. Eliminates circular imports between `loan` and `present_value`.
 
 ## Constructor Parameters
 
@@ -16,7 +22,7 @@ The `Loan` class is a state machine that models a personal loan with daily-compo
 | `mora_interest_rate` | `Optional[InterestRate]` | `interest_rate` | Rate used for mora (late) interest; defaults to the base rate |
 | `mora_strategy` | `MoraStrategy` | `COMPOUND` | How mora interest is computed (see Mora Strategy below) |
 
-`Loan` also keeps `_actual_payment_datetimes: List[datetime]`, one entry per `record_payment` call, so settlements and cash-flow grouping use full timestamps while schedule rows use calendar `due_date: date` values.
+Payment data is stored in a shared `CashFlow` via `PaymentLedger`. Settlement grouping uses category tags (`settlement:N`) instead of positional offsets. Per-settlement metadata (`SettlementSnapshot`) captures snapshot values (beginning_balance, ending_balance) that cannot be derived from the CashFlow alone.
 
 ## Three-Date Payment Model
 
@@ -324,15 +330,15 @@ Sugar methods (`pay_installment`, `anticipate_payment`) use `self.now()` for the
 
 **Lesson:** A late payment incurs two costs: fines (flat percentage of missed payment) and mora interest (extra daily-compounded interest beyond the due date). Both must be accounted for. The `max()` pattern ensures one method handles all three timing scenarios correctly.
 
-### Same-time payments misattributed (fixed 2026-02-27)
+### Same-time payments misattributed (fixed 2026-02-27, eliminated by design 2026-03-20)
 
-**Symptom:** When two payments were recorded at the exact same datetime, the second settlement had all-zero amounts (`principal_paid = 0`, `interest_paid = 0`, etc.).
+**Symptom:** When two payments were recorded at the exact same datetime, the second settlement had all-zero amounts.
 
-**Root cause:** `_extract_payment_items` grouped `CashFlowItem`s from `_all_payments` by matching `item.datetime == entry.due_date`. When two entries shared the same `due_date`, the break condition (`item.datetime != entry.due_date and idx > group_start`) was never true, so the first entry consumed all items, leaving nothing for the second.
+**Original fix:** Replaced datetime-based grouping with positional offset tracking (`_payment_item_offsets`).
 
-**Fix:** Replaced datetime-based grouping with positional offset tracking. `record_payment` now records `len(self._all_payments)` into `_payment_item_offsets` before calling `_allocate_payment`. `_extract_payment_items` slices `_all_payments` by `[offsets[i]:offsets[i+1]]` instead of walking by datetime. This is simpler, faster (O(items-in-this-payment) vs O(all-items-up-to-this-payment)), and correct regardless of datetime values.
+**Current state:** The `PaymentLedger` refactoring eliminated this bug class entirely. Payment items are now tagged with `frozenset({"interest", "settlement:1"})` category tags when written to the shared `CashFlow`. Querying by tag (`settlement:N`) is unambiguous regardless of datetime values or ordering. No offset tracking needed.
 
-**Lesson:** Don't use a value that can be non-unique (datetime) as a grouping boundary when a positional invariant (sequential append order) already provides an unambiguous one.
+**Lesson:** When grouping requires identity (not equality), use explicit tags rather than value-based boundaries.
 
 ### Day-count mismatch with non-midnight disbursement (fixed 2026-03-20)
 
