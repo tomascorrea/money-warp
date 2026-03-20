@@ -15,6 +15,7 @@ from .fine_tracker import FineTracker, _get_expected_payment
 from .installment import Installment
 from .interest_calculator import InterestCalculator, MoraStrategy
 from .settlement import AnticipationResult, Settlement, SettlementAllocation
+from .tvm import loan_calculate_anticipation, loan_irr, loan_present_value
 
 
 class Loan:
@@ -306,93 +307,12 @@ class Loan:
     def present_value(
         self, discount_rate: Optional[InterestRate] = None, valuation_date: Optional[datetime] = None
     ) -> Money:
-        """
-        Calculate the Present Value of the loan's expected cash flows.
-
-        This is a convenience method that generates the expected cash flow
-        and calculates its present value. By default, uses the loan's own
-        interest rate as the discount rate.
-
-        Args:
-            discount_rate: The discount rate to use (defaults to loan's interest rate)
-            valuation_date: Date to discount back to (defaults to current time)
-
-        Returns:
-            The present value of the loan's expected cash flows
-
-        Examples:
-            >>> from money_warp import Loan, Money, InterestRate
-            >>> from datetime import date
-            >>>
-            >>> loan = Loan(Money("10000"), InterestRate("5% annual"),
-            ...            [date(2024, 1, 15), date(2024, 2, 15)])
-            >>>
-            >>> # Get present value using loan's own rate (should be close to zero)
-            >>> pv = loan.present_value()
-            >>> print(f"Loan PV at its own rate: {pv}")
-            >>>
-            >>> # Get present value using different discount rate
-            >>> pv = loan.present_value(InterestRate("8% annual"))
-            >>> print(f"Loan PV at 8%: {pv}")
-        """
-        # Import here to avoid circular import
-        from ..present_value import present_value
-
-        # Use loan's interest rate as default discount rate
-        if discount_rate is None:
-            discount_rate = self.interest_rate
-
-        # Generate expected cash flows
-        expected_cf = self.generate_expected_cash_flow()
-
-        if valuation_date is None:
-            valuation_date = self.now()
-
-        # Calculate and return present value
-        return present_value(expected_cf, discount_rate, valuation_date)
+        """Calculate the Present Value of the loan's expected cash flows."""
+        return loan_present_value(self, discount_rate, valuation_date)
 
     def irr(self, guess: Optional[Rate] = None) -> Rate:
-        """
-        Calculate the Internal Rate of Return (IRR) of the loan's expected cash flows.
-
-        This is a convenience method that generates the expected cash flow
-        and calculates its IRR. The IRR represents the effective rate of return
-        of the loan from the borrower's perspective.
-
-        Note: To calculate IRR from a specific date, use the Time Machine:
-        with Warp(loan, target_date) as warped_loan:
-            irr = warped_loan.irr()
-
-        Args:
-            guess: Initial guess for IRR (defaults to 10% annual)
-
-        Returns:
-            The internal rate of return as a Rate (may be negative)
-
-        Examples:
-            >>> from money_warp import Loan, Money, InterestRate, Warp
-            >>> from datetime import date
-            >>>
-            >>> loan = Loan(Money("10000"), InterestRate("5% annual"),
-            ...            [date(2024, 1, 15), date(2024, 2, 15)])
-            >>>
-            >>> # Get IRR - should be close to loan's interest rate
-            >>> loan_irr = loan.irr()
-            >>> print(f"Loan IRR: {loan_irr}")
-            >>>
-            >>> # Get IRR from a specific date using Time Machine
-            >>> with Warp(loan, date(2024, 1, 10)) as warped_loan:
-            ...     past_irr = warped_loan.irr()
-            >>> print(f"IRR from past perspective: {past_irr}")
-        """
-        # Import here to avoid circular import
-        from ..present_value import internal_rate_of_return
-
-        # Generate expected cash flows (will be time-aware if warped)
-        expected_cf = self.generate_expected_cash_flow()
-
-        # Calculate and return IRR
-        return internal_rate_of_return(expected_cf, guess, year_size=self.interest_rate.year_size)
+        """Calculate the Internal Rate of Return (IRR) of the loan's expected cash flows."""
+        return loan_irr(self, guess)
 
     def generate_expected_cash_flow(self) -> CashFlow:
         """
@@ -755,75 +675,8 @@ class Loan:
         )
 
     def calculate_anticipation(self, installments: List[int]) -> AnticipationResult:
-        """Calculate the amount to pay today to eliminate specific installments.
-
-        Pure calculation — no side effects on the loan.
-
-        The maths:
-            sustainable_balance = PV(kept payments at kept dates)
-            anticipation_amount = current_balance - sustainable_balance
-
-        Args:
-            installments: 1-based installment numbers to anticipate.
-
-        Returns:
-            :class:`AnticipationResult` with the amount and the
-            installment objects being removed.
-
-        Raises:
-            ValueError: If any number is invalid or already paid.
-        """
-        from ..present_value import present_value
-
-        original = self.get_original_schedule()
-        covered = self._covered_due_date_count()
-        total_installments = len(original)
-
-        removed_set = set(installments)
-        for num in removed_set:
-            if num < 1 or num > total_installments:
-                raise ValueError(f"Installment {num} is out of range (1..{total_installments})")
-            if num <= covered:
-                raise ValueError(f"Installment {num} is already paid")
-
-        kept_items: List[CashFlowItem] = []
-        anticipated_installments: List[Installment] = []
-        all_installments = self.installments
-
-        for entry in original:
-            if entry.payment_number in removed_set:
-                anticipated_installments.append(all_installments[entry.payment_number - 1])
-                continue
-            if entry.payment_number <= covered:
-                continue
-            kept_items.append(
-                CashFlowItem(
-                    Money(-entry.payment_amount.raw_amount),
-                    to_datetime(entry.due_date),
-                    f"Kept payment {entry.payment_number}",
-                    "kept_payment",
-                )
-            )
-
-        if not kept_items:
-            return AnticipationResult(
-                amount=self.current_balance,
-                installments=anticipated_installments,
-            )
-
-        kept_cf = CashFlow(kept_items)
-        valuation_date = self.now()
-        sustainable_balance = present_value(kept_cf, self.interest_rate, valuation_date)
-        sustainable_balance = Money(-sustainable_balance.raw_amount)
-
-        anticipation_amount = self.current_balance - sustainable_balance
-        if anticipation_amount.is_negative():
-            anticipation_amount = Money.zero()
-
-        return AnticipationResult(
-            amount=anticipation_amount,
-            installments=anticipated_installments,
-        )
+        """Calculate the amount to pay today to eliminate specific installments."""
+        return loan_calculate_anticipation(self, installments)
 
     def _delete_expected_items_for(self, installments: List[int], effective_date: datetime) -> None:
         """Temporally delete expected cash-flow items for the given installments.
