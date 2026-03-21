@@ -4,8 +4,8 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Optional, Tuple
 
-from ..interest_rate import InterestRate
-from ..money import Money
+from ...interest_rate import InterestRate
+from ...money import Money
 
 
 class MoraStrategy(Enum):

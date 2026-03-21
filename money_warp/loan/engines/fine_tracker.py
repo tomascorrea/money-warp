@@ -3,11 +3,11 @@
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 
-from ..interest_rate import InterestRate
-from ..money import Money
-from ..scheduler import PaymentSchedule
-from ..time_context import TimeContext
-from ..tz import to_datetime
+from ...interest_rate import InterestRate
+from ...money import Money
+from ...scheduler import PaymentSchedule
+from ...time_context import TimeContext
+from ...tz import to_datetime
 
 _PAYMENT_CATEGORIES = frozenset({"principal", "interest", "fine"})
 _TOLERANCE = Money("0.01")

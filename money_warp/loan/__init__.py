@@ -1,8 +1,8 @@
 """Loan module for personal loan modeling with flexible payment schedules."""
 
-from .fine_tracker import FineTracker
+from .engines.fine_tracker import FineTracker
+from .engines.interest_calculator import InterestCalculator, MoraStrategy
 from .installment import Installment
-from .interest_calculator import InterestCalculator, MoraStrategy
 from .loan import Loan
 from .settlement import AnticipationResult, Settlement, SettlementAllocation
 
