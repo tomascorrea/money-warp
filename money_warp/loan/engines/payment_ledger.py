@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-from ..cash_flow import CashFlow, CashFlowItem
-from ..money import Money
-from ..scheduler import PaymentScheduleEntry
-from ..time_context import TimeContext
+from ...cash_flow import CashFlow, CashFlowItem
+from ...money import Money
+from ...scheduler import PaymentScheduleEntry
+from ...time_context import TimeContext
 
 _ITEM_CATEGORIES = ("fine", "interest", "mora_interest", "principal")
 

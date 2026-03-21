@@ -1,11 +1,11 @@
 # Loan
 
-The `Loan` class is a facade that models a personal loan with daily-compounding interest, configurable schedulers, late-payment fines, and mora interest. It delegates to five focused components:
+The `Loan` class is a facade that models a personal loan with daily-compounding interest, configurable schedulers, late-payment fines, and mora interest. It delegates to five focused components, four of which live in the `engines/` subpackage:
 
-- **`InterestCalculator`** (`interest_calculator.py`) — stateless interest math (regular + mora split). Holds `interest_rate`, `mora_interest_rate`, `mora_strategy`.
-- **`FineTracker`** (`fine_tracker.py`) — fine state (`fines_applied: Dict[date, Money]`) and late-payment detection. Named constants for tolerance and window days.
-- **`PaymentLedger`** (`payment_ledger.py`) — records payments as tagged CashFlowItems in a shared `CashFlow`. Category tags like `{"interest", "settlement:1"}` replace offset-based grouping. Stores lightweight `SettlementSnapshot` per settlement (payment_date, days_in_period, beginning_balance, ending_balance).
-- **`SettlementEngine`** (`settlement_engine.py`) — pure computation of `Settlement` and `Installment` objects from ledger queries and the original schedule.
+- **`InterestCalculator`** (`engines/interest_calculator.py`) — stateless interest math (regular + mora split). Holds `interest_rate`, `mora_interest_rate`, `mora_strategy`.
+- **`FineTracker`** (`engines/fine_tracker.py`) — fine state (`fines_applied: Dict[date, Money]`) and late-payment detection. Named constants for tolerance and window days.
+- **`PaymentLedger`** (`engines/payment_ledger.py`) — records payments as tagged CashFlowItems in a shared `CashFlow`. Category tags like `{"interest", "settlement:1"}` replace offset-based grouping. Stores lightweight `SettlementSnapshot` per settlement (payment_date, days_in_period, beginning_balance, ending_balance).
+- **`SettlementEngine`** (`engines/settlement_engine.py`) — pure computation of `Settlement` and `Installment` objects from ledger queries and the original schedule.
 - **TVM functions** (`tvm.py`) — standalone `loan_present_value`, `loan_irr`, `loan_calculate_anticipation`. Eliminates circular imports between `loan` and `present_value`.
 
 ## Constructor Parameters

@@ -3,13 +3,13 @@
 from datetime import date, datetime
 from typing import Dict, List, Optional
 
-from ..money import Money
-from ..scheduler import PaymentSchedule
-from ..tz import to_datetime
-from .installment import Installment
+from ...money import Money
+from ...scheduler import PaymentSchedule
+from ...tz import to_datetime
+from ..installment import Installment
+from ..settlement import Settlement, SettlementAllocation
 from .interest_calculator import InterestCalculator
 from .payment_ledger import PaymentLedger
-from .settlement import Settlement, SettlementAllocation
 
 _COVERAGE_TOLERANCE = Money("0.01")
 
