@@ -28,12 +28,11 @@ def test_loan_record_payment_creates_interest_and_principal_items():
     loan = Loan(principal, rate, due_dates, disbursement_date)
     loan.record_payment(Money("5000.00"), datetime(2024, 1, 15, tzinfo=timezone.utc))
 
-    # Should have created interest and principal payment items
-    assert len(loan._ledger.actual_payment_items) == 2
-
-    # Check categories
-    assert any("interest" in p.category for p in loan._ledger.actual_payment_items)
-    assert any("principal" in p.category for p in loan._ledger.actual_payment_items)
+    settlement = loan.settlements[-1]
+    assert settlement.interest_paid.is_positive()
+    assert settlement.principal_paid.is_positive()
+    assert settlement.interest_paid == Money("22.37")
+    assert settlement.principal_paid == Money("4977.63")
 
 
 def test_loan_record_payment_updates_last_payment_date():

@@ -22,7 +22,7 @@ def test_pay_installment_uses_now_as_payment_date():
 
     with Warp(loan, datetime(2025, 1, 20, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("5000.00"))
-        assert warped._ledger.all_payment_items[-1].datetime == datetime(2025, 1, 20, tzinfo=timezone.utc)
+        assert warped.settlements[-1].payment_date == datetime(2025, 1, 20, tzinfo=timezone.utc)
 
 
 def test_pay_installment_charges_interest_to_due_date():
@@ -36,12 +36,11 @@ def test_pay_installment_charges_interest_to_due_date():
     # pay_installment on Jan 15 should charge interest for 31 days (to Feb 1 due date)
     with Warp(loan, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("5000.00"))
-        interest_items = [p for p in warped._ledger.all_payment_items if "interest" in p.category]
-        assert len(interest_items) == 1
+        settlement = warped.settlements[-1]
 
         daily_rate = InterestRate("6% a").to_daily().as_decimal()
         expected_interest = Decimal("10000") * ((1 + daily_rate) ** 31 - 1)
-        assert interest_items[0].amount == Money(expected_interest)
+        assert settlement.interest_paid == Money(expected_interest)
 
 
 def test_pay_installment_no_discount_vs_anticipate_discount():
@@ -55,15 +54,15 @@ def test_pay_installment_no_discount_vs_anticipate_discount():
     loan1 = Loan(principal, rate, due_dates, disbursement_date=disbursement)
     with Warp(loan1, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped1:
         warped1.pay_installment(Money("5000.00"))
-        installment_interest = [p for p in warped1._ledger.all_payment_items if "interest" in p.category]
+        installment_interest = warped1.settlements[-1].interest_paid
 
     # anticipate_payment: interest for 14 days (disbursement to payment date)
     loan2 = Loan(principal, rate, due_dates, disbursement_date=disbursement)
     with Warp(loan2, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped2:
         warped2.anticipate_payment(Money("5000.00"))
-        anticipate_interest = [p for p in warped2._ledger.all_payment_items if "interest" in p.category]
+        anticipate_interest = warped2.settlements[-1].interest_paid
 
-    assert installment_interest[0].amount > anticipate_interest[0].amount
+    assert installment_interest > anticipate_interest
 
 
 def test_pay_installment_more_principal_with_anticipate():
@@ -77,14 +76,14 @@ def test_pay_installment_more_principal_with_anticipate():
     loan1 = Loan(principal, rate, due_dates, disbursement_date=disbursement)
     with Warp(loan1, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped1:
         warped1.pay_installment(payment)
-        installment_principal = [p for p in warped1._ledger.all_payment_items if "principal" in p.category]
+        installment_principal = warped1.settlements[-1].principal_paid
 
     loan2 = Loan(principal, rate, due_dates, disbursement_date=disbursement)
     with Warp(loan2, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped2:
         warped2.anticipate_payment(payment)
-        anticipate_principal = [p for p in warped2._ledger.all_payment_items if "principal" in p.category]
+        anticipate_principal = warped2.settlements[-1].principal_paid
 
-    assert anticipate_principal[0].amount > installment_principal[0].amount
+    assert anticipate_principal > installment_principal
 
 
 # --- anticipate_payment tests ---
@@ -100,7 +99,7 @@ def test_anticipate_payment_uses_now_as_payment_date():
 
     with Warp(loan, datetime(2025, 1, 20, tzinfo=timezone.utc)) as warped:
         warped.anticipate_payment(Money("5000.00"))
-        assert warped._ledger.all_payment_items[-1].datetime == datetime(2025, 1, 20, tzinfo=timezone.utc)
+        assert warped.settlements[-1].payment_date == datetime(2025, 1, 20, tzinfo=timezone.utc)
 
 
 def test_anticipate_payment_charges_interest_only_for_elapsed_days():
@@ -113,11 +112,11 @@ def test_anticipate_payment_charges_interest_only_for_elapsed_days():
 
     with Warp(loan, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
         warped.anticipate_payment(Money("5000.00"))
-        interest_items = [p for p in warped._ledger.all_payment_items if "interest" in p.category]
+        settlement = warped.settlements[-1]
 
         daily_rate = InterestRate("6% a").to_daily().as_decimal()
         expected_interest = Decimal("10000") * ((1 + daily_rate) ** 14 - 1)
-        assert interest_items[0].amount == Money(expected_interest)
+        assert settlement.interest_paid == Money(expected_interest)
 
 
 def test_anticipate_payment_negative_amount_raises_error():
@@ -193,10 +192,10 @@ def test_record_payment_with_explicit_interest_date():
         interest_date=datetime(2025, 2, 1, tzinfo=timezone.utc),
     )
 
-    interest_items = [p for p in loan._ledger.all_payment_items if "interest" in p.category]
+    settlement = loan.settlements[-1]
     daily_rate = InterestRate("6% a").to_daily().as_decimal()
     expected_interest = Decimal("10000") * ((1 + daily_rate) ** 31 - 1)
-    assert interest_items[0].amount == Money(expected_interest)
+    assert settlement.interest_paid == Money(expected_interest)
 
 
 def test_record_payment_interest_date_defaults_to_payment_date():
@@ -209,10 +208,10 @@ def test_record_payment_interest_date_defaults_to_payment_date():
 
     loan.record_payment(Money("5000.00"), payment_date=datetime(2025, 1, 15, tzinfo=timezone.utc))
 
-    interest_items = [p for p in loan._ledger.all_payment_items if "interest" in p.category]
+    settlement = loan.settlements[-1]
     daily_rate = InterestRate("6% a").to_daily().as_decimal()
     expected_interest = Decimal("10000") * ((1 + daily_rate) ** 14 - 1)
-    assert interest_items[0].amount == Money(expected_interest)
+    assert settlement.interest_paid == Money(expected_interest)
 
 
 # --- Schedule rebuild tests ---
@@ -688,11 +687,11 @@ def test_anticipate_vs_installment_ending_balance_comparison():
     loan_installment = Loan(principal, rate, due_dates, disbursement_date=disbursement)
     with Warp(loan_installment, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(scheduled_pmt)
-        installment_remaining = warped._ledger.actual_schedule_entries()[-1].ending_balance
+        installment_remaining = warped.settlements[-1].remaining_balance
 
     loan_anticipate = Loan(principal, rate, due_dates, disbursement_date=disbursement)
     with Warp(loan_anticipate, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
         warped.anticipate_payment(scheduled_pmt)
-        anticipate_remaining = warped._ledger.actual_schedule_entries()[-1].ending_balance
+        anticipate_remaining = warped.settlements[-1].remaining_balance
 
     assert anticipate_remaining < installment_remaining

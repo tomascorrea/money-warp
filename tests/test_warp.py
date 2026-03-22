@@ -124,12 +124,12 @@ def test_warp_filters_future_payments(sample_loan):
     target_date = datetime(2024, 1, 20, tzinfo=timezone.utc)
 
     with Warp(sample_loan, target_date) as warped_loan:
-        # Should only have the first payment
-        assert len(warped_loan._ledger.actual_payment_items) == 2  # Interest + principal portions of first payment
+        # Should only have the first payment (one settlement per recorded payment)
+        assert len(warped_loan.settlements) == 1
 
-        # All payments should be before or on target date
-        for payment in warped_loan._ledger.actual_payment_items:
-            assert payment.datetime <= target_date
+        # All settlements should be before or on target date
+        for settlement in warped_loan.settlements:
+            assert settlement.payment_date <= target_date
 
 
 def test_warp_recalculates_balance_from_filtered_payments(sample_loan):
@@ -185,18 +185,15 @@ def test_warp_to_past_ignores_future_payments():
 
     # Warp to middle date
     with Warp(loan, datetime(2024, 2, 5, tzinfo=timezone.utc)) as warped_loan:
-        # Should only have first payment (2 items: interest + principal)
-        assert len(warped_loan._ledger.actual_payment_items) == 2
+        # Should only have first payment
+        assert len(warped_loan.settlements) == 1
 
-        # Check that it's the first payment
-        payment_dates = [p.datetime for p in warped_loan._ledger.actual_payment_items]
-        assert all(d == datetime(2024, 1, 10, tzinfo=timezone.utc) for d in payment_dates)
+        assert warped_loan.settlements[0].payment_date == datetime(2024, 1, 10, tzinfo=timezone.utc)
 
 
 def test_warp_to_future_keeps_all_past_payments():
-    # Disable fines so payments produce interest/mora + principal only.
-    # Payment 1 (Jan 10) is early -> interest + principal = 2 items
-    # Payment 2 (Feb 10) is late vs Jan 15 due date -> interest + mora + principal = 3 items
+    # Disable fines so payments are allocated without fine components.
+    # Two recorded payments -> two settlements.
     loan = Loan(
         Money("10000"),
         InterestRate("5% annual"),
@@ -208,9 +205,9 @@ def test_warp_to_future_keeps_all_past_payments():
     loan.record_payment(Money("500"), datetime(2024, 1, 10, tzinfo=timezone.utc), description="Payment 1")
     loan.record_payment(Money("600"), datetime(2024, 2, 10, tzinfo=timezone.utc), description="Payment 2")
 
-    # Warp to future date — both past payments must be visible (5 items: 2 + 3)
+    # Warp to future date — both past payments must be visible
     with Warp(loan, datetime(2025, 1, 1, tzinfo=timezone.utc)) as warped_loan:
-        assert len(warped_loan._ledger.actual_payment_items) == 5
+        assert len(warped_loan.settlements) == 2
 
 
 # String representations

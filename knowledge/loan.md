@@ -1,12 +1,37 @@
 # Loan
 
-The `Loan` class is a facade that models a personal loan with daily-compounding interest, configurable schedulers, late-payment fines, and mora interest. It delegates to five focused components, four of which live in the `engines/` subpackage:
+The `Loan` class models a personal loan where **everything emerges from the CashFlow**. A single `CashFlow` instance is the source of truth — it contains both expected items (the amortization schedule) and actual payments. Settlements, installment views, balances, and fines are all derived on demand by a forward pass over the cashflow. Nothing is decomposed or stored at payment time.
+
+## Architecture
+
+The Loan delegates computation to two focused modules in `engines/`:
 
 - **`InterestCalculator`** (`engines/interest_calculator.py`) — stateless interest math (regular + mora split). Holds `interest_rate`, `mora_interest_rate`, `mora_strategy`.
-- **`FineTracker`** (`engines/fine_tracker.py`) — fine state (`fines_applied: Dict[date, Money]`) and late-payment detection. Named constants for tolerance and window days.
-- **`PaymentLedger`** (`engines/payment_ledger.py`) — records payments as tagged CashFlowItems in a shared `CashFlow`. Category tags like `{"interest", "settlement:1"}` replace offset-based grouping. Stores lightweight `SettlementSnapshot` per settlement (payment_date, days_in_period, beginning_balance, ending_balance).
-- **`SettlementEngine`** (`engines/settlement_engine.py`) — pure computation of `Settlement` and `Installment` objects from ledger queries and the original schedule.
-- **TVM functions** (`tvm.py`) — standalone `loan_present_value`, `loan_irr`, `loan_calculate_anticipation`. Eliminates circular imports between `loan` and `present_value`.
+- **`settlement_engine`** (`engines/settlement_engine.py`) — a module of **pure functions** that compute all derived state. Key exports:
+  - `compute_state(...)` — the forward pass that produces a `LoanState` (settlements, principal balance, fines applied, fines paid total, last payment date).
+  - `build_installments(...)` — builds `Installment` objects from settlements + schedule.
+  - `compute_fines_at(...)` — determines which due dates should have fines applied.
+  - `allocate_payment_per_installment(...)` — runs the per-installment allocation algorithm.
+  - `covered_due_date_count(...)` — how many due dates are covered given a remaining balance.
+  - `is_payment_late(...)` — grace-period-aware lateness check.
+- **TVM functions** (`tvm.py`) — standalone `loan_present_value`, `loan_irr`, `loan_calculate_anticipation`.
+
+**Removed components:** `PaymentLedger` and `FineTracker` no longer exist. Their responsibilities were absorbed into the forward pass in `settlement_engine`.
+
+### CashFlow-Emergence Philosophy
+
+- `record_payment` appends **one** `CashFlowItem` (category `"payment"`) to `self.cashflow`. No fines, no decomposition, no allocation at write time.
+- All financial state is derived by `_compute_state()`, which calls `settlement_engine.compute_state`. This performs a single chronological forward pass over all payment events and fine observation dates.
+- Balance properties, settlements, installments, and fines are `@property` methods that invoke `_compute_state()` and return the relevant slice.
+
+### Fine Observation Dates
+
+Fines are event-driven. The `Loan` maintains `_fine_observation_dates: List[datetime]` — explicit timestamps at which fine calculations should be triggered during the forward pass. These are appended by:
+
+- `_on_warp(target_date)` — called by Warp after overriding TimeContext.
+- `calculate_late_fines(as_of_date)` — explicit fine observation.
+
+The forward pass merges payment events with fine observation dates into a sorted timeline. At each event, `compute_fines_at` checks which due dates are overdue and uncovered (using a temporal-proximity window, not balance-based coverage).
 
 ## Constructor Parameters
 
@@ -22,17 +47,15 @@ The `Loan` class is a facade that models a personal loan with daily-compounding 
 | `mora_interest_rate` | `Optional[InterestRate]` | `interest_rate` | Rate used for mora (late) interest; defaults to the base rate |
 | `mora_strategy` | `MoraStrategy` | `COMPOUND` | How mora interest is computed (see Mora Strategy below) |
 
-Payment data is stored in a shared `CashFlow` via `PaymentLedger`. Settlement grouping uses category tags (`settlement:N`) instead of positional offsets. Per-settlement metadata (`SettlementSnapshot`) captures snapshot values (beginning_balance, ending_balance) that cannot be derived from the CashFlow alone.
-
 ## Three-Date Payment Model
 
-Every payment internally carries three dates:
+Every payment carries three dates via the `CashFlowEntry`:
 
 | Date | Meaning | Default |
 |---|---|---|
-| `payment_date` | When the money moved | Required |
-| `interest_date` | Cutoff for interest accrual calculation | `payment_date` |
-| `processing_date` | When the system recorded the event (audit trail) | `self.now()` |
+| `payment_date` | When the money moved (stored as `CashFlowEntry.datetime`) | Required |
+| `interest_date` | Cutoff for interest accrual calculation (stored as `CashFlowEntry.interest_date`) | `payment_date` |
+| `processing_date` | Unused, kept for API compatibility | N/A |
 
 The **interest_date** controls how many days of interest are charged. Fewer days = less interest = discount for the borrower. This decouples "when money arrived" from "how much interest to charge."
 
@@ -47,13 +70,11 @@ Neither method takes a date parameter — they use `self.now()` (which respects 
   - **On-time payment**: interest matches the scheduled amount exactly.
   - **Late payment**: interest accrues up to `self.now()`, so the borrower pays extra interest (mora) for the days beyond the due date. Late fines are also applied automatically.
 
-  A large payment naturally covers the current installment **and** eats into future installments — the per-installment allocation and `_covered_due_date_count()` handle this without special-casing.
+  A large payment naturally covers the current installment **and** eats into future installments — the per-installment allocation and `covered_due_date_count()` handle this without special-casing.
 
 - **`anticipate_payment(amount, installments=None, description=None)`** — early payment **with interest discount**. Records payment at `self.now()` and calculates interest only up to `self.now()` (fewer days = less interest charged). When `installments` is provided (1-based numbers), the corresponding expected cash-flow items are temporally deleted via `CashFlowItem.delete()`.
 
 ### Early Payment vs Anticipation
-
-These are distinct concepts:
 
 | | `pay_installment` (early payment) | `anticipate_payment` (anticipation) |
 |---|---|---|
@@ -63,11 +84,11 @@ These are distinct concepts:
 | **Use case** | Borrower wants to pay ahead of time, no discount expected | Borrower negotiates early payoff with reduced interest |
 | **Test folder** | `up_to_date_payments/` | `antecipation/` |
 
-- **`calculate_anticipation(installments)`** — pure calculation (no side effects). Returns an `AnticipationResult(amount, installments)` with the PV-based amount the borrower must pay today to eliminate specific installments. The formula: `amount = current_balance - PV(kept payments at kept dates)`. When all remaining installments are anticipated, `amount = current_balance` (full early payoff). Validates that all requested installment numbers are unpaid and in range.
+- **`calculate_anticipation(installments)`** — pure calculation (no side effects). Returns an `AnticipationResult(amount, installments)` with the PV-based amount the borrower must pay today to eliminate specific installments.
 
 ### Explicit-Date Method
 
-- **`record_payment(amount, payment_date, interest_date=None, processing_date=None, description=None)`** — full control over all dates. When `interest_date` is omitted it defaults to `payment_date` (borrower gets discount for early payment). Useful in tests and batch processing where you need explicit dates.
+- **`record_payment(amount, payment_date, interest_date=None, processing_date=None, description=None)`** — full control over all dates. Appends one `CashFlowItem` to `self.cashflow` and returns the latest derived `Settlement`.
 
 ### Payment Allocation
 
@@ -78,136 +99,123 @@ All payment methods allocate funds **per-installment** in strict sequential orde
 3. **Regular interest** for this installment
 4. **Principal** for this installment
 
-Installment 1 is fully addressed before installment 2 receives anything. This means inst 1's mora interest is paid before inst 2's fine — the allocation order applies *within* each installment, not across all installments at once.
+Installment 1 is fully addressed before installment 2 receives anything.
 
-Interest days and principal balance are pre-computed at the top of `record_payment` using `payment_date` as the filter for existing payments, before any internal state is mutated.
+## Forward Pass: `compute_state`
+
+The central algorithm in `settlement_engine.compute_state`. It processes a merged timeline of payment events and fine observation dates in chronological order:
+
+1. For each event (payment or fine observation), compute fines using only previously processed payments.
+2. For payment events:
+   a. Compute interest (regular + mora) since last payment.
+   b. Build installment snapshot reflecting all prior allocations.
+   c. Add skipped contractual interest for periods beyond the current due-date boundary.
+   d. Run per-installment allocation (`allocate_payment_per_installment`).
+   e. Update running principal, fines paid total, and allocation history.
+   f. Create a `Settlement` object.
+3. Return `LoanState` with all settlements and running state.
+
+### `is_fully_covered` Post-Payment Fixup
+
+The `allocate_payment_per_installment` function determines `is_fully_covered` per allocation in two stages:
+
+1. **During the loop:** `Installment.allocate_from_payment` computes `is_covered` by comparing the total allocated against the installment's remaining balance. This can be `False` when interest caps prevent full interest allocation (e.g., paying all installments at once on the first due date).
+2. **After the loop:** If the post-payment balance (`ending_balance - principal_total`) is within tolerance of zero, the function does a second pass. Any allocation whose principal is fully covered gets `is_fully_covered` overridden to `True`. This handles the case where the loan is paid off but interest caps prevented exact coverage of each installment's interest obligation.
 
 ## Dynamic Amortization Schedule
 
 ### `get_amortization_schedule()`
 
-Returns a clean, ordered list of `PaymentScheduleEntry` records. Past entries come first (reflecting actual payments: real interest paid, real principal paid), followed by projected entries (recalculated from remaining principal, same rate, remaining unpaid due dates, and last payment date as the disbursement reference — same count of remaining payments, new PMT).
-
-If no payments have been made, returns the original static schedule.
+Returns a clean, ordered list of `PaymentScheduleEntry` records. Past entries come first (reflecting actual settlements), followed by projected entries (recalculated from remaining principal).
 
 ### `get_original_schedule()`
 
-Always returns the static schedule based on original loan terms, ignoring any payments. Used internally for fine calculations (`get_expected_payment_amount`) and for comparison.
-
-### PaymentScheduleEntry
-
-Each entry contains: `payment_number`, `due_date` (`date`), `days_in_period`, `beginning_balance`, `payment_amount`, `principal_payment`, `interest_payment`, `ending_balance`. The schedule auto-calculates `total_payments`, `total_interest`, and `total_principal`.
+Always returns the static schedule based on original loan terms, ignoring any payments.
 
 ## Schedulers
 
-All schedulers implement `BaseScheduler.generate_schedule(principal, interest_rate, due_dates: List[date], disbursement_date: datetime) -> PaymentSchedule`.
+All schedulers implement `BaseScheduler.generate_schedule(principal, interest_rate, due_dates, disbursement_date) -> PaymentSchedule`.
 
 ### PriceScheduler (French Amortization)
 
-Fixed total payment per period. Interest portion decreases and principal portion increases over time. The PMT is computed as `principal / sum(1 / (1 + daily_rate)^n)` where `n` is the number of days from disbursement to each due date.
+Fixed total payment per period. The PMT is computed as `principal / sum(1 / (1 + daily_rate)^n)`.
 
 #### Matching external systems with `InterestRate` precision
 
-Some lending systems (e.g. Brazilian banks) truncate the effective annual rate to a fixed number of decimal places before deriving the daily rate. This introduces a tiny difference in the daily rate which can shift the PMT by several cents on large principals.
-
-`InterestRate` supports two optional parameters to reproduce this behaviour:
-
-- `precision: int` — number of decimal places to keep on the effective annual rate during conversions. `None` (default) preserves full precision.
-- `rounding: str` — Python `decimal` rounding mode (default `ROUND_HALF_UP`).
-
-Precision is applied in `_to_effective_annual()`, the hub through which `to_daily()`, `to_monthly()`, and `to_annual()` all pass. The stored `_decimal_rate` and the converted output rate are **not** separately quantized — they naturally inherit limited precision from the quantized annual.
-
-Example: a Brazilian system stores the annual rate as `0.126825` (6 decimal places) for a 1% monthly rate whose full annual is `0.126825030...`. To match:
-
-```python
-rate = InterestRate("1% m", precision=6)
-loan = Loan(Money("10000"), rate, due_dates, disbursement_date)
-```
+`InterestRate` supports `precision: int` and `rounding: str` parameters to reproduce truncated rate behaviour from external systems.
 
 ### InvertedPriceScheduler (Constant Amortization System / SAC)
 
-Fixed principal payment per period (`principal / number_of_payments`). Interest is computed on the outstanding balance, so total payment decreases over time. The last payment adjusts to ensure zero final balance.
+Fixed principal payment per period (`principal / number_of_payments`). Interest is computed on the outstanding balance.
 
 ## Late Payments
 
-A late payment incurs two costs, both handled automatically by `pay_installment` and `record_payment`:
-
-1. **Fines** — a flat percentage of the missed installment amount.
-2. **Mora interest** — extra daily-compounded interest for the days beyond the due date.
-
 ### Fines
 
-- `calculate_late_fines(as_of_date)` scans all due dates up to `as_of_date`, applies one fine per missed due date (never duplicated), and stores them in `fines_applied: Dict[date, Money]`.
-- `is_payment_late(due_date, as_of_date)` respects `grace_period_days`.
-- `is_paid_off` requires zero `current_balance` (principal, interest, mora, and fines all zero).
-- Fine amounts are calculated from the **original** schedule (`get_original_schedule`), not the rebuilt schedule.
+- `compute_fines_at` scans all due dates up to the observation time, applies one fine per missed due date (never duplicated).
+- `_has_payment_near` implements a temporal window check: a due date is considered "covered" if sufficient payment was made within a small window (3 days before to 1 day after). This replaces the old balance-based coverage check.
+- `calculate_late_fines(as_of_date)` appends to `_fine_observation_dates` and returns the **delta** of new fines only.
+- Fine amounts are calculated from the **original** schedule.
 
 ### Mora Interest
 
-When `pay_installment` is called after the due date, `interest_date = max(self.now(), next_due_date)` causes interest to accrue beyond the due date up to the actual payment date. The interest is split into two separate `CashFlowItem` entries:
-
-- **Regular interest** (`"interest"`, kind=HAPPENED) — accrued from last payment to the due date using `interest_rate`.
-- **Mora interest** (`"mora_interest"`, kind=HAPPENED) — accrued from the due date to the payment date using `mora_interest_rate`.
-
-On-time and early payments produce only a regular interest item (no mora). Regular interest is always computed with the base `interest_rate`; mora interest uses `mora_interest_rate` (which defaults to `interest_rate` when not provided).
+When `pay_installment` is called after the due date, `interest_date = max(self.now(), next_due_date)` causes interest to accrue beyond the due date. The `InterestCalculator.compute_accrued_interest` method splits interest into regular and mora components.
 
 ### Mora Strategy (`MoraStrategy` enum)
 
-The `mora_strategy` parameter controls how mora interest is computed when a payment is late. Both strategies share the same regular interest calculation; they differ only in the base amount used for the mora portion.
-
-**`MoraStrategy.COMPOUND`** (default):
-- `regular = interest_rate.accrue(principal, regular_days)`
-- `mora = mora_interest_rate.accrue(principal + regular, mora_days)`
-
-The mora rate is applied to the accumulated balance (principal plus accrued regular interest). This means mora compounds on top of regular interest.
-
-**`MoraStrategy.SIMPLE`**:
-- `regular = interest_rate.accrue(principal, regular_days)`
-- `mora = mora_interest_rate.accrue(principal, mora_days)`
-
-The mora rate is applied independently to the outstanding principal. Regular interest does not affect the mora base.
-
-With the same rates, COMPOUND always produces more mora than SIMPLE because it applies the mora rate to a larger base. When `mora_interest_rate` equals `interest_rate` and strategy is `COMPOUND`, the result is identical to a single continuous compounding period — preserving the original behaviour before the mora strategy feature was introduced.
-
-The `interest_balance` and `mora_interest_balance` properties respect `mora_interest_rate` and `mora_strategy`. When the borrower is past the next unpaid due date, `_accrued_interest_components()` splits interest into regular and mora via `InterestCalculator.compute_accrued_interest`. `current_balance = principal_balance + interest_balance + mora_interest_balance + fine_balance`.
+**`MoraStrategy.COMPOUND`** (default): mora rate applied to `principal + regular_interest`.
+**`MoraStrategy.SIMPLE`**: mora rate applied to `principal` only.
 
 ## Balance Properties
 
-The loan's outstanding amount is decomposed into four canonical components:
+All derived from `_compute_state()`:
 
 | Property | Type | Meaning |
 |---|---|---|
-| `principal_balance` | `Money` | Outstanding principal (original minus principal payments) |
+| `principal_balance` | `Money` | Outstanding principal |
 | `interest_balance` | `Money` | Regular accrued interest since last payment |
 | `mora_interest_balance` | `Money` | Mora accrued interest (days beyond due date) |
 | `fine_balance` | `Money` | Unpaid fines (total applied minus fines paid) |
 | `current_balance` | `Money` | Sum of all four components |
 
-`_accrued_interest_components()` is the shared private helper that returns `(regular, mora)` — both `interest_balance` and `mora_interest_balance` delegate to it.
+## Installments and Settlements
 
-### Late Overpayment
+### Design Philosophy
 
-A large late payment flows through the standard allocation pipeline (fines -> interest -> principal) with no special-casing. The excess principal naturally covers multiple installments because `_covered_due_date_count()` compares the remaining balance against original schedule milestones.
+A loan is **not** a group of installments. Installments are a **consequence** of the loan terms plus a repayment strategy (scheduler). Settlements are a **consequence** of making a payment. Both are derived views computed from the cashflow, not stored state.
 
-Example: $10k loan, 3 monthly installments at 6%, borrower misses installment 1 and pays $7,000 two weeks late. Allocation: ~$67 fine, ~$72 mora interest (45 days), ~$6,861 principal. The principal reduction covers installments 1 and 2, leaving only installment 3 projected.
+### Installment (`loan.installments`)
 
-## Cash Flow Generation
+A frozen dataclass built by `build_installments` from settlements + schedule. Warp-aware.
 
-- `generate_expected_cash_flow()` — disbursement (positive, category `"disbursement"`, kind=EXPECTED) plus original scheduled payments split into interest (`"interest"`) and principal (`"principal"`) items (negative, kind=EXPECTED). Uses `get_original_schedule()`.
-- `get_actual_cash_flow()` — expected items plus recorded payments (kind=HAPPENED) and fine-application events.
+Fields: `number`, `due_date`, `days_in_period`, `expected_payment`, `expected_principal`, `expected_interest`, `expected_mora`, `expected_fine`, `principal_paid`, `interest_paid`, `mora_paid`, `fine_paid`, `allocations`.
 
-### CashFlowEntry Hierarchy
+- `balance` — amount still owed to fully settle this installment.
+- `is_fully_paid` — `True` when `balance` is within tolerance of zero.
+- `allocate_from_payment(remaining, fine_remaining, mora_remaining, interest_remaining)` — allocates in priority order (fine -> mora -> interest -> principal), each capped by both the installment's remaining obligation and running caps.
 
-`CashFlowEntry` is an abstract base class with two concrete subclasses:
+### Settlement (`loan.settlements`)
 
-- **`ExpectedCashFlowEntry`** — projected items (e.g. loan schedule). `kind` property returns `CashFlowType.EXPECTED`.
-- **`HappenedCashFlowEntry`** — recorded facts (e.g. actual payments). `kind` property returns `CashFlowType.HAPPENED`.
+A frozen dataclass capturing how a single payment was allocated. Derived by the forward pass.
 
-The `CashFlowItem` constructor accepts `kind=CashFlowType.EXPECTED` or `kind=CashFlowType.HAPPENED` (default) and instantiates the correct subclass. Filtering works via `entry.kind == CashFlowType.EXPECTED`, `isinstance(entry, ExpectedCashFlowEntry)`, or the query shortcuts `cf.query.expected` / `cf.query.happened`.
+Fields: `payment_amount`, `payment_date`, `fine_paid`, `interest_paid`, `mora_paid`, `principal_paid`, `remaining_balance`, `allocations`.
+
+### SettlementAllocation
+
+Fields: `installment_number`, `principal_allocated`, `interest_allocated`, `mora_allocated`, `fine_allocated`, `is_fully_covered`.
+
+Shared between Settlement (forward view) and Installment (reverse view).
+
+### LoanState
+
+Internal dataclass returned by `compute_state`: `settlements`, `principal_balance`, `fines_applied`, `fines_paid_total`, `last_payment_date`.
+
+## Cash Flow Views
+
+- `generate_expected_cash_flow()` — expected schedule items only.
+- `get_actual_cash_flow()` — expected items + decomposed settlement items (fine, interest, mora, principal as separate `CashFlowItem`s) + fine application events.
 
 ### CashFlowItem Categories
-
-Categories are clean domain names. The expected-vs-happened distinction is structural (subclass type), not encoded in the category string:
 
 | Category | Kind | Meaning |
 |---|---|---|
@@ -215,81 +223,16 @@ Categories are clean domain names. The expected-vs-happened distinction is struc
 | `"tax"` | EXPECTED | Tax deducted at disbursement |
 | `"interest"` | EXPECTED | Scheduled interest payment |
 | `"principal"` | EXPECTED | Scheduled principal payment |
-| `"interest"` | HAPPENED | Regular interest paid (up to due date) |
-| `"mora_interest"` | HAPPENED | Mora interest paid (beyond due date) |
-| `"principal"` | HAPPENED | Principal paid |
-| `"fine"` | HAPPENED | Fine paid or fine applied (distinguished by sign) |
-
-## Installments and Settlements
-
-### Design Philosophy
-
-A loan is **not** a group of installments. Installments are a **consequence** of the loan terms plus a repayment strategy (scheduler). Settlements are a **consequence** of making a payment. Both are derived views computed from the cash flow, not stored state.
-
-### Installment (`loan.installments`)
-
-A frozen dataclass representing one period of the repayment plan. Built from the original schedule on demand. Warp-aware: all fields reflect the state at `self.now()`.
-
-Fields: `number`, `due_date` (`date`), `days_in_period`, `expected_payment`, `expected_principal`, `expected_interest`, `expected_mora`, `expected_fine`, `principal_paid`, `interest_paid`, `mora_paid`, `fine_paid`, `allocations: List[SettlementAllocation]`.
-
-Computed properties:
-- `balance: Money` — the amount still owed to fully settle this installment: `(expected_principal + expected_interest + expected_mora + expected_fine) - (principal_paid + interest_paid + mora_paid + fine_paid)`. Clamped to zero.
-- `is_fully_paid: bool` — `True` when `balance` is zero. Single source of truth for payment status.
-
-Field semantics:
-- `expected_payment`, `expected_principal`, `expected_interest` come from the original schedule.
-- `expected_fine` comes from `Loan.fines_applied` for the installment's due date.
-- `expected_mora` is computed by the Loan: for covered installments it equals the sum of prior `mora_allocated` values; for the first uncovered overdue installment it is prior `mora_allocated` **plus** newly accrued mora (from last payment to `self.now()`) via `InterestCalculator.compute_accrued_interest`; for all other installments it is zero. The cumulative form ensures `Installment.allocate` correctly computes `mora_owed = expected_mora - mora_paid` even when the same installment receives mora across multiple settlements.
-- `*_paid` fields are aggregated totals from all settlement allocations attributed to this installment.
-- `allocations` is the reverse view of Settlement: all `SettlementAllocation`s that touched this installment.
-- Created via `Installment.from_schedule_entry(entry, allocations, expected_mora, expected_fine)`.
-- `allocate_from_payment(remaining, fine_remaining, mora_remaining, interest_remaining)` — allocates from a single remaining payment amount in priority order (fine → mora → interest → principal). Each component is capped by both the installment's remaining obligation and the running cap. Returns `(SettlementAllocation, updated_remaining, updated_fine_remaining, updated_mora_remaining, updated_interest_remaining)`. Used by `SettlementEngine.allocate_payment_per_installment` to walk through installments in order.
-- `PaymentScheduleEntry` remains the internal scheduler data structure. `Installment` is the public-facing API.
-
-### Settlement (`loan.settlements`, returned by payment methods)
-
-A frozen dataclass capturing how a single payment was allocated. Reconstructed from the cash flow (via `PaymentLedger`) rather than stored as separate state.
-
-Fields: `payment_amount`, `payment_date`, `fine_paid`, `interest_paid`, `mora_paid`, `principal_paid`, `remaining_balance`, `allocations: List[SettlementAllocation]`.
-
-- `allocations` shows per-installment detail: which installments the payment covered and how much principal/interest/mora/fine went to each.
-- All three payment methods (`record_payment`, `pay_installment`, `anticipate_payment`) return a `Settlement`.
-- The `settlements` property reconstructs all settlements by querying the cash flow. Warp-aware: only includes settlements with `payment_date <= self.now()`.
-- **Reconciliation invariant:** For every settlement, each component total must equal the sum of its per-installment allocations: `settlement.X_paid == sum(a.X_allocated for a in settlement.allocations)` for X in {principal, interest, mora, fine}.
-
-#### Per-Installment Allocation
-
-Payments are allocated **per-installment in strict sequential order**. Within each installment the priority is fine → mora → interest → principal. Installment 1's obligations are fully addressed before installment 2 receives anything.
-
-The allocation is performed by `SettlementEngine.allocate_payment_per_installment(amount, installments, ending_balance, fine_cap, interest_cap, mora_cap)`. The caps bound the total that may be allocated to each non-principal category — during live allocation they come from loan-level accrual (preserving early-payment discounts); during reconstruction they match recorded CashFlowItem totals.
-
-1. Build an installment snapshot (`_build_pre_settlement_installments`) reflecting all prior settlement allocations — avoids circular dependency with `self.settlements`.
-2. For each installment in order, `Installment.allocate_from_payment(remaining, fine_remaining, mora_remaining, interest_remaining)` processes fine → mora → interest → principal sequentially, each capped by both the installment's remaining obligation and the running cap.
-3. Principal allocation is further capped by reserving funds for later installments' interest and mora: `available_for_principal = remaining - (interest_remaining + mora_remaining)`.
-4. After the installment loop, any remaining cap amounts (interest/mora spill from schedule rounding) are attributed to their respective totals, not to principal.
-5. Sub-cent allocations (< 0.01) are included in the component totals for precision but excluded from the `allocations` list to avoid dust entries.
-6. When the loan is fully paid off (ending_balance ≈ 0), installments whose principal is fully covered are marked `is_fully_covered`.
-
-The `settlements` property maintains a running `allocations_by_number` dict so each settlement sees the cumulative allocation state from prior settlements.
-
-### AnticipationResult
-
-Returned by `calculate_anticipation()`. Frozen dataclass with:
-- `amount: Money` — the total amount to pay today to eliminate the specified installments.
-- `installments: List[Installment]` — the installments being anticipated (removed).
-
-### SettlementAllocation
-
-Fields: `installment_number`, `principal_allocated`, `interest_allocated`, `mora_allocated`, `fine_allocated`, `is_fully_covered`.
-
-Shared between Settlement (forward view: "this payment covered these installments") and Installment (reverse view: "these allocations covered me").
+| `"payment"` | HAPPENED | Actual payment (undifferentiated — decomposition is derived) |
+| `"fine"` | — | Fine applied or paid (in `get_actual_cash_flow` output) |
+| `"interest"` | — | Interest paid (in `get_actual_cash_flow` output) |
+| `"mora_interest"` | — | Mora interest paid (in `get_actual_cash_flow` output) |
+| `"principal"` | — | Principal paid (in `get_actual_cash_flow` output) |
 
 ## TVM Sugar
 
 - `loan.present_value(discount_rate=None, valuation_date=None)` — defaults to the loan's own rate and `loan.now()`.
 - `loan.irr(guess=None)` — IRR of the expected cash flow.
-
-Both methods are time-aware: inside a `Warp` context they reflect the warped date.
 
 ## Key Learnings
 
@@ -297,116 +240,44 @@ Both methods are time-aware: inside a `Warp` context they reflect the warped dat
 
 **Symptom:** After paying all scheduled installments, a residual balance of ~$103.36 persisted on a $10,000 loan.
 
-**Root cause:** `record_payment` computed interest days via `self.days_since_last_payment(payment_date)`, which filtered payments by `self.now()` (real wall-clock time). When installments were recorded sequentially for future dates, previously-recorded future payments were invisible, leading to inflated day counts, too much interest, too little principal, and a non-zero residual.
+**Root cause:** `record_payment` computed interest days via `self.days_since_last_payment(payment_date)`, which filtered payments by `self.now()` (real wall-clock time). When installments were recorded sequentially for future dates, previously-recorded future payments were invisible.
 
-**Fix:** Pre-compute `days` and `principal_balance` at the top of `record_payment` using `payment_date` as the filter, before step 1 modifies the payment ledger.
+**Fix:** Pre-compute `days` and `principal_balance` at the top of `record_payment` using `payment_date` as the filter, before any internal state is mutated.
 
-**Lesson:** Any method that reads loan state and then mutates it must snapshot the relevant values first. Time-dependent queries inside mutation methods must use the payment's own date, not wall-clock time.
-
-### Warp creates deep clones (important for sugar methods)
-
-Sugar methods (`pay_installment`, `anticipate_payment`) use `self.now()` for the payment date. Inside a `Warp` context, `self.now()` returns the warped date — but payments on the warped loan do **not** persist back to the original. This is by design: Warp is for observation, not mutation. Use `record_payment(amount, date)` or `record_payment(...)` with explicit dates to set up loan state outside of Warp.
+**Lesson:** Any method that reads loan state and then mutates it must snapshot the relevant values first.
 
 ### Due date coverage uses cumulative principal, not payment count (fixed 2026-02-20)
 
-**Symptom:** `_next_unpaid_due_date()` and `get_amortization_schedule()` would miscount covered due dates when partial payments, overpayments, or multiple anticipations were made.
-
-**Root cause:** The original implementation used the number of schedule entries to determine how many due dates were covered — assuming one `record_payment` call = one installment. This broke with partial payments (inflated count) and large overpayments (undercounted).
-
-**Fix:** `_covered_due_date_count()` compares the remaining principal (from the last actual entry) against the original schedule's `ending_balance` milestones. A due date is covered when remaining principal is at or below that entry's ending balance.
+**Fix:** `covered_due_date_count()` compares the remaining principal against the original schedule's `ending_balance` milestones. A due date is covered when remaining principal is at or below that entry's ending balance.
 
 **Lesson:** Avoid coupling "number of events" to "progress through a schedule." Use the financial state (principal balance) as the source of truth.
 
-### Merged schedule is a clean list, not tagged entries (fixed 2026-02-20)
-
-**Symptom:** Tests and consumers of `get_amortization_schedule()` had to filter entries by an `is_actual` flag to separate past payments from projected ones, leading to boilerplate like `[e for e in schedule if not e.is_actual]`.
-
-**Root cause:** `PaymentScheduleEntry` carried an `is_actual: bool` field that leaked an internal implementation detail into the data model. No business logic depended on the flag — it only served test filtering.
-
-**Fix:** Removed `is_actual` from `PaymentScheduleEntry` entirely. The merged schedule is a clean, ordered list: past entries (from `PaymentLedger.actual_schedule_entries()`) come first by construction, followed by projected entries. Tests use positional indexing (`schedule[0]` for the recorded payment, `schedule[1:]` for projected) instead of filtering.
-
-**Lesson:** Don't tag data with internal metadata that consumers must filter. If ordering already encodes the distinction, a flag is redundant. Keep data structures minimal — the fewer fields, the simpler the API.
-
 ### Late payments undercharged interest (fixed 2026-02-20)
 
-**Symptom:** `pay_installment()` called after the due date charged interest only up to the due date, not up to the actual payment date. The borrower was undercharged for the extra late days.
-
-**Root cause:** `pay_installment` set `interest_date = self._next_unpaid_due_date()`. When the borrower paid late (now > due_date), interest was capped at the due date instead of extending to the actual payment date.
-
-**Fix:** Changed to `interest_date = max(self.now(), self._next_unpaid_due_date())`. Early/on-time payments still accrue interest up to the due date (unchanged). Late payments now accrue interest up to `self.now()` (extra days charged).
-
-**Lesson:** A late payment incurs two costs: fines (flat percentage of missed payment) and mora interest (extra daily-compounded interest beyond the due date). Both must be accounted for. The `max()` pattern ensures one method handles all three timing scenarios correctly.
-
-### Same-time payments misattributed (fixed 2026-02-27, eliminated by design 2026-03-20)
-
-**Symptom:** When two payments were recorded at the exact same datetime, the second settlement had all-zero amounts.
-
-**Original fix:** Replaced datetime-based grouping with positional offset tracking (`_payment_item_offsets`).
-
-**Current state:** The `PaymentLedger` refactoring eliminated this bug class entirely. Payment items are now tagged with `frozenset({"interest", "settlement:1"})` category tags when written to the shared `CashFlow`. Querying by tag (`settlement:N`) is unambiguous regardless of datetime values or ordering. No offset tracking needed.
-
-**Lesson:** When grouping requires identity (not equality), use explicit tags rather than value-based boundaries.
-
-### Day-count mismatch with non-midnight disbursement (fixed 2026-03-20)
-
-**Symptom:** When `disbursement_date` had a non-midnight time component (e.g. 19:53), the first installment was never marked `is_fully_covered` even when the payment was large enough to cover it. The settlement interest was consistently lower than the scheduled interest by about one day's worth.
-
-**Root cause:** The scheduler computes `days_in_period` using date subtraction (`(due_date - prev_date).days`), but `PaymentLedger.compute_interest_snapshot` used datetime subtraction (`(interest_date - last_pay_date).days`). Python's `timedelta.days` truncates: `(April 12 00:00 - March 6 19:53).days == 36`, while `(April 12 - March 6).days == 37`. The 1-day shortfall meant settlement interest was less than the schedule expected, so `Installment.allocate` could not fully cover the first installment's interest obligation.
-
-**Fix:** Use `.date()` on both operands in all three day-count calculations: `compute_interest_snapshot`, `_build_installments_snapshot` (mora days), and `days_since_last_payment`. This aligns with the scheduler's calendar-day convention. Financial day counting operates on dates, not timestamps.
-
-**Lesson:** When one subsystem counts days using dates and another uses datetimes, the results will diverge whenever a timestamp has a non-midnight time. Normalize to the same type (`.date()`) at every day-count boundary.
-
-### Mora under-distributed across allocations (fixed 2026-03-19)
-
-**Symptom:** `settlement.mora_paid` was consistently higher than `sum(a.mora_allocated for a in settlement.allocations)`. The difference was always positive and exactly equalled the mora allocated to the same installment in prior settlements.
-
-**Root cause:** `_build_installments_snapshot` computed `expected_mora` for the first uncovered installment (`i == covered`) using only the newly accrued mora for the current period. It did not include mora already attributed from prior settlements. When `Installment.allocate` ran `mora_owed = expected_mora - mora_paid`, the `mora_paid` (cumulative from prior allocations) was subtracted from a non-cumulative `expected_mora`, producing an artificially low `mora_owed` and leaving mora unallocated.
-
-**Trigger condition:** Two or more consecutive late payments where the same installment remains uncovered (partial late payments).
-
-**Fix:** `expected_mora = prior_mora + accrued_mora` — sum the mora already allocated from prior settlements before adding the newly accrued amount. This makes the `i == covered` branch cumulative, matching the pattern already used for fully-covered installments (`i < covered`).
-
-**Lesson:** When a derived quantity (expected_mora) participates in a subtraction against a cumulative counter (mora_paid), the derived quantity must also be cumulative. Mixing period-level and cumulative values in the same expression produces silent under-distribution.
+**Fix:** `interest_date = max(self.now(), next_due_date)` in `pay_installment`. Late payments now accrue interest up to `self.now()`.
 
 ### Payment allocation order was loan-level, not per-installment (fixed 2026-03-20)
 
-**Symptom:** When all 6 installments were overdue and the borrower made a partial payment (R$ 382.97), fines were spread across all 6 installments first (R$ 45.90), then mora interest (R$ 250.49), then regular interest (R$ 86.62) — leaving nothing for principal. The payment "disappeared" into penalties without retiring any principal.
+**Fix:** Rewrote allocation to be strictly per-installment sequential. `allocate_payment_per_installment` walks installments in order. Within each, `Installment.allocate_from_payment` applies fine -> mora -> interest -> principal.
 
-**Root cause:** The allocation logic treated each component (fine, mora, interest, principal) as a **separate pool** distributed across all installments. This meant installment 6's fine was paid before installment 1's mora interest, violating the intended priority.
-
-**Fix:** Rewrote allocation to be strictly **per-installment sequential**. `SettlementEngine.allocate_payment_per_installment` walks installments in order. Within each, `Installment.allocate_from_payment` applies fine → mora → interest → principal. Only after inst 1 is fully addressed does inst 2 receive anything. Running caps (`fine_remaining`, `mora_remaining`, `interest_remaining`) prevent over-allocation beyond loan-level accruals. The same method is used for both live allocation and reconstruction (ensuring consistency).
-
-**Lesson:** When allocation priority is defined as "fine before mora before interest before principal," clarify whether that order applies *across the loan* or *within each installment*. The per-installment interpretation is correct for Brazilian lending: installment 1's mora interest is more urgent than installment 2's fine.
+**Lesson:** The per-installment interpretation is correct for Brazilian lending: installment 1's mora interest is more urgent than installment 2's fine.
 
 ### Sub-cent precision loss in allocation loop (fixed 2026-03-20)
 
-**Symptom:** After making all scheduled payments on a 12-installment loan, the balance was R$ 5.17 instead of zero. SA integration tests showed a ~0.001 discrepancy between Python replay and stored settlement balances, cascading to ~0.01 per settlement.
+**Fix:** Use `raw_amount` comparisons in the allocation loop instead of `Money`'s 2dp-rounded methods. Sub-cent allocations are included in component totals but excluded from the `allocations` list.
 
-**Root cause:** `Money.is_zero()` and `Money.is_positive()` use `real_amount` (rounded to 2 decimal places). When the PriceScheduler rounds interest to 2dp but accrued interest has full precision, the difference (e.g., 0.00132) creates a sub-cent remainder. The allocation loop's `remaining.is_zero()` check treated this as zero and broke early. The spill logic's `remaining.is_positive()` also treated it as non-positive. The sub-cent amount was silently lost — not attributed to interest, principal, or anything. Over 12 installments the losses compounded to R$ 5.17.
-
-**Fix:** Use `raw_amount` comparisons in the allocation loop: `not remaining.raw_amount` instead of `remaining.is_zero()`, `remaining.raw_amount > 0` instead of `remaining.is_positive()`, and `allocation.total_allocated.raw_amount <= 0` instead of `not allocation.total_allocated.is_positive()`. This preserves full precision for accounting while keeping `Money`'s 2dp semantics for business display.
-
-Sub-cent allocations (where `total_allocated.real_amount` rounds to zero) are included in the component totals but excluded from the `allocations` list. This ensures correct totals without creating dust entries in the per-installment breakdown.
-
-**Lesson:** `Money`'s `real_amount`-based comparisons (`is_zero`, `is_positive`, `>`, `<`) are correct for business display but dangerous in accounting loops where sub-cent values compound. Use `raw_amount` in tight allocation loops. The allocation pipeline has two audiences: the CashFlowItem totals (need full precision) and the per-installment breakdown (display-level precision is fine).
+**Lesson:** `Money`'s `real_amount`-based comparisons are correct for business display but dangerous in accounting loops where sub-cent values compound.
 
 ### Contractual interest lost for later installments (fixed 2026-03-22)
 
-**Symptom:** When a partial payment left `_next_unpaid_due_date` stuck at D1 (because remaining principal > schedule[0].ending_balance), any subsequent payment after D1 received `interest_accrued = 0` from `compute_accrued_interest`. This zero became the `interest_cap` in `allocate_payment_per_installment`, preventing contractual interest for installments D2, D3, etc. from being allocated. The interest was permanently lost.
+**Fix:** `_skipped_contractual_interest` sums unpaid contractual interest for installments past `next_due` and up to `cutoff`. The forward pass uses `interest_cap = regular + skipped` to ensure later periods' contractual interest is included.
 
-**Root cause:** `compute_accrued_interest` only considers a single due-date boundary (`next_unpaid_due_date`). When `last_payment_date > due_date`, it returns `regular = 0` (mora only). This is correct for the one period it covers, but installments beyond that boundary have their own contractual interest obligations that were never captured in any `interest_cap`.
+### is_fully_covered used pre-payment balance (fixed 2026-03-22)
 
-**Fix (two sites):**
+**Symptom:** When a single payment fully paid off the loan, some allocations had `is_fully_covered = False` even though the loan's remaining balance was zero. This happened because the interest cap prevented full interest allocation to later installments (their interest hadn't accrued yet), and the coverage check failed since `total_allocated < installment.balance`.
 
-1. **`Loan.record_payment`**: After building the installment snapshot, compute a `skipped_contractual` sum — the total unpaid contractual interest for installments whose due dates fall strictly after `next_due` and on or before `interest_date`. Set `interest_cap = interest_accrued + skipped_contractual`. This preserves early-payment discounts (no installments are "skipped" when paying early/on-time) while ensuring later periods' contractual interest is included for late payments.
+**Root cause:** `allocate_payment_per_installment` checked `ending_balance <= tolerance` at the **start** of the function (line 183), using the pre-payment principal. For a payment that fully pays off the loan, the pre-payment balance is the full remaining principal, so this check was always `False`. The override that corrects `is_fully_covered` when principal is fully covered never activated.
 
-2. **`SettlementEngine.compute_settlement`**: The reconstruction phase must use the same effective `interest_cap` as the live allocation to maintain the reconciliation invariant. Recompute `interest_accrued` and `skipped_contractual` from the snapshot data and pass the result as `interest_cap_override` to `build_settlement_allocations`.
+**Fix:** Moved the override to a post-loop fixup. After the allocation loop and spillover handling, compute `post_balance = ending_balance - principal_total`. If `post_balance <= tolerance`, iterate through allocations and fix `is_fully_covered` for any installment whose principal was fully allocated (within tolerance).
 
-The helper `SettlementEngine._skipped_contractual_interest(installments, next_due, cutoff)` is shared by both sites.
-
-**Why the condition is `inst.due_date > next_due`** (strict inequality): The installment AT `next_due` is already handled by `compute_accrued_interest` — its regular interest is either computed (when `regular_days > 0`) or intentionally zero (early payment discount). Only installments *beyond* that boundary are "skipped."
-
-**Lesson:** When a financial engine uses a single-period boundary to compute an aggregate (like interest caps), verify that multi-period scenarios don't leave some periods uncounted. A global cap that combines the current period's accrual with the sum of skipped periods' contractual obligations avoids the gap.
-
-**Follow-up (out of scope):** `_accrued_interest_components()` (used by `interest_balance` / `mora_interest_balance`) has the same single-due-date limitation, meaning balance display can show 0 interest when contractual interest is owed. This is display-only and does not cause data loss.
+**Lesson:** When a boolean flag depends on the outcome of the allocation, it must be evaluated after the allocation completes, not before. Pre-payment state is only useful for pre-conditions; coverage determination requires post-payment state.
