@@ -20,7 +20,7 @@ from money_warp.date_utils import (
     generate_weekly_dates,
 )
 from money_warp.interest_rate import CompoundingFrequency, InterestRate, YearSize
-from money_warp.loan import AnticipationResult, Installment, Loan, MoraStrategy, Settlement, SettlementAllocation
+from money_warp.loan import Allocation, AnticipationResult, Installment, Loan, MoraStrategy, Settlement
 from money_warp.money import Money
 from money_warp.present_value import (
     discount_factor,
@@ -77,7 +77,7 @@ __all__ = [
     "MoraStrategy",
     "Installment",
     "Settlement",
-    "SettlementAllocation",
+    "Allocation",
     "BaseScheduler",
     "PriceScheduler",
     "InvertedPriceScheduler",

@@ -21,7 +21,7 @@ from .engines.settlement_engine import (
     is_payment_late,
 )
 from .installment import Installment
-from .settlement import AnticipationResult, Settlement, SettlementAllocation
+from .settlement import AnticipationResult, Settlement
 from .tvm import loan_calculate_anticipation, loan_irr, loan_present_value
 
 

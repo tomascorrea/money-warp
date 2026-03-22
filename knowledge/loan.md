@@ -200,9 +200,9 @@ A frozen dataclass capturing how a single payment was allocated. Derived by the 
 
 Fields: `payment_amount`, `payment_date`, `fine_paid`, `interest_paid`, `mora_paid`, `principal_paid`, `remaining_balance`, `allocations`.
 
-### SettlementAllocation
+### Allocation
 
-Fields: `installment_number`, `principal_allocated`, `interest_allocated`, `mora_allocated`, `fine_allocated`, `is_fully_covered`.
+Defined in `loan/allocation.py`. Fields: `installment_number`, `principal_allocated`, `interest_allocated`, `mora_allocated`, `fine_allocated`, `is_fully_covered`.
 
 Shared between Settlement (forward view) and Installment (reverse view).
 

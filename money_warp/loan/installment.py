@@ -6,7 +6,7 @@ from typing import List, Tuple
 
 from ..money import Money
 from ..scheduler import PaymentScheduleEntry
-from .settlement import SettlementAllocation
+from .allocation import Allocation
 
 _COVERAGE_TOLERANCE = Money("0.01")
 
@@ -34,7 +34,7 @@ class Installment:
     interest_paid: Money
     mora_paid: Money
     fine_paid: Money
-    allocations: List[SettlementAllocation]
+    allocations: List[Allocation]
 
     @property
     def balance(self) -> Money:
@@ -55,7 +55,7 @@ class Installment:
         fine_remaining: Money,
         mora_remaining: Money,
         interest_remaining: Money,
-    ) -> Tuple[SettlementAllocation, Money, Money, Money, Money]:
+    ) -> Tuple[Allocation, Money, Money, Money, Money]:
         """Allocate from a single payment amount in priority order.
 
         Processes fine -> mora -> interest -> principal sequentially,
@@ -89,7 +89,7 @@ class Installment:
         total = fine_alloc + mora_alloc + interest_alloc + principal_alloc
         is_covered = total >= (self.balance - _COVERAGE_TOLERANCE)
 
-        allocation = SettlementAllocation(
+        allocation = Allocation(
             installment_number=self.number,
             principal_allocated=principal_alloc,
             interest_allocated=interest_alloc,
@@ -103,7 +103,7 @@ class Installment:
     def from_schedule_entry(
         cls,
         entry: PaymentScheduleEntry,
-        allocations: List[SettlementAllocation],
+        allocations: List[Allocation],
         expected_mora: Money,
         expected_fine: Money,
     ) -> "Installment":
