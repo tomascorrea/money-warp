@@ -1,5 +1,6 @@
 """Loan class -- everything emerges from the CashFlow."""
 
+import warnings
 from datetime import date, datetime
 from typing import Dict, List, Optional, Type
 
@@ -225,8 +226,24 @@ class Loan:
         Interest accrual depends on timing:
         - Early/on-time: interest accrues up to the due date.
         - Late: interest accrues up to self.now().
+
+        When all installments are already paid the payment is recorded
+        as an overpayment (no interest accrual) and a warning is issued.
         """
         payment_date = self.now()
+
+        if self._covered_due_date_count() >= len(self.due_dates):
+            warnings.warn(
+                f"All installments already paid. Recording {amount} as overpayment.",
+                stacklevel=2,
+            )
+            return self.record_payment(
+                amount,
+                payment_date=payment_date,
+                interest_date=payment_date,
+                description=description or "Overpayment",
+            )
+
         next_due = self._next_unpaid_due_date()
         interest_date = max(payment_date, to_datetime(next_due))
         return self.record_payment(
@@ -383,6 +400,11 @@ class Loan:
     def is_paid_off(self) -> bool:
         """Whether the loan is fully paid off."""
         return self.current_balance.is_zero() or self.current_balance.is_negative()
+
+    @property
+    def overpaid(self) -> Money:
+        """Total amount paid beyond the loan's obligations (derived from CashFlow)."""
+        return self._compute_state().overpaid
 
     # ------------------------------------------------------------------
     # Fine-related properties and methods

@@ -177,6 +177,19 @@ All derived from `_compute_state()`:
 | `mora_interest_balance` | `Money` | Mora accrued interest (days beyond due date) |
 | `fine_balance` | `Money` | Unpaid fines (total applied minus fines paid) |
 | `current_balance` | `Money` | Sum of all four components |
+| `overpaid` | `Money` | Total amount paid beyond the loan's obligations |
+
+## Overpayment
+
+When a payment exceeds the loan's total obligations (principal + interest + mora + fines), the excess is tracked as **overpaid**. This is accumulated in `LoanState.overpaid` during the forward pass: whenever `running_principal` goes negative after subtracting `principal_paid`, the absolute value of the negative amount is added to the overpaid accumulator before snapping the principal to zero.
+
+### `pay_installment` after full repayment
+
+`pay_installment` no longer raises `ValueError` when all due dates are covered. Instead it issues `warnings.warn(...)` and records the payment with `interest_date = payment_date` (no interest accrual). The payment flows through the normal engine pipeline and the excess is captured via `Loan.overpaid`.
+
+### `record_payment` overpayment
+
+`record_payment` has always accepted payments after full repayment (it just adds a CashFlowItem). The engine now correctly tracks the excess via `LoanState.overpaid`.
 
 ## Installments and Settlements
 
