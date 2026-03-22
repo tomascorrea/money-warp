@@ -278,3 +278,13 @@ Internal dataclass returned by `compute_state`: `settlements`, `principal_balanc
 **Fix:** Moved the override to a post-loop fixup. After the allocation loop and spillover handling, compute `post_balance = ending_balance - principal_total`. If `post_balance <= tolerance`, iterate through allocations and fix `is_fully_covered` for any installment whose principal was fully allocated (within tolerance).
 
 **Lesson:** When a boolean flag depends on the outcome of the allocation, it must be evaluated after the allocation completes, not before. Pre-payment state is only useful for pre-conditions; coverage determination requires post-payment state.
+
+### Sub-cent principal residual left loan in impossible state (fixed 2026-03-22)
+
+**Symptom:** After paying the exact scheduled amount, `is_fully_covered` and `is_fully_paid` returned `True` but `is_paid_off` returned `False` and `remaining_balance` showed a sub-cent residual (0.005--0.012). Consumer code marked all installments as PAID but never marked the loan as SETTLED.
+
+**Root cause:** Full-precision interest accrual consumed slightly more than the schedule's 2dp interest, leaving a sub-cent gap on the principal. `allocate_payment_per_installment` and `Installment.is_fully_paid` used `_COVERAGE_TOLERANCE` (1 cent) for their checks, but `compute_state` only snapped `running_principal` to zero when negative — not when it was a sub-cent positive residual. `Loan.is_paid_off` checked `current_balance.is_zero()` (exact zero), which failed for the residual.
+
+**Fix:** In `compute_state`, after subtracting `principal_paid` from `running_principal`, also snap to zero when the balance is positive but within `_COVERAGE_TOLERANCE`. This aligns the principal balance with the same tolerance used by the allocation and installment layers.
+
+**Lesson:** All consistency checks across a system must use the same tolerance. When tolerance-based flags (`is_fully_covered`, `is_fully_paid`) coexist with exact checks (`is_paid_off` via `is_zero()`), the exact check must be relaxed to match, or the underlying data must be snapped so the exact check naturally passes.
