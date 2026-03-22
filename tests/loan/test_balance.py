@@ -35,8 +35,8 @@ def test_loan_days_since_last_payment_initial():
     disbursement_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
     loan = Loan(principal, rate, due_dates, disbursement_date)
-    check_date = datetime(2024, 1, 15, tzinfo=timezone.utc)
-    assert loan.days_since_last_payment(check_date) == 14
+    with Warp(loan, datetime(2024, 1, 15, tzinfo=timezone.utc)) as warped:
+        assert warped.days_since_last_payment() == 14
 
 
 def test_loan_days_since_last_payment_defaults_to_now():
