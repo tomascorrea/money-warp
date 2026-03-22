@@ -210,10 +210,11 @@ Shared between Settlement (forward view) and Installment (reverse view).
 
 Internal dataclass returned by `compute_state`: `settlements`, `principal_balance`, `fines_applied`, `fines_paid_total`, `last_payment_date`.
 
-## Cash Flow Views
+## Cash Flow
 
-- `generate_expected_cash_flow()` — expected schedule items only.
-- `get_actual_cash_flow()` — expected items + decomposed settlement items (fine, interest, mora, principal as separate `CashFlowItem`s) + fine application events.
+`loan.cashflow` is the single source of truth -- a `CashFlow` containing both expected items (schedule) and actual payment items. Allocation detail (fine, interest, mora, principal breakdown) is available through `loan.settlements`, not the cashflow.
+
+- `generate_expected_cash_flow()` — convenience filter returning expected schedule items only.
 
 ### CashFlowItem Categories
 
@@ -223,11 +224,7 @@ Internal dataclass returned by `compute_state`: `settlements`, `principal_balanc
 | `"tax"` | EXPECTED | Tax deducted at disbursement |
 | `"interest"` | EXPECTED | Scheduled interest payment |
 | `"principal"` | EXPECTED | Scheduled principal payment |
-| `"payment"` | HAPPENED | Actual payment (undifferentiated — decomposition is derived) |
-| `"fine"` | — | Fine applied or paid (in `get_actual_cash_flow` output) |
-| `"interest"` | — | Interest paid (in `get_actual_cash_flow` output) |
-| `"mora_interest"` | — | Mora interest paid (in `get_actual_cash_flow` output) |
-| `"principal"` | — | Principal paid (in `get_actual_cash_flow` output) |
+| `"payment"` | HAPPENED | Actual payment (allocation derived via `loan.settlements`) |
 
 ## TVM Sugar
 

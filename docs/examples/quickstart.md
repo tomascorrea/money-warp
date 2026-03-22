@@ -110,12 +110,13 @@ loan.record_payment(Money("500.00"), datetime(2024, 3, 1), "Extra payment")  # P
 print(f"Current balance: {loan.current_balance}")
 print(f"Days since last payment: {loan.days_since_last_payment()}")
 
-# Compare expected vs actual cash flow
-actual_cf = loan.get_actual_cash_flow()
-actual_payments = actual_cf.query.happened.filter_by(
-    predicate=lambda e: not e.category.isdisjoint({"interest", "principal"})
-)
-print(f"Total actual payments so far: {actual_payments.sum_amounts()}")
+# Inspect raw cashflow (expected schedule + actual payments)
+payments = loan.cashflow.query.happened.filter_by(category="payment").all()
+print(f"Payments recorded: {len(payments)}")
+
+# Inspect derived settlements for allocation detail
+for s in loan.settlements:
+    print(f"{s.payment_date.date()}: principal={s.principal_paid}, interest={s.interest_paid}")
 ```
 
 ## Cash Flow Analysis

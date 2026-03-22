@@ -1,6 +1,6 @@
 """Loan class -- everything emerges from the CashFlow."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Dict, List, Optional, Type
 
 from ..cash_flow import CashFlow, CashFlowItem, CashFlowType
@@ -526,57 +526,6 @@ class Loan:
     def generate_expected_cash_flow(self) -> CashFlow:
         """Expected cash flow (schedule items only, no payments)."""
         return self.cashflow.filter_by_kind(CashFlowType.EXPECTED)
-
-    def get_actual_cash_flow(self) -> CashFlow:
-        """Combined cash flow: expected schedule + actual payments + fines.
-
-        Decomposes payments into fine/interest/mora/principal items
-        for detailed cash-flow analysis.
-        """
-        expected_items = [
-            item for item in self.cashflow.raw_items()
-            if (entry := item.resolve()) is not None and entry.kind == CashFlowType.EXPECTED
-        ]
-        items = list(expected_items)
-        state = self._compute_state()
-
-        for due_date, fine_amount in state.fines_applied.items():
-            items.append(CashFlowItem(
-                fine_amount,
-                to_datetime(due_date + timedelta(days=self.grace_period_days + 1)),
-                f"Late payment fine applied for {due_date}",
-                "fine",
-                time_context=self._time_ctx,
-            ))
-
-        for settlement in state.settlements:
-            label = f"Payment on {settlement.payment_date.date()}"
-            if settlement.fine_paid.is_positive():
-                items.append(CashFlowItem(
-                    -settlement.fine_paid, settlement.payment_date,
-                    f"Fine payment - {label}", "fine",
-                    time_context=self._time_ctx,
-                ))
-            if settlement.interest_paid.is_positive():
-                items.append(CashFlowItem(
-                    -settlement.interest_paid, settlement.payment_date,
-                    f"Interest portion - {label}", "interest",
-                    time_context=self._time_ctx,
-                ))
-            if settlement.mora_paid.is_positive():
-                items.append(CashFlowItem(
-                    -settlement.mora_paid, settlement.payment_date,
-                    f"Mora interest - {label}", "mora_interest",
-                    time_context=self._time_ctx,
-                ))
-            if settlement.principal_paid.is_positive():
-                items.append(CashFlowItem(
-                    -settlement.principal_paid, settlement.payment_date,
-                    f"Principal portion - {label}", "principal",
-                    time_context=self._time_ctx,
-                ))
-
-        return CashFlow(items)
 
     # ------------------------------------------------------------------
     # TVM

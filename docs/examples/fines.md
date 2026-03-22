@@ -194,35 +194,27 @@ print(loan.is_payment_late(date(2024, 2, 1), datetime(2024, 2, 9)))  # True
 
 Note: the grace period only affects **fines**. Mora interest always accrues for every day past the due date, regardless of the grace period.
 
-## Tracking Payments in Cash Flows
+## Tracking Fines and Mora via Settlements
 
-All cash flow items use explicit category prefixes. Expected schedule items use `expected_`, actual recorded payments use `actual_`:
+Settlements are derived views that show how each payment was allocated. Use `loan.settlements` to inspect fine and mora detail:
 
 ```python
-actual_cf = loan.get_actual_cash_flow()
-
-# Query fine events (positive = applied, negative = paid)
-fines = actual_cf.query.filter_by(category="fine").all()
-for fine in fines:
-    print(f"{fine.datetime}: {fine.amount} — {fine.description}")
-
-# Query mora interest payments
-mora = actual_cf.query.happened.filter_by(category="mora_interest").all()
-for item in mora:
-    print(f"{item.datetime}: {item.amount} — {item.description}")
+for s in loan.settlements:
+    print(f"{s.payment_date.date()}: fine={s.fine_paid}, mora={s.mora_paid}")
+    for a in s.allocations:
+        print(f"  inst {a.installment_number}: fine={a.fine_allocated}, mora={a.mora_allocated}")
 ```
 
-### Cash Flow Categories
+The raw cashflow (`loan.cashflow`) contains expected schedule items and undifferentiated payment items. The breakdown into fine, interest, mora, and principal is a derived view available through `loan.settlements`.
+
+### CashFlow Categories
 
 | Category | Kind | Meaning |
 |---|---|---|
 | `"disbursement"` | EXPECTED | Loan disbursement |
 | `"interest"` | EXPECTED | Scheduled interest payment |
 | `"principal"` | EXPECTED | Scheduled principal payment |
-| `"interest"` | HAPPENED | Regular interest paid (up to due date) |
-| `"mora_interest"` | HAPPENED | Mora interest paid (beyond due date) |
-| `"principal"` | HAPPENED | Principal paid |
-| `"fine"` | HAPPENED | Fine paid or applied (distinguished by sign) |
+| `"payment"` | HAPPENED | Actual payment (allocation is derived via `loan.settlements`) |
 
 ## Installments & Settlements
 

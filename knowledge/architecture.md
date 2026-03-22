@@ -98,7 +98,7 @@ Equality between `CashFlowItem` and `CashFlowEntry` uses Python's reflected-equa
 - **`SettlementEngine`** — pure computation of settlements and installments from ledger data.
 - **`tvm.py`** — standalone functions for PV, IRR, and anticipation (eliminates circular imports).
 
-The shared `CashFlow` in the `PaymentLedger` is the single source of truth for payment data. Schedule generation (`generate_expected_cash_flow`, `get_original_schedule`, `get_amortization_schedule`) and cash-flow assembly (`get_actual_cash_flow`) stay in `Loan`.
+`Loan.cashflow` is the single source of truth — expected schedule items and actual payment items live in one `CashFlow`. All derived state (settlements, installments, balances, fines) is computed on demand via a forward pass. Schedule generation (`generate_expected_cash_flow`, `get_original_schedule`, `get_amortization_schedule`) stays in `Loan`.
 
 ### Flexible Scheduling via Due Dates
 
