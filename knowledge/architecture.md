@@ -23,11 +23,9 @@ money_warp/
 │   ├── credit_card.py     # CreditCard state machine
 │   └── statement.py       # Statement (frozen derived view)
 ├── loan/
-│   ├── loan.py               # Loan facade (~760 lines, down from ~1411)
+│   ├── loan.py               # Loan facade
 │   ├── interest_calculator.py # InterestCalculator (stateless rate math)
-│   ├── fine_tracker.py        # FineTracker (fine state + late-payment logic)
-│   ├── payment_ledger.py      # PaymentLedger (CashFlow-backed payment recording)
-│   ├── settlement_engine.py   # SettlementEngine (settlement/installment building)
+│   ├── settlement_engine.py   # Pure functions: forward pass, fines, allocation
 │   ├── tvm.py                 # TVM standalone functions (PV, IRR, anticipation)
 │   ├── installment.py         # Installment dataclass
 │   └── settlement.py          # Settlement, SettlementAllocation dataclasses
@@ -90,12 +88,10 @@ Equality between `CashFlowItem` and `CashFlowEntry` uses Python's reflected-equa
 
 ### Loan as Thin Facade
 
-`Loan` is a facade that orchestrates five focused components:
+`Loan` is a facade that orchestrates three focused components:
 
 - **`InterestCalculator`** — stateless interest math (regular + mora split).
-- **`FineTracker`** — fine state (`fines_applied`) and late-payment detection.
-- **`PaymentLedger`** — records payments as tagged CashFlowItems in a shared `CashFlow`. Replaces four fragile parallel lists with category-tag queries (`settlement:N`).
-- **`SettlementEngine`** — pure computation of settlements and installments from ledger data.
+- **`settlement_engine`** — a module of pure functions that compute all derived state: forward pass (`compute_state`), fine detection (`compute_fines_at`), per-installment allocation, and installment building.
 - **`tvm.py`** — standalone functions for PV, IRR, and anticipation (eliminates circular imports).
 
 `Loan.cashflow` is the single source of truth — expected schedule items and actual payment items live in one `CashFlow`. All derived state (settlements, installments, balances, fines) is computed on demand via a forward pass. Schedule generation (`generate_expected_cash_flow`, `get_original_schedule`, `get_amortization_schedule`) stays in `Loan`.
@@ -110,9 +106,7 @@ Every recorded payment carries three dates: `payment_date` (when money moved), `
 
 ### Payment Allocation, Fines, and Mora Interest
 
-All payments allocate funds in strict priority: outstanding fines first, then accrued interest, then principal. Late payments trigger two costs: a flat fine (percentage of the missed installment, calculated from the original schedule) and mora interest (daily-compounded interest for the extra days beyond the due date). When a late payment is recorded, the interest is split into two `CashFlowItem` entries: regular interest (`"interest"`, up to the due date) and mora interest (`"mora_interest"`, beyond the due date). A configurable `grace_period_days` delays fine application. Fine state is managed by `FineTracker`.
-
-Payment items are stored in a shared `CashFlow` via `PaymentLedger`. Each item is tagged with both its type (e.g. `"interest"`) and its settlement group (e.g. `"settlement:1"`) using the `frozenset[str]` category system. This eliminates offset-based grouping and makes same-time-payment bugs impossible by design.
+All payments allocate funds in strict priority per installment: fine, then mora interest, then regular interest, then principal. Installment 1 is fully addressed before installment 2 receives anything. Late payments trigger two costs: a flat fine (percentage of the missed installment, calculated from the original schedule) and mora interest (daily-compounded interest for the extra days beyond the due date). A configurable `grace_period_days` delays fine application. Fine state is derived by the forward pass in `settlement_engine.compute_state`.
 
 The expected-vs-happened distinction is structural: expected schedule items use `ExpectedCashFlowEntry` (kind=EXPECTED) and recorded payments use `HappenedCashFlowEntry` (kind=HAPPENED). Categories are frozensets of string tags: `{"disbursement"}`, `{"interest"}`, `{"principal"}`, `{"fine"}`, `{"mora_interest"}`, `{"tax"}`, `{"interest", "settlement:1"}`, etc.
 
