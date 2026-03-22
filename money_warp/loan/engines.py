@@ -104,6 +104,7 @@ class LoanState:
     fines_applied: Dict[date, Money]
     fines_paid_total: Money
     last_payment_date: datetime
+    overpaid: Money
 
 
 # ------------------------------------------------------------------
@@ -398,6 +399,7 @@ def compute_state(
     last_payment_date = disbursement_date
     fines_applied: Dict[date, Money] = {}
     fines_paid_total = Money.zero()
+    overpaid = Money.zero()
     settlements: List[Settlement] = []
     allocs_by_number: Dict[int, List[Allocation]] = {}
     processed_payments: list = []
@@ -458,9 +460,10 @@ def compute_state(
 
         fines_paid_total = fines_paid_total + fine_paid
         running_principal = running_principal - principal_paid
-        if running_principal.is_negative() or (
-            running_principal.is_positive() and running_principal <= _COVERAGE_TOLERANCE
-        ):
+        if running_principal.is_negative():
+            overpaid = overpaid + Money(-running_principal.raw_amount)
+            running_principal = Money.zero()
+        elif running_principal.is_positive() and running_principal <= _COVERAGE_TOLERANCE:
             running_principal = Money.zero()
 
         for a in allocations:
@@ -486,6 +489,7 @@ def compute_state(
         fines_applied=fines_applied,
         fines_paid_total=fines_paid_total,
         last_payment_date=last_payment_date,
+        overpaid=overpaid,
     )
 
 
