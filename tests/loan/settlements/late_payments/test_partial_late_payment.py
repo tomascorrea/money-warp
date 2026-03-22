@@ -69,13 +69,13 @@ def test_p1_mora_reconciliation(partial_late_settlements):
 
 
 def test_p2_settlement_totals(partial_late_settlements):
-    """P2 pays fine for inst 2, mora accrued since P1, rest to principal."""
+    """P2 pays fine, mora, contractual interest for inst 2, and principal."""
     _, settlements = partial_late_settlements
     assert settlements[1].fine_paid == Money("6.07")
     assert settlements[1].mora_paid == Money("8.44")
-    assert settlements[1].interest_paid == Money("0.00")
-    assert settlements[1].principal_paid == Money("285.49")
-    assert settlements[1].remaining_balance == Money("526.62")
+    assert settlements[1].interest_paid == Money("6.44")
+    assert settlements[1].principal_paid == Money("279.05")
+    assert settlements[1].remaining_balance == Money("533.06")
 
 
 def test_p2_allocation_count(partial_late_settlements):
@@ -97,12 +97,12 @@ def test_p2_first_installment(partial_late_settlements):
 
 
 def test_p2_second_installment(partial_late_settlements):
-    """Inst 2 receives its fine and leftover principal."""
+    """Inst 2 receives its contractual interest, fine, and leftover principal."""
     _, settlements = partial_late_settlements
     a = settlements[1].allocations[1]
     assert a.installment_number == 2
-    assert a.principal_allocated == Money("70.61")
-    assert a.interest_allocated == Money("0.00")
+    assert a.principal_allocated == Money("64.17")
+    assert a.interest_allocated == Money("6.44")
     assert a.fine_allocated == Money("6.07")
     assert a.mora_allocated == Money("0.00")
     assert a.is_fully_covered is False

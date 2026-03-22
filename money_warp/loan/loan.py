@@ -434,13 +434,16 @@ class Loan:
 
         installments = self._build_pre_settlement_installments(principal_balance, payment_date, last_pay_date)
 
+        skipped = SettlementEngine._skipped_contractual_interest(installments, next_due, interest_date.date())
+        interest_cap = Money(interest_accrued.raw_amount + skipped.raw_amount)
+
         ending_balance = principal_balance
         fine_paid, mora_paid, interest_paid, principal_paid, _ = SettlementEngine.allocate_payment_per_installment(
             amount,
             installments,
             ending_balance,
             fine_cap=self.fine_balance,
-            interest_cap=interest_accrued,
+            interest_cap=interest_cap,
             mora_cap=mora_accrued,
         )
 
