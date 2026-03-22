@@ -11,11 +11,11 @@ from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, Pr
 from ..tax.base import BaseTax, TaxResult
 from ..time_context import TimeContext
 from ..tz import to_datetime, tz_aware
-from .engines.interest_calculator import InterestCalculator, MoraStrategy
-from .engines.settlement_engine import (
+from .engines import (
+    InterestCalculator,
     LoanState,
+    MoraStrategy,
     build_installments,
-    compute_fines_at,
     compute_state,
     covered_due_date_count,
     is_payment_late,
@@ -105,42 +105,72 @@ class Loan:
 
         total_tax = self.total_tax
         if total_tax.is_positive() and self.is_grossed_up:
-            items.append(CashFlowItem(
-                self.net_disbursement, self.disbursement_date,
-                "Loan disbursement", "disbursement",
-                kind=expected, time_context=ctx,
-            ))
+            items.append(
+                CashFlowItem(
+                    self.net_disbursement,
+                    self.disbursement_date,
+                    "Loan disbursement",
+                    "disbursement",
+                    kind=expected,
+                    time_context=ctx,
+                )
+            )
         elif total_tax.is_positive():
-            items.append(CashFlowItem(
-                self.principal, self.disbursement_date,
-                "Loan disbursement", "disbursement",
-                kind=expected, time_context=ctx,
-            ))
-            items.append(CashFlowItem(
-                Money(-total_tax.raw_amount), self.disbursement_date,
-                "Tax deducted at disbursement", "tax",
-                kind=expected, time_context=ctx,
-            ))
+            items.append(
+                CashFlowItem(
+                    self.principal,
+                    self.disbursement_date,
+                    "Loan disbursement",
+                    "disbursement",
+                    kind=expected,
+                    time_context=ctx,
+                )
+            )
+            items.append(
+                CashFlowItem(
+                    Money(-total_tax.raw_amount),
+                    self.disbursement_date,
+                    "Tax deducted at disbursement",
+                    "tax",
+                    kind=expected,
+                    time_context=ctx,
+                )
+            )
         else:
-            items.append(CashFlowItem(
-                self.principal, self.disbursement_date,
-                "Loan disbursement", "disbursement",
-                kind=expected, time_context=ctx,
-            ))
+            items.append(
+                CashFlowItem(
+                    self.principal,
+                    self.disbursement_date,
+                    "Loan disbursement",
+                    "disbursement",
+                    kind=expected,
+                    time_context=ctx,
+                )
+            )
 
         schedule = self.get_original_schedule()
         for entry in schedule:
             due_dt = to_datetime(entry.due_date)
-            items.append(CashFlowItem(
-                Money(-entry.interest_payment.raw_amount), due_dt,
-                f"Interest payment {entry.payment_number}", "interest",
-                kind=expected, time_context=ctx,
-            ))
-            items.append(CashFlowItem(
-                Money(-entry.principal_payment.raw_amount), due_dt,
-                f"Principal payment {entry.payment_number}", "principal",
-                kind=expected, time_context=ctx,
-            ))
+            items.append(
+                CashFlowItem(
+                    Money(-entry.interest_payment.raw_amount),
+                    due_dt,
+                    f"Interest payment {entry.payment_number}",
+                    "interest",
+                    kind=expected,
+                    time_context=ctx,
+                )
+            )
+            items.append(
+                CashFlowItem(
+                    Money(-entry.principal_payment.raw_amount),
+                    due_dt,
+                    f"Principal payment {entry.payment_number}",
+                    "principal",
+                    kind=expected,
+                    time_context=ctx,
+                )
+            )
 
         return CashFlow(items)
 
@@ -176,12 +206,16 @@ class Loan:
         if interest_date is None:
             interest_date = payment_date
 
-        self.cashflow.add_item(CashFlowItem(
-            amount, payment_date,
-            description or f"Payment on {payment_date.date()}", "payment",
-            time_context=self._time_ctx,
-            interest_date=interest_date,
-        ))
+        self.cashflow.add_item(
+            CashFlowItem(
+                amount,
+                payment_date,
+                description or f"Payment on {payment_date.date()}",
+                "payment",
+                time_context=self._time_ctx,
+                interest_date=interest_date,
+            )
+        )
 
         return self.settlements[-1]
 
@@ -196,8 +230,10 @@ class Loan:
         next_due = self._next_unpaid_due_date()
         interest_date = max(payment_date, to_datetime(next_due))
         return self.record_payment(
-            amount, payment_date=payment_date,
-            interest_date=interest_date, description=description,
+            amount,
+            payment_date=payment_date,
+            interest_date=interest_date,
+            description=description,
         )
 
     def anticipate_payment(
@@ -220,8 +256,10 @@ class Loan:
             self._delete_expected_items_for(installments, payment_date)
 
         return self.record_payment(
-            amount, payment_date=payment_date,
-            interest_date=payment_date, description=description,
+            amount,
+            payment_date=payment_date,
+            interest_date=payment_date,
+            description=description,
         )
 
     def calculate_anticipation(self, installments: List[int]) -> AnticipationResult:
@@ -250,18 +288,21 @@ class Loan:
     def _compute_state(self) -> LoanState:
         """Run the forward pass over all payments to derive loan state."""
         return compute_state(
-            self.principal, self._interest, self.get_original_schedule(),
-            self.due_dates, self.fine_rate, self.grace_period_days,
-            self.disbursement_date, self._payment_entries(), self.now(),
+            self.principal,
+            self._interest,
+            self.get_original_schedule(),
+            self.due_dates,
+            self.fine_rate,
+            self.grace_period_days,
+            self.disbursement_date,
+            self._payment_entries(),
+            self.now(),
             fine_observation_dates=self._fine_observation_dates,
         )
 
     def _payment_entries(self) -> list:
         """Payment CashFlowEntry objects from the cashflow, sorted by datetime."""
-        entries = [
-            e for e in self.cashflow.items()
-            if "payment" in e.category
-        ]
+        entries = [e for e in self.cashflow.items() if "payment" in e.category]
         return sorted(entries, key=lambda e: e.datetime)
 
     # ------------------------------------------------------------------
@@ -278,9 +319,13 @@ class Loan:
         """The repayment plan as Installment objects (derived from CashFlow)."""
         state = self._compute_state()
         return build_installments(
-            self.get_original_schedule(), state.settlements,
-            state.fines_applied, state.principal_balance,
-            self.now(), self._interest, state.last_payment_date,
+            self.get_original_schedule(),
+            state.settlements,
+            state.fines_applied,
+            state.principal_balance,
+            self.now(),
+            self._interest,
+            state.last_payment_date,
         )
 
     # ------------------------------------------------------------------
@@ -301,7 +346,10 @@ class Loan:
             covered = covered_due_date_count(state.principal_balance, self.get_original_schedule())
             next_due = self.due_dates[covered] if covered < len(self.due_dates) else None
             return self._interest.compute_accrued_interest(
-                days, state.principal_balance, next_due, state.last_payment_date,
+                days,
+                state.principal_balance,
+                next_due,
+                state.last_payment_date,
             )
 
         return Money.zero(), Money.zero()
@@ -321,9 +369,7 @@ class Loan:
         """Unpaid fine amount (derived from CashFlow)."""
         state = self._compute_state()
         total_fines = (
-            Money(sum(f.raw_amount for f in state.fines_applied.values()))
-            if state.fines_applied
-            else Money.zero()
+            Money(sum(f.raw_amount for f in state.fines_applied.values())) if state.fines_applied else Money.zero()
         )
         outstanding = total_fines - state.fines_paid_total
         return outstanding if outstanding.is_positive() else Money.zero()
@@ -463,7 +509,10 @@ class Loan:
     def get_original_schedule(self) -> PaymentSchedule:
         """The original amortization schedule (static, ignores payments)."""
         return self.scheduler.generate_schedule(
-            self.principal, self.interest_rate, self.due_dates, self.disbursement_date,
+            self.principal,
+            self.interest_rate,
+            self.due_dates,
+            self.disbursement_date,
         )
 
     def get_amortization_schedule(self) -> PaymentSchedule:
@@ -478,16 +527,18 @@ class Loan:
 
         for i, s in enumerate(state.settlements):
             days = (s.payment_date.date() - prev_date.date()).days
-            actual_entries.append(PaymentScheduleEntry(
-                payment_number=i + 1,
-                due_date=s.payment_date.date(),
-                days_in_period=days,
-                beginning_balance=prev_balance,
-                payment_amount=s.interest_paid + s.mora_paid + s.principal_paid,
-                principal_payment=s.principal_paid,
-                interest_payment=s.interest_paid + s.mora_paid,
-                ending_balance=s.remaining_balance,
-            ))
+            actual_entries.append(
+                PaymentScheduleEntry(
+                    payment_number=i + 1,
+                    due_date=s.payment_date.date(),
+                    days_in_period=days,
+                    beginning_balance=prev_balance,
+                    payment_amount=s.interest_paid + s.mora_paid + s.principal_paid,
+                    principal_payment=s.principal_paid,
+                    interest_payment=s.interest_paid + s.mora_paid,
+                    ending_balance=s.remaining_balance,
+                )
+            )
             prev_balance = s.remaining_balance
             prev_date = s.payment_date
 
@@ -500,22 +551,26 @@ class Loan:
             return PaymentSchedule(entries=actual_entries)
 
         projected_schedule = self.scheduler.generate_schedule(
-            state.principal_balance, self.interest_rate,
-            remaining_due_dates, state.last_payment_date,
+            state.principal_balance,
+            self.interest_rate,
+            remaining_due_dates,
+            state.last_payment_date,
         )
 
         projected_entries: List[PaymentScheduleEntry] = []
         for entry in projected_schedule:
-            projected_entries.append(PaymentScheduleEntry(
-                payment_number=len(actual_entries) + entry.payment_number,
-                due_date=entry.due_date,
-                days_in_period=entry.days_in_period,
-                beginning_balance=entry.beginning_balance,
-                payment_amount=entry.payment_amount,
-                principal_payment=entry.principal_payment,
-                interest_payment=entry.interest_payment,
-                ending_balance=entry.ending_balance,
-            ))
+            projected_entries.append(
+                PaymentScheduleEntry(
+                    payment_number=len(actual_entries) + entry.payment_number,
+                    due_date=entry.due_date,
+                    days_in_period=entry.days_in_period,
+                    beginning_balance=entry.beginning_balance,
+                    payment_amount=entry.payment_amount,
+                    principal_payment=entry.principal_payment,
+                    interest_payment=entry.interest_payment,
+                    ending_balance=entry.ending_balance,
+                )
+            )
 
         return PaymentSchedule(entries=actual_entries + projected_entries)
 
@@ -533,7 +588,9 @@ class Loan:
 
     @tz_aware
     def present_value(
-        self, discount_rate: Optional[InterestRate] = None, valuation_date: Optional[datetime] = None,
+        self,
+        discount_rate: Optional[InterestRate] = None,
+        valuation_date: Optional[datetime] = None,
     ) -> Money:
         """Present Value of the loan's expected cash flows."""
         return loan_present_value(self, discount_rate, valuation_date)

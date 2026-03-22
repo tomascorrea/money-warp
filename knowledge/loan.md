@@ -4,10 +4,10 @@ The `Loan` class models a personal loan where **everything emerges from the Cash
 
 ## Architecture
 
-The Loan delegates computation to two focused modules in `engines/`:
+The Loan delegates computation to two focused components in `engines.py`:
 
-- **`InterestCalculator`** (`engines/interest_calculator.py`) — stateless interest math (regular + mora split). Holds `interest_rate`, `mora_interest_rate`, `mora_strategy`.
-- **`settlement_engine`** (`engines/settlement_engine.py`) — a module of **pure functions** that compute all derived state. Key exports:
+- **`InterestCalculator`** — stateless interest math (regular + mora split). Holds `interest_rate`, `mora_interest_rate`, `mora_strategy`.
+- **Pure functions** — compute all derived state. Key exports:
   - `compute_state(...)` — the forward pass that produces a `LoanState` (settlements, principal balance, fines applied, fines paid total, last payment date).
   - `build_installments(...)` — builds `Installment` objects from settlements + schedule.
   - `compute_fines_at(...)` — determines which due dates should have fines applied.
@@ -16,7 +16,7 @@ The Loan delegates computation to two focused modules in `engines/`:
   - `is_payment_late(...)` — grace-period-aware lateness check.
 - **TVM functions** (`tvm.py`) — standalone `loan_present_value`, `loan_irr`, `loan_calculate_anticipation`.
 
-**Removed components:** `PaymentLedger` and `FineTracker` no longer exist. Their responsibilities were absorbed into the forward pass in `settlement_engine`.
+**Removed components:** `PaymentLedger` and `FineTracker` no longer exist. Their responsibilities were absorbed into the forward pass in `engines.py`.
 
 ### CashFlow-Emergence Philosophy
 
@@ -103,7 +103,7 @@ Installment 1 is fully addressed before installment 2 receives anything.
 
 ## Forward Pass: `compute_state`
 
-The central algorithm in `settlement_engine.compute_state`. It processes a merged timeline of payment events and fine observation dates in chronological order:
+The central algorithm in `engines.compute_state`. It processes a merged timeline of payment events and fine observation dates in chronological order:
 
 1. For each event (payment or fine observation), compute fines using only previously processed payments.
 2. For payment events:

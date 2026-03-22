@@ -23,13 +23,12 @@ money_warp/
 │   ├── credit_card.py     # CreditCard state machine
 │   └── statement.py       # Statement (frozen derived view)
 ├── loan/
-│   ├── loan.py               # Loan facade
-│   ├── interest_calculator.py # InterestCalculator (stateless rate math)
-│   ├── settlement_engine.py   # Pure functions: forward pass, fines, allocation
-│   ├── tvm.py                 # TVM standalone functions (PV, IRR, anticipation)
-│   ├── allocation.py          # Allocation dataclass (per-installment payment breakdown)
-│   ├── installment.py         # Installment dataclass
-│   └── settlement.py          # Settlement, AnticipationResult dataclasses
+│   ├── loan.py            # Loan facade
+│   ├── engines.py         # InterestCalculator + pure functions (forward pass, fines, allocation)
+│   ├── tvm.py             # TVM standalone functions (PV, IRR, anticipation)
+│   ├── allocation.py      # Allocation dataclass (per-installment payment breakdown)
+│   ├── installment.py     # Installment dataclass
+│   └── settlement.py      # Settlement, AnticipationResult dataclasses
 ├── scheduler/
 │   ├── base.py            # BaseScheduler (abstract)
 │   ├── price_scheduler.py           # PriceScheduler (French amortization)
@@ -91,8 +90,7 @@ Equality between `CashFlowItem` and `CashFlowEntry` uses Python's reflected-equa
 
 `Loan` is a facade that orchestrates three focused components:
 
-- **`InterestCalculator`** — stateless interest math (regular + mora split).
-- **`settlement_engine`** — a module of pure functions that compute all derived state: forward pass (`compute_state`), fine detection (`compute_fines_at`), per-installment allocation, and installment building.
+- **`engines.py`** — `InterestCalculator` (stateless interest math, regular + mora split) plus pure functions that compute all derived state: forward pass (`compute_state`), fine detection (`compute_fines_at`), per-installment allocation, and installment building.
 - **`tvm.py`** — standalone functions for PV, IRR, and anticipation (eliminates circular imports).
 
 `Loan.cashflow` is the single source of truth — expected schedule items and actual payment items live in one `CashFlow`. All derived state (settlements, installments, balances, fines) is computed on demand via a forward pass. Schedule generation (`generate_expected_cash_flow`, `get_original_schedule`, `get_amortization_schedule`) stays in `Loan`.
@@ -107,7 +105,7 @@ Every recorded payment carries three dates: `payment_date` (when money moved), `
 
 ### Payment Allocation, Fines, and Mora Interest
 
-All payments allocate funds in strict priority per installment: fine, then mora interest, then regular interest, then principal. Installment 1 is fully addressed before installment 2 receives anything. Late payments trigger two costs: a flat fine (percentage of the missed installment, calculated from the original schedule) and mora interest (daily-compounded interest for the extra days beyond the due date). A configurable `grace_period_days` delays fine application. Fine state is derived by the forward pass in `settlement_engine.compute_state`.
+All payments allocate funds in strict priority per installment: fine, then mora interest, then regular interest, then principal. Installment 1 is fully addressed before installment 2 receives anything. Late payments trigger two costs: a flat fine (percentage of the missed installment, calculated from the original schedule) and mora interest (daily-compounded interest for the extra days beyond the due date). A configurable `grace_period_days` delays fine application. Fine state is derived by the forward pass in `engines.compute_state`.
 
 The expected-vs-happened distinction is structural: expected schedule items use `ExpectedCashFlowEntry` (kind=EXPECTED) and recorded payments use `HappenedCashFlowEntry` (kind=HAPPENED). Categories are frozensets of string tags: `{"disbursement"}`, `{"interest"}`, `{"principal"}`, `{"fine"}`, `{"mora_interest"}`, `{"tax"}`, `{"interest", "settlement:1"}`, etc.
 
