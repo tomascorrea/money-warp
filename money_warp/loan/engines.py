@@ -6,8 +6,8 @@ schedule using a forward pass with per-installment priority:
 fine -> mora -> interest -> principal.
 """
 
-from datetime import date, datetime, timedelta
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
@@ -18,7 +18,6 @@ from ..tz import to_datetime
 from .allocation import Allocation
 from .installment import Installment
 from .settlement import Settlement
-
 
 # ===================================================================
 # Interest calculator
@@ -111,6 +110,7 @@ class LoanState:
 # Coverage
 # ------------------------------------------------------------------
 
+
 def covered_due_date_count(
     remaining_balance: Money,
     schedule: PaymentSchedule,
@@ -128,6 +128,7 @@ def covered_due_date_count(
 # ------------------------------------------------------------------
 # Fine computation
 # ------------------------------------------------------------------
+
 
 def is_payment_late(due_date: date, grace_period_days: int, as_of: datetime) -> bool:
     """Whether a payment is late considering the grace period."""
@@ -158,19 +159,13 @@ def _has_payment_near(
     if expected.is_zero():
         return False
 
-    exact = [
-        p for p in payment_entries
-        if p.datetime.date() == due_date and p.datetime <= as_of
-    ]
+    exact = [p for p in payment_entries if p.datetime.date() == due_date and p.datetime <= as_of]
     if sum((p.amount for p in exact), Money.zero()) >= (expected - _COVERAGE_TOLERANCE):
         return True
 
     window_start = to_datetime(due_date - timedelta(days=_WINDOW_DAYS_BEFORE))
     window_end = min(as_of, to_datetime(due_date + timedelta(days=_WINDOW_DAYS_AFTER)))
-    window = [
-        p for p in payment_entries
-        if window_start <= p.datetime <= window_end and p.datetime <= as_of
-    ]
+    window = [p for p in payment_entries if window_start <= p.datetime <= window_end and p.datetime <= as_of]
     return sum((p.amount for p in window), Money.zero()) >= (expected - _COVERAGE_TOLERANCE)
 
 
@@ -210,6 +205,7 @@ def compute_fines_at(
 # Skipped contractual interest
 # ------------------------------------------------------------------
 
+
 def _skipped_contractual_interest(
     installments: List[Installment],
     next_due: Optional[date],
@@ -236,6 +232,43 @@ def _skipped_contractual_interest(
 # ------------------------------------------------------------------
 # Per-installment payment allocation
 # ------------------------------------------------------------------
+
+
+def _fixup_coverage_flags(
+    allocations: List[Allocation],
+    installments: List[Installment],
+    ending_balance: Money,
+    principal_total: Money,
+) -> List[Allocation]:
+    """Mark allocations as fully covered when the loan is paid off.
+
+    After the allocation loop, if the post-payment balance is within
+    tolerance of zero, override ``is_fully_covered`` for any allocation
+    whose principal was fully allocated.
+    """
+    post_balance = ending_balance - principal_total
+    if post_balance > _COVERAGE_TOLERANCE:
+        return allocations
+
+    inst_by_number = {inst.number: inst for inst in installments}
+    fixed: List[Allocation] = []
+    for alloc in allocations:
+        if not alloc.is_fully_covered:
+            inst = inst_by_number.get(alloc.installment_number)
+            if inst is not None:
+                principal_owed = inst.expected_principal - inst.principal_paid
+                if alloc.principal_allocated >= (principal_owed - _COVERAGE_TOLERANCE):
+                    alloc = Allocation(
+                        installment_number=alloc.installment_number,
+                        principal_allocated=alloc.principal_allocated,
+                        interest_allocated=alloc.interest_allocated,
+                        mora_allocated=alloc.mora_allocated,
+                        fine_allocated=alloc.fine_allocated,
+                        is_fully_covered=True,
+                    )
+        fixed.append(alloc)
+    return fixed
+
 
 def allocate_payment_per_installment(
     amount: Money,
@@ -270,7 +303,10 @@ def allocate_payment_per_installment(
             break
 
         allocation, remaining, fine_remaining, mora_remaining, interest_remaining = inst.allocate_from_payment(
-            remaining, fine_remaining, mora_remaining, interest_remaining,
+            remaining,
+            fine_remaining,
+            mora_remaining,
+            interest_remaining,
         )
 
         if allocation.total_allocated.raw_amount <= 0:
@@ -297,33 +333,14 @@ def allocate_payment_per_installment(
         if remaining.raw_amount > 0:
             principal_total = principal_total + remaining
 
-    post_balance = ending_balance - principal_total
-    if post_balance <= _COVERAGE_TOLERANCE:
-        inst_by_number = {inst.number: inst for inst in installments}
-        fixed: List[Allocation] = []
-        for alloc in allocations:
-            if not alloc.is_fully_covered:
-                inst = inst_by_number.get(alloc.installment_number)
-                if inst is not None:
-                    principal_owed = inst.expected_principal - inst.principal_paid
-                    if alloc.principal_allocated >= (principal_owed - _COVERAGE_TOLERANCE):
-                        alloc = Allocation(
-                            installment_number=alloc.installment_number,
-                            principal_allocated=alloc.principal_allocated,
-                            interest_allocated=alloc.interest_allocated,
-                            mora_allocated=alloc.mora_allocated,
-                            fine_allocated=alloc.fine_allocated,
-                            is_fully_covered=True,
-                        )
-            fixed.append(alloc)
-        allocations = fixed
-
+    allocations = _fixup_coverage_flags(allocations, installments, ending_balance, principal_total)
     return fine_total, mora_total, interest_total, principal_total, allocations
 
 
 # ------------------------------------------------------------------
 # Installment snapshot construction
 # ------------------------------------------------------------------
+
 
 def _build_installments_snapshot(
     allocs_by_number: Dict[int, List[Allocation]],
@@ -351,12 +368,18 @@ def _build_installments_snapshot(
             if last_payment_date is not None:
                 total_days = (as_of_date.date() - last_payment_date.date()).days
                 _, accrued_mora = interest_calc.compute_accrued_interest(
-                    total_days, principal_balance, entry.due_date, last_payment_date,
+                    total_days,
+                    principal_balance,
+                    entry.due_date,
+                    last_payment_date,
                 )
             else:
                 days_overdue = (as_of_date.date() - entry.due_date).days
                 _, accrued_mora = interest_calc.compute_accrued_interest(
-                    days_overdue, principal_balance, entry.due_date, to_datetime(entry.due_date),
+                    days_overdue,
+                    principal_balance,
+                    entry.due_date,
+                    to_datetime(entry.due_date),
                 )
             expected_mora = prior_mora + accrued_mora
         else:
@@ -370,6 +393,27 @@ def _build_installments_snapshot(
 # ------------------------------------------------------------------
 # Forward pass: compute all settlements from cashflow
 # ------------------------------------------------------------------
+
+
+def _build_event_timeline(
+    payment_entries: list,
+    fine_observation_dates: Optional[List[datetime]],
+) -> List[Tuple[datetime, bool, Optional[object]]]:
+    """Merge payment events and fine observation dates into a sorted timeline.
+
+    Returns a list of ``(datetime, is_payment, payment_or_none)`` tuples
+    sorted chronologically.  Payments sort before observations at the
+    same timestamp.
+    """
+    events: List[Tuple[datetime, bool, Optional[object]]] = []
+    for payment in payment_entries:
+        events.append((payment.datetime, True, payment))
+    if fine_observation_dates:
+        for dt in fine_observation_dates:
+            events.append((dt, False, None))
+    events.sort(key=lambda e: (e[0], not e[1]))
+    return events
+
 
 def compute_state(
     principal: Money,
@@ -404,21 +448,19 @@ def compute_state(
     allocs_by_number: Dict[int, List[Allocation]] = {}
     processed_payments: list = []
 
-    events: List[Tuple[datetime, bool, Optional[object]]] = []
-    for payment in payment_entries:
-        events.append((payment.datetime, True, payment))
-    if fine_observation_dates:
-        for dt in fine_observation_dates:
-            events.append((dt, False, None))
-    events.sort(key=lambda e: (e[0], not e[1]))
+    events = _build_event_timeline(payment_entries, fine_observation_dates)
 
     for event_dt, is_payment, payment in events:
         if event_dt > as_of:
             break
 
         fines_applied = compute_fines_at(
-            event_dt, due_dates, schedule,
-            fine_rate, grace_period_days, fines_applied,
+            event_dt,
+            due_dates,
+            schedule,
+            fine_rate,
+            grace_period_days,
+            fines_applied,
             processed_payments,
         )
 
@@ -432,30 +474,37 @@ def compute_state(
         next_due = due_dates[covered] if covered < len(due_dates) else None
 
         regular, mora = interest_calc.compute_accrued_interest(
-            days, running_principal, next_due, last_payment_date,
+            days,
+            running_principal,
+            next_due,
+            last_payment_date,
         )
 
         installments = _build_installments_snapshot(
-            allocs_by_number, running_principal, payment.datetime,
-            schedule, fines_applied, interest_calc,
+            allocs_by_number,
+            running_principal,
+            payment.datetime,
+            schedule,
+            fines_applied,
+            interest_calc,
             last_payment_date=last_payment_date,
         )
 
         skipped = _skipped_contractual_interest(installments, next_due, interest_date.date())
         interest_cap = Money(regular.raw_amount + skipped.raw_amount)
 
-        total_fines_amount = (
-            Money(sum(f.raw_amount for f in fines_applied.values()))
-            if fines_applied
-            else Money.zero()
-        )
+        total_fines_amount = Money(sum(f.raw_amount for f in fines_applied.values())) if fines_applied else Money.zero()
         fine_balance = total_fines_amount - fines_paid_total
         if fine_balance.is_negative():
             fine_balance = Money.zero()
 
         fine_paid, mora_paid, interest_paid, principal_paid, allocations = allocate_payment_per_installment(
-            payment.amount, installments, running_principal,
-            fine_cap=fine_balance, interest_cap=interest_cap, mora_cap=mora,
+            payment.amount,
+            installments,
+            running_principal,
+            fine_cap=fine_balance,
+            interest_cap=interest_cap,
+            mora_cap=mora,
         )
 
         fines_paid_total = fines_paid_total + fine_paid
@@ -469,16 +518,18 @@ def compute_state(
         for a in allocations:
             allocs_by_number.setdefault(a.installment_number, []).append(a)
 
-        settlements.append(Settlement(
-            payment_amount=payment.amount,
-            payment_date=payment.datetime,
-            fine_paid=fine_paid,
-            interest_paid=interest_paid,
-            mora_paid=mora_paid,
-            principal_paid=principal_paid,
-            remaining_balance=running_principal,
-            allocations=allocations,
-        ))
+        settlements.append(
+            Settlement(
+                payment_amount=payment.amount,
+                payment_date=payment.datetime,
+                fine_paid=fine_paid,
+                interest_paid=interest_paid,
+                mora_paid=mora_paid,
+                principal_paid=principal_paid,
+                remaining_balance=running_principal,
+                allocations=allocations,
+            )
+        )
 
         last_payment_date = payment.datetime
         processed_payments.append(payment)
@@ -497,6 +548,7 @@ def compute_state(
 # Aggregate views
 # ------------------------------------------------------------------
 
+
 def build_installments(
     schedule: PaymentSchedule,
     settlements: List[Settlement],
@@ -513,7 +565,11 @@ def build_installments(
             allocs_by_number.setdefault(a.installment_number, []).append(a)
 
     return _build_installments_snapshot(
-        allocs_by_number, principal_balance, as_of,
-        schedule, fines_applied, interest_calc,
+        allocs_by_number,
+        principal_balance,
+        as_of,
+        schedule,
+        fines_applied,
+        interest_calc,
         last_payment_date=last_payment_date,
     )
