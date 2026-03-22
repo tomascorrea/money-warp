@@ -401,6 +401,11 @@ class Loan:
         """Whether the loan is fully paid off."""
         return self.current_balance.is_zero() or self.current_balance.is_negative()
 
+    @property
+    def overpaid(self) -> Money:
+        """Total amount paid beyond the loan's obligations (derived from CashFlow)."""
+        return self._compute_state().overpaid
+
     # ------------------------------------------------------------------
     # Fine-related properties and methods
     # ------------------------------------------------------------------
