@@ -5,30 +5,10 @@ from datetime import datetime
 from typing import TYPE_CHECKING, List
 
 from ..money import Money
+from .allocation import Allocation
 
 if TYPE_CHECKING:
     from .installment import Installment
-
-
-@dataclass(frozen=True)
-class SettlementAllocation:
-    """Breakdown of a payment's allocation to a single installment.
-
-    Each allocation shows how much principal, interest, mora, and fine
-    from a payment were attributed to a specific installment.
-    """
-
-    installment_number: int
-    principal_allocated: Money
-    interest_allocated: Money
-    mora_allocated: Money
-    fine_allocated: Money
-    is_fully_covered: bool
-
-    @property
-    def total_allocated(self) -> Money:
-        """Sum of all components allocated to this installment."""
-        return self.principal_allocated + self.interest_allocated + self.mora_allocated + self.fine_allocated
 
 
 @dataclass(frozen=True)
@@ -47,7 +27,7 @@ class Settlement:
     mora_paid: Money
     principal_paid: Money
     remaining_balance: Money
-    allocations: List[SettlementAllocation]
+    allocations: List[Allocation]
 
     @property
     def total_paid(self) -> Money:

@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 
-from money_warp import InterestRate, Loan, Money, Settlement, SettlementAllocation, Warp
+from money_warp import Allocation, InterestRate, Loan, Money, Settlement, Warp
 
 
 def _payment_datetime(d: date) -> datetime:
@@ -96,9 +96,9 @@ def test_settlement_allocation_installment_number(simple_loan):
     assert settlement.allocations[0].installment_number == 1
 
 
-def test_settlement_allocation_is_settlement_allocation_type(simple_loan):
+def test_settlement_allocation_is_allocation_type(simple_loan):
     settlement = simple_loan.record_payment(Money("3500"), datetime(2025, 2, 1, tzinfo=timezone.utc))
-    assert isinstance(settlement.allocations[0], SettlementAllocation)
+    assert isinstance(settlement.allocations[0], Allocation)
 
 
 # --- Single installment coverage ---

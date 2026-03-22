@@ -15,7 +15,8 @@ from ...money import Money
 from ...scheduler import PaymentSchedule
 from ...tz import to_datetime
 from ..installment import Installment
-from ..settlement import Settlement, SettlementAllocation
+from ..allocation import Allocation
+from ..settlement import Settlement
 from .interest_calculator import InterestCalculator
 
 _COVERAGE_TOLERANCE = Money("0.01")
@@ -169,7 +170,7 @@ def allocate_payment_per_installment(
     fine_cap: Money,
     interest_cap: Money,
     mora_cap: Money,
-) -> Tuple[Money, Money, Money, Money, List[SettlementAllocation]]:
+) -> Tuple[Money, Money, Money, Money, List[Allocation]]:
     """Allocate a payment across installments in priority order.
 
     Each installment is processed sequentially. Within each
@@ -188,7 +189,7 @@ def allocate_payment_per_installment(
     mora_total = Money.zero()
     interest_total = Money.zero()
     principal_total = Money.zero()
-    allocations: List[SettlementAllocation] = []
+    allocations: List[Allocation] = []
 
     for inst in installments:
         if not remaining.raw_amount:
@@ -225,14 +226,14 @@ def allocate_payment_per_installment(
     post_balance = ending_balance - principal_total
     if post_balance <= _COVERAGE_TOLERANCE:
         inst_by_number = {inst.number: inst for inst in installments}
-        fixed: List[SettlementAllocation] = []
+        fixed: List[Allocation] = []
         for alloc in allocations:
             if not alloc.is_fully_covered:
                 inst = inst_by_number.get(alloc.installment_number)
                 if inst is not None:
                     principal_owed = inst.expected_principal - inst.principal_paid
                     if alloc.principal_allocated >= (principal_owed - _COVERAGE_TOLERANCE):
-                        alloc = SettlementAllocation(
+                        alloc = Allocation(
                             installment_number=alloc.installment_number,
                             principal_allocated=alloc.principal_allocated,
                             interest_allocated=alloc.interest_allocated,
@@ -251,7 +252,7 @@ def allocate_payment_per_installment(
 # ------------------------------------------------------------------
 
 def _build_installments_snapshot(
-    allocs_by_number: Dict[int, List[SettlementAllocation]],
+    allocs_by_number: Dict[int, List[Allocation]],
     principal_balance: Money,
     as_of_date: datetime,
     schedule: PaymentSchedule,
@@ -325,7 +326,7 @@ def compute_state(
     fines_applied: Dict[date, Money] = {}
     fines_paid_total = Money.zero()
     settlements: List[Settlement] = []
-    allocs_by_number: Dict[int, List[SettlementAllocation]] = {}
+    allocs_by_number: Dict[int, List[Allocation]] = {}
     processed_payments: list = []
 
     # Build a merged timeline of payment events and fine observation points
@@ -435,7 +436,7 @@ def build_installments(
     last_payment_date: datetime,
 ) -> List[Installment]:
     """Build the installment view from settlements + schedule."""
-    allocs_by_number: Dict[int, List[SettlementAllocation]] = {}
+    allocs_by_number: Dict[int, List[Allocation]] = {}
     for settlement in settlements:
         for a in settlement.allocations:
             allocs_by_number.setdefault(a.installment_number, []).append(a)
