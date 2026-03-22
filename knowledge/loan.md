@@ -390,3 +390,23 @@ Sugar methods (`pay_installment`, `anticipate_payment`) use `self.now()` for the
 Sub-cent allocations (where `total_allocated.real_amount` rounds to zero) are included in the component totals but excluded from the `allocations` list. This ensures correct totals without creating dust entries in the per-installment breakdown.
 
 **Lesson:** `Money`'s `real_amount`-based comparisons (`is_zero`, `is_positive`, `>`, `<`) are correct for business display but dangerous in accounting loops where sub-cent values compound. Use `raw_amount` in tight allocation loops. The allocation pipeline has two audiences: the CashFlowItem totals (need full precision) and the per-installment breakdown (display-level precision is fine).
+
+### Contractual interest lost for later installments (fixed 2026-03-22)
+
+**Symptom:** When a partial payment left `_next_unpaid_due_date` stuck at D1 (because remaining principal > schedule[0].ending_balance), any subsequent payment after D1 received `interest_accrued = 0` from `compute_accrued_interest`. This zero became the `interest_cap` in `allocate_payment_per_installment`, preventing contractual interest for installments D2, D3, etc. from being allocated. The interest was permanently lost.
+
+**Root cause:** `compute_accrued_interest` only considers a single due-date boundary (`next_unpaid_due_date`). When `last_payment_date > due_date`, it returns `regular = 0` (mora only). This is correct for the one period it covers, but installments beyond that boundary have their own contractual interest obligations that were never captured in any `interest_cap`.
+
+**Fix (two sites):**
+
+1. **`Loan.record_payment`**: After building the installment snapshot, compute a `skipped_contractual` sum — the total unpaid contractual interest for installments whose due dates fall strictly after `next_due` and on or before `interest_date`. Set `interest_cap = interest_accrued + skipped_contractual`. This preserves early-payment discounts (no installments are "skipped" when paying early/on-time) while ensuring later periods' contractual interest is included for late payments.
+
+2. **`SettlementEngine.compute_settlement`**: The reconstruction phase must use the same effective `interest_cap` as the live allocation to maintain the reconciliation invariant. Recompute `interest_accrued` and `skipped_contractual` from the snapshot data and pass the result as `interest_cap_override` to `build_settlement_allocations`.
+
+The helper `SettlementEngine._skipped_contractual_interest(installments, next_due, cutoff)` is shared by both sites.
+
+**Why the condition is `inst.due_date > next_due`** (strict inequality): The installment AT `next_due` is already handled by `compute_accrued_interest` — its regular interest is either computed (when `regular_days > 0`) or intentionally zero (early payment discount). Only installments *beyond* that boundary are "skipped."
+
+**Lesson:** When a financial engine uses a single-period boundary to compute an aggregate (like interest caps), verify that multi-period scenarios don't leave some periods uncounted. A global cap that combines the current period's accrual with the sum of skipped periods' contractual obligations avoids the gap.
+
+**Follow-up (out of scope):** `_accrued_interest_components()` (used by `interest_balance` / `mora_interest_balance`) has the same single-due-date limitation, meaning balance display can show 0 interest when contractual interest is owed. This is display-only and does not cause data loss.

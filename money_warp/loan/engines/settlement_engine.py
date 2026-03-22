@@ -47,6 +47,34 @@ class SettlementEngine:
         return covered
 
     # ------------------------------------------------------------------
+    # Contractual interest for skipped periods
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _skipped_contractual_interest(
+        installments: List[Installment],
+        next_due: Optional[date],
+        cutoff: date,
+    ) -> Money:
+        """Sum unpaid contractual interest for installments past *next_due*.
+
+        Returns the total ``expected_interest - interest_paid`` for every
+        installment whose due date falls strictly after *next_due* and on
+        or before *cutoff*.  These are periods that
+        :meth:`InterestCalculator.compute_accrued_interest` cannot reach
+        because it only considers one due-date boundary.
+        """
+        if next_due is None:
+            return Money.zero()
+        total = Money.zero()
+        for inst in installments:
+            if inst.due_date > next_due and inst.due_date <= cutoff:
+                owed = inst.expected_interest - inst.interest_paid
+                if owed.is_positive():
+                    total = total + owed
+        return total
+
+    # ------------------------------------------------------------------
     # Per-installment payment allocation
     # ------------------------------------------------------------------
 
@@ -184,6 +212,15 @@ class SettlementEngine:
             fines_applied,
             last_payment_date=last_pay_date,
         )
+
+        covered = self.covered_due_date_count(snap.beginning_balance, schedule)
+        next_due = schedule[covered].due_date if covered < len(schedule) else None
+        interest_accrued, _ = self._interest.compute_accrued_interest(
+            snap.days_in_period, snap.beginning_balance, next_due, last_pay_date
+        )
+        skipped_contractual = self._skipped_contractual_interest(installments, next_due, snap.payment_date.date())
+        interest_cap = Money(interest_accrued.raw_amount + skipped_contractual.raw_amount)
+
         allocations = self.build_settlement_allocations(
             installments,
             fine_paid,
@@ -191,6 +228,7 @@ class SettlementEngine:
             interest_paid,
             principal_paid,
             snap.ending_balance,
+            interest_cap_override=interest_cap,
         )
 
         return Settlement(
@@ -212,6 +250,7 @@ class SettlementEngine:
         interest_paid: Money,
         principal_paid: Money,
         ending_balance: Money,
+        interest_cap_override: Optional[Money] = None,
     ) -> List[SettlementAllocation]:
         """Reconstruct per-installment allocations from recorded totals.
 
@@ -219,14 +258,20 @@ class SettlementEngine:
         that reconstruction and live allocation are always consistent.
         The recorded totals serve as caps so that fines/interest/mora
         applied by *later* payments don't leak into earlier settlements.
+
+        When *interest_cap_override* is provided it replaces the default
+        ``interest_paid`` cap, ensuring the reconstruction uses the same
+        effective cap as the live allocation in :meth:`Loan.record_payment`.
         """
         payment_amount = fine_paid + mora_paid + interest_paid + principal_paid
+        interest_cap = interest_cap_override if interest_cap_override is not None else interest_paid
+
         _, _, _, _, allocations = self.allocate_payment_per_installment(
             payment_amount,
             installments,
             ending_balance,
             fine_cap=fine_paid,
-            interest_cap=interest_paid,
+            interest_cap=interest_cap,
             mora_cap=mora_paid,
         )
         return allocations

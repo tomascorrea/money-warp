@@ -72,12 +72,12 @@ def test_p1_second_installment(late_cross_settlements):
 
 
 def test_p2_settlement_totals(late_cross_settlements):
-    """P2 has fines for 2 due dates, mora, and pays off the loan."""
+    """P2 has fines for 2 due dates, mora, contractual interest for inst 3, and pays off the loan."""
     _, settlements = late_cross_settlements
     assert settlements[1].fine_paid == Money("12.15")
     assert settlements[1].mora_paid == Money("7.20")
-    assert settlements[1].interest_paid == Money("2.06")
-    assert settlements[1].principal_paid == Money("478.60")
+    assert settlements[1].interest_paid == Money("5.64")
+    assert settlements[1].principal_paid == Money("475.02")
     assert settlements[1].remaining_balance == Money("0.00")
 
 
@@ -88,12 +88,12 @@ def test_p2_allocation_count(late_cross_settlements):
 
 
 def test_p2_second_installment(late_cross_settlements):
-    """Inst 2 gets its fine, mora, interest, and remaining principal — covered."""
+    """Inst 2 gets its fine, mora, contractual interest, and remaining principal — covered."""
     _, settlements = late_cross_settlements
     a = settlements[1].allocations[0]
     assert a.installment_number == 2
     assert a.principal_allocated == Money("112.06")
-    assert a.interest_allocated == Money("2.06")
+    assert a.interest_allocated == Money("5.64")
     assert a.fine_allocated == Money("6.07")
     assert a.mora_allocated == Money("7.20")
     assert a.is_fully_covered is True
