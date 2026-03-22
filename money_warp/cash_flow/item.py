@@ -45,6 +45,7 @@ class CashFlowItem:
         entry: Optional[CashFlowEntry] = None,
         time_context: Optional[TimeContext] = None,
         effective_date: Optional["datetime"] = None,
+        interest_date: Optional["datetime"] = None,
     ) -> None:
         if entry is not None:
             initial = entry
@@ -58,6 +59,7 @@ class CashFlowItem:
                 datetime=datetime,
                 description=description,
                 category=_normalize_category(category),
+                interest_date=interest_date,
             )
         else:
             raise TypeError(
@@ -121,6 +123,11 @@ class CashFlowItem:
     def kind(self) -> CashFlowType:
         entry = self._require_resolved()
         return entry.kind
+
+    @property
+    def interest_date(self) -> Optional["datetime"]:
+        entry = self._require_resolved()
+        return entry.interest_date
 
     # ------------------------------------------------------------------
     # Delegated helpers

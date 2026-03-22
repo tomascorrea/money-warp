@@ -42,12 +42,17 @@ class CashFlowEntry(ABC):
 
     ``category`` is a frozenset of string tags. A single string is
     normalized to ``frozenset({string})`` by :class:`CashFlowItem`.
+
+    ``interest_date`` is an optional secondary date used by loan payments
+    to indicate the cutoff for interest accrual. When ``None``, the
+    entry's ``datetime`` is used as the interest accrual cutoff.
     """
 
     amount: Money
     datetime: datetime
     description: Optional[str] = None
     category: FrozenSet[str] = frozenset()
+    interest_date: Optional[datetime] = None
 
     @property
     @abstractmethod
