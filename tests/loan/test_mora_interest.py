@@ -19,11 +19,10 @@ def test_late_payment_produces_separate_mora_interest_item():
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("10500.00"))
-        interest_items = [p for p in warped._ledger.all_payment_items if "interest" in p.category]
-        mora_items = [p for p in warped._ledger.all_payment_items if "mora_interest" in p.category]
+        settlement = warped.settlements[-1]
 
-    assert len(interest_items) == 1
-    assert len(mora_items) == 1
+    assert settlement.interest_paid != Money.zero()
+    assert settlement.mora_paid != Money.zero()
 
 
 def test_mora_interest_equals_difference_between_total_and_regular():
@@ -42,11 +41,10 @@ def test_mora_interest_equals_difference_between_total_and_regular():
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("10500.00"))
-        interest_items = [p for p in warped._ledger.all_payment_items if "interest" in p.category]
-        mora_items = [p for p in warped._ledger.all_payment_items if "mora_interest" in p.category]
+        settlement = warped.settlements[-1]
 
-    assert interest_items[0].amount == Money(regular_interest)
-    assert mora_items[0].amount == Money(expected_mora)
+    assert settlement.interest_paid == Money(regular_interest)
+    assert settlement.mora_paid == Money(expected_mora)
 
 
 def test_regular_interest_matches_scheduled_interest():
@@ -62,9 +60,9 @@ def test_regular_interest_matches_scheduled_interest():
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("10500.00"))
-        interest_items = [p for p in warped._ledger.all_payment_items if "interest" in p.category]
+        settlement = warped.settlements[-1]
 
-    assert interest_items[0].amount == scheduled_interest
+    assert settlement.interest_paid == scheduled_interest
 
 
 @pytest.mark.parametrize(
@@ -87,10 +85,8 @@ def test_total_interest_on_late_payment_matches_manual_calculation(late_days):
 
     with Warp(loan, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
-        all_interest = [
-            p for p in warped._ledger.all_payment_items if not p.category.isdisjoint({"interest", "mora_interest"})
-        ]
-        total_interest = sum((p.amount for p in all_interest), Money.zero())
+        settlement = warped.settlements[-1]
+        total_interest = settlement.interest_paid + settlement.mora_paid
 
     assert total_interest == Money(expected_total)
 
@@ -106,11 +102,10 @@ def test_on_time_payment_produces_no_mora_interest_item():
 
     with Warp(loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("10500.00"))
-        interest_items = [p for p in warped._ledger.all_payment_items if "interest" in p.category]
-        mora_items = [p for p in warped._ledger.all_payment_items if "mora_interest" in p.category]
+        settlement = warped.settlements[-1]
 
-    assert len(interest_items) == 1
-    assert len(mora_items) == 0
+    assert settlement.interest_paid != Money.zero()
+    assert settlement.mora_paid == Money.zero()
 
 
 def test_early_payment_produces_no_mora_interest_item():
@@ -124,9 +119,9 @@ def test_early_payment_produces_no_mora_interest_item():
 
     with Warp(loan, datetime(2025, 1, 15, tzinfo=timezone.utc)) as warped:
         warped.anticipate_payment(Money("5000.00"))
-        mora_items = [p for p in warped._ledger.all_payment_items if "mora_interest" in p.category]
+        settlement = warped.settlements[-1]
 
-    assert len(mora_items) == 0
+    assert settlement.mora_paid == Money.zero()
 
 
 def test_on_time_interest_unchanged():
@@ -144,9 +139,9 @@ def test_on_time_interest_unchanged():
 
     with Warp(loan, due_date) as warped:
         warped.pay_installment(Money("10500.00"))
-        interest_items = [p for p in warped._ledger.all_payment_items if "interest" in p.category]
+        settlement = warped.settlements[-1]
 
-    assert interest_items[0].amount == Money(expected_interest)
+    assert settlement.interest_paid == Money(expected_interest)
 
 
 # --- Custom mora interest rate tests ---
@@ -198,11 +193,10 @@ def test_on_time_payment_unaffected_by_custom_mora_rate():
 
     with Warp(loan, due_date) as warped:
         warped.pay_installment(Money("10500.00"))
-        interest_items = [p for p in warped._ledger.all_payment_items if "interest" in p.category]
-        mora_items = [p for p in warped._ledger.all_payment_items if "mora_interest" in p.category]
+        settlement = warped.settlements[-1]
 
-    assert interest_items[0].amount == Money(expected_interest)
-    assert len(mora_items) == 0
+    assert settlement.interest_paid == Money(expected_interest)
+    assert settlement.mora_paid == Money.zero()
 
 
 def test_mora_with_custom_rate_compound_strategy():
@@ -235,9 +229,9 @@ def test_mora_with_custom_rate_compound_strategy():
 
     with Warp(loan, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
-        mora_items = [p for p in warped._ledger.all_payment_items if "mora_interest" in p.category]
+        settlement = warped.settlements[-1]
 
-    assert mora_items[0].amount == Money(expected_mora)
+    assert settlement.mora_paid == Money(expected_mora)
 
 
 def test_mora_with_custom_rate_simple_strategy():
@@ -264,9 +258,9 @@ def test_mora_with_custom_rate_simple_strategy():
 
     with Warp(loan, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
-        mora_items = [p for p in warped._ledger.all_payment_items if "mora_interest" in p.category]
+        settlement = warped.settlements[-1]
 
-    assert mora_items[0].amount == Money(expected_mora)
+    assert settlement.mora_paid == Money(expected_mora)
 
 
 def test_simple_vs_compound_mora_compound_produces_more():
@@ -297,11 +291,11 @@ def test_simple_vs_compound_mora_compound_produces_more():
 
     with Warp(loan_compound, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
-        mora_compound = [p for p in warped._ledger.all_payment_items if "mora_interest" in p.category][0].amount
+        mora_compound = warped.settlements[-1].mora_paid
 
     with Warp(loan_simple, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
-        mora_simple = [p for p in warped._ledger.all_payment_items if "mora_interest" in p.category][0].amount
+        mora_simple = warped.settlements[-1].mora_paid
 
     assert mora_compound > mora_simple
 
@@ -328,9 +322,9 @@ def test_regular_interest_unchanged_regardless_of_mora_rate():
 
     with Warp(loan, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
-        interest_items = [p for p in warped._ledger.all_payment_items if "interest" in p.category]
+        settlement = warped.settlements[-1]
 
-    assert interest_items[0].amount == Money(expected_regular)
+    assert settlement.interest_paid == Money(expected_regular)
 
 
 @pytest.mark.parametrize(
@@ -379,10 +373,8 @@ def test_total_interest_with_custom_mora_rate_matches_manual(mora_rate_str, stra
 
     with Warp(loan, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
-        all_interest = [
-            p for p in warped._ledger.all_payment_items if not p.category.isdisjoint({"interest", "mora_interest"})
-        ]
-        total_interest = sum((p.amount for p in all_interest), Money.zero())
+        settlement = warped.settlements[-1]
+        total_interest = settlement.interest_paid + settlement.mora_paid
 
     assert total_interest == Money(expected_total)
 

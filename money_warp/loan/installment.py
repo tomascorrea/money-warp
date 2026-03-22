@@ -18,9 +18,8 @@ class Installment:
     Represents the borrower's obligation for one period: what is expected,
     what has actually been paid, and the detailed per-payment allocations.
 
-    Installments are consequences of the loan -- they describe HOW the
-    borrower repays, not what defines the loan itself. The Loan builds
-    these on demand as a live snapshot reflecting the current time context.
+    Installments are derived views -- the Loan builds them on demand
+    from the CashFlow and the schedule.
     """
 
     number: int
@@ -63,21 +62,8 @@ class Installment:
         each capped by both the installment's remaining obligation and
         the corresponding running cap.
 
-        The running caps prevent over-allocation: during live allocation
-        they reflect the loan-level accrual (e.g. the interest discount
-        for early payments); during reconstruction they match the
-        recorded CashFlowItem totals.
-
-        Args:
-            remaining: Unallocated portion of the payment.
-            fine_remaining: Remaining fine cap across all installments.
-            mora_remaining: Remaining mora cap across all installments.
-            interest_remaining: Remaining interest cap across all installments.
-
-        Returns:
-            ``(SettlementAllocation, updated_remaining,
-            updated_fine_remaining, updated_mora_remaining,
-            updated_interest_remaining)``.
+        The running caps prevent over-allocation: they match the
+        loan-level accrual computed during the forward pass.
         """
         fine_owed = self.expected_fine - self.fine_paid
         fine_alloc = Money(min(fine_owed.raw_amount, remaining.raw_amount, fine_remaining.raw_amount))
@@ -121,14 +107,7 @@ class Installment:
         expected_mora: Money,
         expected_fine: Money,
     ) -> "Installment":
-        """Build an Installment from a scheduler's PaymentScheduleEntry.
-
-        Args:
-            entry: The schedule entry from the scheduler.
-            allocations: SettlementAllocations attributed to this installment.
-            expected_mora: Mora interest owed for this installment.
-            expected_fine: Fine amount owed for this installment.
-        """
+        """Build an Installment from a scheduler's PaymentScheduleEntry."""
         principal_paid = Money(sum(a.principal_allocated.raw_amount for a in allocations))
         interest_paid = Money(sum(a.interest_allocated.raw_amount for a in allocations))
         mora_paid = Money(sum(a.mora_allocated.raw_amount for a in allocations))

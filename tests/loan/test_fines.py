@@ -235,9 +235,8 @@ def test_loan_record_payment_allocates_to_fines_first():
     loan.record_payment(payment_amount, datetime(2024, 2, 6, tzinfo=timezone.utc))
 
     # Check that payment went to fines
-    fine_payments = [p for p in loan._ledger.actual_payment_items if "fine" in p.category]
-    assert len(fine_payments) == 1
-    assert fine_payments[0].amount == payment_amount
+    settlement = loan.settlements[-1]
+    assert settlement.fine_paid == payment_amount
 
 
 def test_loan_record_payment_allocates_fines_then_principal():
@@ -262,13 +261,9 @@ def test_loan_record_payment_allocates_fines_then_principal():
     loan.record_payment(payment_amount, datetime(2024, 2, 6, tzinfo=timezone.utc))
 
     # Check allocations
-    fine_payments = [p for p in loan._ledger.actual_payment_items if "fine" in p.category]
-    principal_payments = [p for p in loan._ledger.actual_payment_items if "principal" in p.category]
-
-    assert len(fine_payments) == 1
-    assert fine_payments[0].amount == total_fines
-    assert len(principal_payments) == 1
-    assert principal_payments[0].amount == Money("200")
+    settlement = loan.settlements[-1]
+    assert settlement.fine_paid == total_fines
+    assert settlement.principal_paid == Money("200")
 
 
 def test_loan_current_balance_includes_fine_balance():
@@ -385,16 +380,11 @@ def test_pay_installment_late_triggers_fines_and_extra_interest():
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("11000.00"))
-        fine_items = [p for p in warped._ledger.all_payment_items if "fine" in p.category]
-        interest_items = [p for p in warped._ledger.all_payment_items if "interest" in p.category]
-        mora_items = [p for p in warped._ledger.all_payment_items if "mora_interest" in p.category]
+        settlement = warped.settlements[-1]
 
-    assert len(fine_items) == 1
-    assert fine_items[0].amount > Money.zero()
-    assert len(interest_items) == 1
-    assert interest_items[0].amount > Money.zero()
-    assert len(mora_items) == 1
-    assert mora_items[0].amount > Money.zero()
+    assert settlement.fine_paid > Money.zero()
+    assert settlement.interest_paid > Money.zero()
+    assert settlement.mora_paid > Money.zero()
 
 
 # --- Late overpayment covering multiple installments ---
@@ -429,9 +419,8 @@ def test_late_overpayment_fine_equals_two_percent_of_scheduled_payment():
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("7000.00"))
-        fine_items = [p for p in warped._ledger.all_payment_items if "fine" in p.category]
 
-    assert fine_items[0].amount == expected_fine
+    assert warped.settlements[-1].fine_paid == expected_fine
 
 
 def test_late_overpayment_total_interest_for_45_days():
@@ -453,10 +442,8 @@ def test_late_overpayment_total_interest_for_45_days():
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("7000.00"))
-        interest_items = [
-            p for p in warped._ledger.all_payment_items if not p.category.isdisjoint({"interest", "mora_interest"})
-        ]
-        total_interest = sum((p.amount for p in interest_items), Money.zero())
+        settlement = warped.settlements[-1]
+        total_interest = settlement.interest_paid + settlement.mora_paid
 
     assert total_interest == Money(expected_total)
 
@@ -483,9 +470,8 @@ def test_late_overpayment_principal_is_remainder_after_fine_and_interest():
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("7000.00"))
-        principal_items = [p for p in warped._ledger.all_payment_items if "principal" in p.category]
 
-    assert principal_items[0].amount == Money(expected_principal)
+    assert warped.settlements[-1].principal_paid == Money(expected_principal)
 
 
 def test_late_overpayment_ending_balance_in_actual_entry():
@@ -511,9 +497,8 @@ def test_late_overpayment_ending_balance_in_actual_entry():
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("7000.00"))
-        entry = warped._ledger.actual_schedule_entries()[-1]
 
-    assert entry.ending_balance == Money(expected_ending)
+    assert warped.settlements[-1].remaining_balance == Money(expected_ending)
 
 
 def test_late_overpayment_covers_two_installments():
