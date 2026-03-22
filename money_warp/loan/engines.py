@@ -458,7 +458,9 @@ def compute_state(
 
         fines_paid_total = fines_paid_total + fine_paid
         running_principal = running_principal - principal_paid
-        if running_principal.is_negative():
+        if running_principal.is_negative() or (
+            running_principal.is_positive() and running_principal <= _COVERAGE_TOLERANCE
+        ):
             running_principal = Money.zero()
 
         for a in allocations:
