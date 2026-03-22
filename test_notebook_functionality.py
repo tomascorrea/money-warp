@@ -67,7 +67,7 @@ def test_payment_recording(loan):
     print(f"   Balance Reduction: ${(initial_balance - new_balance).real_amount:,.2f}")
 
     # Check payment history
-    payments = loan._actual_payments
+    payments = loan._ledger.actual_payment_items
     print(f"   Payment History: {len(payments)} payments")
     for payment in payments:
         print(

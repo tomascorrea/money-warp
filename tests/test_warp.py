@@ -125,10 +125,10 @@ def test_warp_filters_future_payments(sample_loan):
 
     with Warp(sample_loan, target_date) as warped_loan:
         # Should only have the first payment
-        assert len(warped_loan._actual_payments) == 2  # Interest + principal portions of first payment
+        assert len(warped_loan._ledger.actual_payment_items) == 2  # Interest + principal portions of first payment
 
         # All payments should be before or on target date
-        for payment in warped_loan._actual_payments:
+        for payment in warped_loan._ledger.actual_payment_items:
             assert payment.datetime <= target_date
 
 
@@ -186,10 +186,10 @@ def test_warp_to_past_ignores_future_payments():
     # Warp to middle date
     with Warp(loan, datetime(2024, 2, 5, tzinfo=timezone.utc)) as warped_loan:
         # Should only have first payment (2 items: interest + principal)
-        assert len(warped_loan._actual_payments) == 2
+        assert len(warped_loan._ledger.actual_payment_items) == 2
 
         # Check that it's the first payment
-        payment_dates = [p.datetime for p in warped_loan._actual_payments]
+        payment_dates = [p.datetime for p in warped_loan._ledger.actual_payment_items]
         assert all(d == datetime(2024, 1, 10, tzinfo=timezone.utc) for d in payment_dates)
 
 
@@ -210,7 +210,7 @@ def test_warp_to_future_keeps_all_past_payments():
 
     # Warp to future date — both past payments must be visible (5 items: 2 + 3)
     with Warp(loan, datetime(2025, 1, 1, tzinfo=timezone.utc)) as warped_loan:
-        assert len(warped_loan._actual_payments) == 5
+        assert len(warped_loan._ledger.actual_payment_items) == 5
 
 
 # String representations

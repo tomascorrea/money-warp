@@ -147,26 +147,6 @@ class Loan:
         self._tax_cache: Optional[Dict[str, TaxResult]] = None
 
     @property
-    def _all_payments(self) -> List:
-        """All payment entries (backward-compat, delegates to ledger)."""
-        return self._ledger.all_payment_items
-
-    @property
-    def _actual_payments(self) -> List:
-        """Payment entries visible at the current time (backward-compat)."""
-        return self._ledger.actual_payment_items
-
-    @property
-    def _actual_schedule_entries(self) -> List[PaymentScheduleEntry]:
-        """Schedule entries derived from ledger snapshots (backward-compat)."""
-        return self._ledger.actual_schedule_entries()
-
-    @property
-    def _actual_payment_datetimes(self) -> List[datetime]:
-        """Payment datetimes derived from ledger snapshots (backward-compat)."""
-        return self._ledger.actual_payment_datetimes()
-
-    @property
     def principal_balance(self) -> Money:
         """Get the current principal balance (original principal minus principal payments)."""
         return self._ledger.principal_balance(self.principal)
@@ -185,7 +165,7 @@ class Loan:
                 due_date = self._next_unpaid_due_date()
             except ValueError:
                 due_date = None
-            return self._compute_accrued_interest(days, principal_bal, due_date, self.last_payment_date)
+            return self._interest.compute_accrued_interest(days, principal_bal, due_date, self.last_payment_date)
 
         return Money.zero(), Money.zero()
 
@@ -239,7 +219,7 @@ class Loan:
     @property
     def fine_balance(self) -> Money:
         """Unpaid fine amount (total fines applied minus fines paid)."""
-        return self._fines.fine_balance(self._actual_payments)
+        return self._fines.fine_balance(self._ledger.actual_payment_items)
 
     @property
     def tax_amounts(self) -> Dict[str, TaxResult]:
@@ -278,12 +258,9 @@ class Loan:
         """Hook called by Warp after overriding TimeContext."""
         self.calculate_late_fines()
 
-    @tz_aware
-    def days_since_last_payment(self, as_of_date: Optional[datetime] = None) -> int:
-        """Get the number of days since the last payment as of a given date (defaults to current time)."""
-        if as_of_date is None:
-            as_of_date = self.now()
-        return (as_of_date.date() - self.last_payment_date.date()).days
+    def days_since_last_payment(self) -> int:
+        """Get the number of days since the last payment (Warp-aware via TimeContext)."""
+        return (self.now().date() - self.last_payment_date.date()).days
 
     def get_expected_payment_amount(self, due_date: date) -> Money:
         """Get the expected payment amount for a specific due date from the original schedule."""
@@ -297,7 +274,7 @@ class Loan:
     def calculate_late_fines(self, as_of_date: Optional[datetime] = None) -> Money:
         """Calculate and apply late payment fines for any new late payments."""
         return self._fines.calculate_late_fines(
-            self.due_dates, self.get_original_schedule(), self._all_payments, as_of=as_of_date
+            self.due_dates, self.get_original_schedule(), self._ledger.all_payment_items, as_of=as_of_date
         )
 
     @tz_aware
@@ -404,22 +381,6 @@ class Loan:
 
         return CashFlow(items)
 
-    def _compute_interest_snapshot(self, payment_date: datetime, interest_date: datetime) -> tuple:
-        """Delegate to PaymentLedger."""
-        return self._ledger.compute_interest_snapshot(
-            payment_date, interest_date, self.principal, self.disbursement_date
-        )
-
-    def _compute_accrued_interest(
-        self,
-        days: int,
-        principal_balance: Money,
-        due_date: Optional[date],
-        last_payment_date: Optional[datetime],
-    ) -> tuple:
-        """Delegate to InterestCalculator."""
-        return self._interest.compute_accrued_interest(days, principal_balance, due_date, last_payment_date)
-
     @tz_aware
     def record_payment(
         self,
@@ -458,14 +419,16 @@ class Loan:
 
         self.calculate_late_fines(payment_date)
 
-        days, principal_balance, last_pay_date = self._compute_interest_snapshot(payment_date, interest_date)
+        days, principal_balance, last_pay_date = self._ledger.compute_interest_snapshot(
+            payment_date, interest_date, self.principal, self.disbursement_date
+        )
 
         try:
             next_due = self._next_unpaid_due_date()
         except ValueError:
             next_due = None
 
-        interest_accrued, mora_accrued = self._compute_accrued_interest(
+        interest_accrued, mora_accrued = self._interest.compute_accrued_interest(
             days, principal_balance, next_due, last_pay_date
         )
 
@@ -493,12 +456,17 @@ class Loan:
         )
 
         allocs_by_number: Dict[int, List[SettlementAllocation]] = {}
+        schedule = self.get_original_schedule()
         for i in range(settlement_num - 1):
-            prev = self._compute_settlement(i, allocs_by_number)
+            prev = self._settlements_engine.compute_settlement(
+                i, allocs_by_number, self._ledger, schedule, self.fines_applied, self.disbursement_date
+            )
             for a in prev.allocations:
                 allocs_by_number.setdefault(a.installment_number, []).append(a)
 
-        return self._compute_settlement(settlement_num - 1, allocs_by_number)
+        return self._settlements_engine.compute_settlement(
+            settlement_num - 1, allocs_by_number, self._ledger, schedule, self.fines_applied, self.disbursement_date
+        )
 
     def _build_pre_settlement_installments(
         self,
@@ -513,8 +481,11 @@ class Loan:
         determine per-installment obligations.
         """
         allocs_by_number: Dict[int, List[SettlementAllocation]] = {}
+        schedule = self.get_original_schedule()
         for i in range(self._ledger.settlement_count):
-            prev = self._compute_settlement(i, allocs_by_number)
+            prev = self._settlements_engine.compute_settlement(
+                i, allocs_by_number, self._ledger, schedule, self.fines_applied, self.disbursement_date
+            )
             for a in prev.allocations:
                 allocs_by_number.setdefault(a.installment_number, []).append(a)
 
@@ -619,21 +590,6 @@ class Loan:
                     item.delete(effective_date)
                     break
 
-    def _compute_settlement(
-        self,
-        entry_index: int,
-        allocations_by_number: Dict[int, List[SettlementAllocation]],
-    ) -> Settlement:
-        """Delegate to SettlementEngine."""
-        return self._settlements_engine.compute_settlement(
-            entry_index,
-            allocations_by_number,
-            self._ledger,
-            self.get_original_schedule(),
-            self.fines_applied,
-            self.disbursement_date,
-        )
-
     @property
     def settlements(self) -> List[Settlement]:
         """All settlements made on this loan (Warp-aware)."""
@@ -704,7 +660,7 @@ class Loan:
                 )
             )
 
-        for payment in self._actual_payments:
+        for payment in self._ledger.actual_payment_items:
             items.append(
                 CashFlowItem(
                     -payment.amount,
@@ -744,10 +700,10 @@ class Loan:
         Returns:
             PaymentSchedule with past entries followed by projected future entries
         """
-        if not self._actual_schedule_entries:
+        if not self._ledger.actual_schedule_entries():
             return self.get_original_schedule()
 
-        actual_entries = list(self._actual_schedule_entries)
+        actual_entries = list(self._ledger.actual_schedule_entries())
         covered = self._covered_due_date_count()
 
         remaining_due_dates = self.due_dates[covered:]
@@ -758,7 +714,7 @@ class Loan:
         if remaining_principal.is_zero() or remaining_principal.is_negative():
             return PaymentSchedule(entries=actual_entries)
 
-        last_payment_date = self._actual_payment_datetimes[-1]
+        last_payment_date = self._ledger.actual_payment_datetimes()[-1]
         projected_schedule = self.scheduler.generate_schedule(
             remaining_principal,
             self.interest_rate,
