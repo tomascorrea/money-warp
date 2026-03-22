@@ -1,23 +1,96 @@
-"""Settlement computation from cashflow data.
+"""Stateless interest computation and settlement logic.
 
-All allocation emerges from the CashFlow + schedule. Nothing is
-decomposed or stored at payment time. The forward pass through
-payments replicates the financial allocation algorithm (per-installment
-priority: fine -> mora -> interest -> principal) on demand.
+Interest calculation splits accrued interest into regular and mora
+components.  Settlement computation replays payments against the
+schedule using a forward pass with per-installment priority:
+fine -> mora -> interest -> principal.
 """
 
 from datetime import date, datetime, timedelta
 from dataclasses import dataclass
+from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
-from ...interest_rate import InterestRate
-from ...money import Money
-from ...scheduler import PaymentSchedule
-from ...tz import to_datetime
-from ..installment import Installment
-from ..allocation import Allocation
-from ..settlement import Settlement
-from .interest_calculator import InterestCalculator
+from ..interest_rate import InterestRate
+from ..money import Money
+from ..scheduler import PaymentSchedule
+from ..tz import to_datetime
+from .allocation import Allocation
+from .installment import Installment
+from .settlement import Settlement
+
+
+# ===================================================================
+# Interest calculator
+# ===================================================================
+
+
+class MoraStrategy(Enum):
+    """Strategy for computing mora (late) interest.
+
+    SIMPLE: mora rate is applied to the outstanding principal only.
+    COMPOUND: mora rate is applied to principal + accrued regular interest.
+    """
+
+    SIMPLE = "simple"
+    COMPOUND = "compound"
+
+
+class InterestCalculator:
+    """Pure interest math — no mutable state, no time context.
+
+    Holds three immutable rate parameters and computes accrued interest
+    split into regular and mora components.
+    """
+
+    def __init__(
+        self,
+        interest_rate: InterestRate,
+        mora_interest_rate: InterestRate,
+        mora_strategy: MoraStrategy = MoraStrategy.COMPOUND,
+    ) -> None:
+        self.interest_rate = interest_rate
+        self.mora_interest_rate = mora_interest_rate
+        self.mora_strategy = mora_strategy
+
+    def compute_accrued_interest(
+        self,
+        days: int,
+        principal_balance: Money,
+        due_date: Optional[date] = None,
+        last_payment_date: Optional[datetime] = None,
+    ) -> Tuple[Money, Money]:
+        """Compute accrued interest split into regular and mora components.
+
+        Returns (regular_accrued, mora_accrued). All interest is regular when
+        due_date is not provided or the payment is not late. Uses
+        ``mora_interest_rate`` and ``mora_strategy`` for the mora portion.
+        """
+        if due_date is None or last_payment_date is None:
+            return self.interest_rate.accrue(principal_balance, days), Money.zero()
+
+        regular_days = (due_date - last_payment_date.date()).days
+
+        if regular_days <= 0:
+            return Money.zero(), self.mora_interest_rate.accrue(principal_balance, days)
+
+        if regular_days >= days:
+            return self.interest_rate.accrue(principal_balance, days), Money.zero()
+
+        mora_days = days - regular_days
+        regular_accrued = self.interest_rate.accrue(principal_balance, regular_days)
+
+        if self.mora_strategy == MoraStrategy.COMPOUND:
+            mora_accrued = self.mora_interest_rate.accrue(principal_balance + regular_accrued, mora_days)
+        else:
+            mora_accrued = self.mora_interest_rate.accrue(principal_balance, mora_days)
+
+        return regular_accrued, mora_accrued
+
+
+# ===================================================================
+# Settlement engine
+# ===================================================================
 
 _COVERAGE_TOLERANCE = Money("0.01")
 
@@ -329,7 +402,6 @@ def compute_state(
     allocs_by_number: Dict[int, List[Allocation]] = {}
     processed_payments: list = []
 
-    # Build a merged timeline of payment events and fine observation points
     events: List[Tuple[datetime, bool, Optional[object]]] = []
     for payment in payment_entries:
         events.append((payment.datetime, True, payment))
@@ -342,7 +414,6 @@ def compute_state(
         if event_dt > as_of:
             break
 
-        # Compute fines using only previously processed payments
         fines_applied = compute_fines_at(
             event_dt, due_dates, schedule,
             fine_rate, grace_period_days, fines_applied,
@@ -352,7 +423,6 @@ def compute_state(
         if not is_payment:
             continue
 
-        # Compute interest
         interest_date = payment.interest_date if payment.interest_date is not None else payment.datetime
         days = max(0, (interest_date.date() - last_payment_date.date()).days)
 
@@ -363,18 +433,15 @@ def compute_state(
             days, running_principal, next_due, last_payment_date,
         )
 
-        # Build installment snapshot for allocation
         installments = _build_installments_snapshot(
             allocs_by_number, running_principal, payment.datetime,
             schedule, fines_applied, interest_calc,
             last_payment_date=last_payment_date,
         )
 
-        # Skipped contractual interest
         skipped = _skipped_contractual_interest(installments, next_due, interest_date.date())
         interest_cap = Money(regular.raw_amount + skipped.raw_amount)
 
-        # Fine balance
         total_fines_amount = (
             Money(sum(f.raw_amount for f in fines_applied.values()))
             if fines_applied
@@ -384,13 +451,11 @@ def compute_state(
         if fine_balance.is_negative():
             fine_balance = Money.zero()
 
-        # Per-installment allocation
         fine_paid, mora_paid, interest_paid, principal_paid, allocations = allocate_payment_per_installment(
             payment.amount, installments, running_principal,
             fine_cap=fine_balance, interest_cap=interest_cap, mora_cap=mora,
         )
 
-        # Update running state
         fines_paid_total = fines_paid_total + fine_paid
         running_principal = running_principal - principal_paid
         if running_principal.is_negative():
