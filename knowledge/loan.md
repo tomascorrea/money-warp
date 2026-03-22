@@ -169,7 +169,7 @@ The mora rate is applied independently to the outstanding principal. Regular int
 
 With the same rates, COMPOUND always produces more mora than SIMPLE because it applies the mora rate to a larger base. When `mora_interest_rate` equals `interest_rate` and strategy is `COMPOUND`, the result is identical to a single continuous compounding period — preserving the original behaviour before the mora strategy feature was introduced.
 
-The `interest_balance` and `mora_interest_balance` properties respect `mora_interest_rate` and `mora_strategy`. When the borrower is past the next unpaid due date, `_accrued_interest_components()` splits interest into regular and mora via `_compute_accrued_interest`. `current_balance = principal_balance + interest_balance + mora_interest_balance + fine_balance`.
+The `interest_balance` and `mora_interest_balance` properties respect `mora_interest_rate` and `mora_strategy`. When the borrower is past the next unpaid due date, `_accrued_interest_components()` splits interest into regular and mora via `InterestCalculator.compute_accrued_interest`. `current_balance = principal_balance + interest_balance + mora_interest_balance + fine_balance`.
 
 ## Balance Properties
 
@@ -239,7 +239,7 @@ Computed properties:
 Field semantics:
 - `expected_payment`, `expected_principal`, `expected_interest` come from the original schedule.
 - `expected_fine` comes from `Loan.fines_applied` for the installment's due date.
-- `expected_mora` is computed by the Loan: for covered installments it equals the sum of prior `mora_allocated` values; for the first uncovered overdue installment it is prior `mora_allocated` **plus** newly accrued mora (from last payment to `self.now()`) via `_compute_accrued_interest`; for all other installments it is zero. The cumulative form ensures `Installment.allocate` correctly computes `mora_owed = expected_mora - mora_paid` even when the same installment receives mora across multiple settlements.
+- `expected_mora` is computed by the Loan: for covered installments it equals the sum of prior `mora_allocated` values; for the first uncovered overdue installment it is prior `mora_allocated` **plus** newly accrued mora (from last payment to `self.now()`) via `InterestCalculator.compute_accrued_interest`; for all other installments it is zero. The cumulative form ensures `Installment.allocate` correctly computes `mora_owed = expected_mora - mora_paid` even when the same installment receives mora across multiple settlements.
 - `*_paid` fields are aggregated totals from all settlement allocations attributed to this installment.
 - `allocations` is the reverse view of Settlement: all `SettlementAllocation`s that touched this installment.
 - Created via `Installment.from_schedule_entry(entry, allocations, expected_mora, expected_fine)`.
@@ -248,7 +248,7 @@ Field semantics:
 
 ### Settlement (`loan.settlements`, returned by payment methods)
 
-A frozen dataclass capturing how a single payment was allocated. Reconstructed from the cash flow (`_all_payments` and `_actual_schedule_entries`) rather than stored as separate state.
+A frozen dataclass capturing how a single payment was allocated. Reconstructed from the cash flow (via `PaymentLedger`) rather than stored as separate state.
 
 Fields: `payment_amount`, `payment_date`, `fine_paid`, `interest_paid`, `mora_paid`, `principal_paid`, `remaining_balance`, `allocations: List[SettlementAllocation]`.
 
@@ -297,9 +297,9 @@ Both methods are time-aware: inside a `Warp` context they reflect the warped dat
 
 **Symptom:** After paying all scheduled installments, a residual balance of ~$103.36 persisted on a $10,000 loan.
 
-**Root cause:** `record_payment` computed interest days via `self.days_since_last_payment(payment_date)`, which filtered `_all_payments` by `self.now()` (real wall-clock time). When installments were recorded sequentially for future dates, previously-recorded future payments were invisible, leading to inflated day counts, too much interest, too little principal, and a non-zero residual.
+**Root cause:** `record_payment` computed interest days via `self.days_since_last_payment(payment_date)`, which filtered payments by `self.now()` (real wall-clock time). When installments were recorded sequentially for future dates, previously-recorded future payments were invisible, leading to inflated day counts, too much interest, too little principal, and a non-zero residual.
 
-**Fix:** Pre-compute `days` and `principal_balance` at the top of `record_payment` using `payment_date` as the filter, before step 1 modifies `_all_payments`.
+**Fix:** Pre-compute `days` and `principal_balance` at the top of `record_payment` using `payment_date` as the filter, before step 1 modifies the payment ledger.
 
 **Lesson:** Any method that reads loan state and then mutates it must snapshot the relevant values first. Time-dependent queries inside mutation methods must use the payment's own date, not wall-clock time.
 
@@ -311,7 +311,7 @@ Sugar methods (`pay_installment`, `anticipate_payment`) use `self.now()` for the
 
 **Symptom:** `_next_unpaid_due_date()` and `get_amortization_schedule()` would miscount covered due dates when partial payments, overpayments, or multiple anticipations were made.
 
-**Root cause:** The original implementation used `len(self._actual_schedule_entries)` to determine how many due dates were covered — assuming one `record_payment` call = one installment. This broke with partial payments (inflated count) and large overpayments (undercounted).
+**Root cause:** The original implementation used the number of schedule entries to determine how many due dates were covered — assuming one `record_payment` call = one installment. This broke with partial payments (inflated count) and large overpayments (undercounted).
 
 **Fix:** `_covered_due_date_count()` compares the remaining principal (from the last actual entry) against the original schedule's `ending_balance` milestones. A due date is covered when remaining principal is at or below that entry's ending balance.
 
@@ -323,7 +323,7 @@ Sugar methods (`pay_installment`, `anticipate_payment`) use `self.now()` for the
 
 **Root cause:** `PaymentScheduleEntry` carried an `is_actual: bool` field that leaked an internal implementation detail into the data model. No business logic depended on the flag — it only served test filtering.
 
-**Fix:** Removed `is_actual` from `PaymentScheduleEntry` entirely. The merged schedule is a clean, ordered list: past entries (from `_actual_schedule_entries`) come first by construction, followed by projected entries. Tests use positional indexing (`schedule[0]` for the recorded payment, `schedule[1:]` for projected) instead of filtering.
+**Fix:** Removed `is_actual` from `PaymentScheduleEntry` entirely. The merged schedule is a clean, ordered list: past entries (from `PaymentLedger.actual_schedule_entries()`) come first by construction, followed by projected entries. Tests use positional indexing (`schedule[0]` for the recorded payment, `schedule[1:]` for projected) instead of filtering.
 
 **Lesson:** Don't tag data with internal metadata that consumers must filter. If ordering already encodes the distinction, a flag is redundant. Keep data structures minimal — the fewer fields, the simpler the API.
 
@@ -351,9 +351,9 @@ Sugar methods (`pay_installment`, `anticipate_payment`) use `self.now()` for the
 
 **Symptom:** When `disbursement_date` had a non-midnight time component (e.g. 19:53), the first installment was never marked `is_fully_covered` even when the payment was large enough to cover it. The settlement interest was consistently lower than the scheduled interest by about one day's worth.
 
-**Root cause:** The scheduler computes `days_in_period` using date subtraction (`(due_date - prev_date).days`), but `_compute_interest_snapshot` used datetime subtraction (`(interest_date - last_pay_date).days`). Python's `timedelta.days` truncates: `(April 12 00:00 - March 6 19:53).days == 36`, while `(April 12 - March 6).days == 37`. The 1-day shortfall meant settlement interest was less than the schedule expected, so `Installment.allocate` could not fully cover the first installment's interest obligation.
+**Root cause:** The scheduler computes `days_in_period` using date subtraction (`(due_date - prev_date).days`), but `PaymentLedger.compute_interest_snapshot` used datetime subtraction (`(interest_date - last_pay_date).days`). Python's `timedelta.days` truncates: `(April 12 00:00 - March 6 19:53).days == 36`, while `(April 12 - March 6).days == 37`. The 1-day shortfall meant settlement interest was less than the schedule expected, so `Installment.allocate` could not fully cover the first installment's interest obligation.
 
-**Fix:** Use `.date()` on both operands in all three day-count calculations: `_compute_interest_snapshot`, `_build_installments_snapshot` (mora days), and `days_since_last_payment`. This aligns with the scheduler's calendar-day convention. Financial day counting operates on dates, not timestamps.
+**Fix:** Use `.date()` on both operands in all three day-count calculations: `compute_interest_snapshot`, `_build_installments_snapshot` (mora days), and `days_since_last_payment`. This aligns with the scheduler's calendar-day convention. Financial day counting operates on dates, not timestamps.
 
 **Lesson:** When one subsystem counts days using dates and another uses datetimes, the results will diverge whenever a timestamp has a non-midnight time. Normalize to the same type (`.date()`) at every day-count boundary.
 

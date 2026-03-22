@@ -33,7 +33,7 @@ with Warp(loan, datetime(2024, 1, 20)) as past_loan:
     print(f"Balance on Jan 20: {past_loan.current_balance}")
     # Balance on Jan 20: 9,500.00 (approximately, only first payment applied)
     
-    print(f"Payments made by Jan 20: {len(past_loan._actual_payments)}")
+    print(f"Payments made by Jan 20: {len(past_loan._ledger.actual_payment_items)}")
     # Payments made by Jan 20: 2 (interest + principal portions of first payment)
     
     # Time-dependent calculations use the warped date
@@ -54,7 +54,7 @@ with Warp(loan, datetime(2025, 6, 15)) as future_loan:
     print(f"Balance in June 2025: {future_loan.current_balance}")
     # Balance in June 2025: 8,200.00 (same as present, no new payments)
     
-    print(f"All payments made: {len(future_loan._actual_payments)}")
+    print(f"All payments made: {len(future_loan._ledger.actual_payment_items)}")
     # All payments made: 6 (all 3 payments × 2 components each)
     
     # Time calculations from the future perspective
@@ -130,7 +130,7 @@ for analysis_date in analysis_dates:
     with Warp(loan, analysis_date) as snapshot:
         print(f"\n=== Analysis as of {analysis_date.strftime('%B %Y')} ===")
         print(f"Outstanding balance: {snapshot.current_balance}")
-        print(f"Payments made: {len(snapshot._actual_payments) // 2}")  # Divide by 2 for payment count
+        print(f"Payments made: {len(snapshot._ledger.actual_payment_items) // 2}")  # Divide by 2 for payment count
         print(f"Days since last payment: {snapshot.days_since_last_payment()}")
 ```
 
