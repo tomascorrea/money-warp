@@ -27,8 +27,9 @@ money_warp/
 │   ├── interest_calculator.py # InterestCalculator (stateless rate math)
 │   ├── settlement_engine.py   # Pure functions: forward pass, fines, allocation
 │   ├── tvm.py                 # TVM standalone functions (PV, IRR, anticipation)
+│   ├── allocation.py          # Allocation dataclass (per-installment payment breakdown)
 │   ├── installment.py         # Installment dataclass
-│   └── settlement.py          # Settlement, SettlementAllocation dataclasses
+│   └── settlement.py          # Settlement, AnticipationResult dataclasses
 ├── scheduler/
 │   ├── base.py            # BaseScheduler (abstract)
 │   ├── price_scheduler.py           # PriceScheduler (French amortization)

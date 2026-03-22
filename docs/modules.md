@@ -117,8 +117,8 @@ MoneyWarp provides a comprehensive set of classes for financial calculations and
       show_source: false
       heading_level: 4
 
-### SettlementAllocation
-::: money_warp.SettlementAllocation
+### Allocation
+::: money_warp.Allocation
     options:
       show_root_heading: true
       show_source: false
