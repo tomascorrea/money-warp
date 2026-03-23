@@ -317,9 +317,18 @@ def allocate_payment_per_installment(
         interest_total = interest_total + allocation.interest_allocated
         principal_total = principal_total + allocation.principal_allocated
 
-        if not allocation.total_allocated.is_positive():
-            continue
-        allocations.append(allocation)
+        if allocation.total_allocated.is_positive():
+            allocations.append(allocation)
+        elif allocations:
+            last = allocations[-1]
+            allocations[-1] = Allocation(
+                installment_number=last.installment_number,
+                principal_allocated=last.principal_allocated + allocation.principal_allocated,
+                interest_allocated=last.interest_allocated + allocation.interest_allocated,
+                mora_allocated=last.mora_allocated + allocation.mora_allocated,
+                fine_allocated=last.fine_allocated + allocation.fine_allocated,
+                is_fully_covered=last.is_fully_covered,
+            )
 
     if remaining.raw_amount > 0:
         mora_spill = Money(min(remaining.raw_amount, mora_remaining.raw_amount))
