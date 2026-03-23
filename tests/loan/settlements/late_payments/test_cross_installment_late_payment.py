@@ -100,11 +100,11 @@ def test_p2_second_installment(late_cross_settlements):
 
 
 def test_p2_third_installment(late_cross_settlements):
-    """Inst 3 gets its fine and full principal — covered (loan fully paid)."""
+    """Inst 3 gets its fine, full principal, and spill — covered (loan fully paid)."""
     _, settlements = late_cross_settlements
     a = settlements[1].allocations[1]
     assert a.installment_number == 3
-    assert a.principal_allocated == Money("300.05")
+    assert a.principal_allocated == Money("362.96")
     assert a.interest_allocated == Money("0.00")
     assert a.fine_allocated == Money("6.07")
     assert a.mora_allocated == Money("0.00")

@@ -154,12 +154,12 @@ def test_p5_completes_installment_two(six_partial_settlements):
 
 
 def test_p6_third_installment_not_covered(six_partial_settlements):
-    """Inst 3 gets all of P6 but is NOT fully covered (total < owed)."""
+    """Inst 3 gets all of P6 plus interest spill — still NOT fully covered."""
     _, settlements = six_partial_settlements
     a = settlements[5].allocations[0]
     assert a.installment_number == 3
     assert a.principal_allocated == Money("197.59")
-    assert a.interest_allocated == Money("0.00")
+    assert a.interest_allocated == Money("2.41")
     assert a.is_fully_covered is False
 
 
@@ -182,4 +182,4 @@ def test_final_installment_three_not_paid(six_partial_settlements):
     """Installment 3 still has a remaining balance (R$910 < total owed)."""
     loan, _ = six_partial_settlements
     assert loan.installments[2].is_fully_paid is False
-    assert loan.installments[2].balance == Money("4.50")
+    assert loan.installments[2].balance == Money("0.87")

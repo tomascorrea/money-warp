@@ -258,24 +258,24 @@ def allocate_payment_into_installment(
         (allocation, remaining, fine_remaining, mora_remaining, interest_remaining)
     """
     fine_owed = inst.expected_fine - inst.fine_paid
-    fine_alloc = Money(min(fine_owed.raw_amount, remaining.raw_amount, fine_remaining.raw_amount))
+    fine_alloc = Money(min(max(fine_owed.raw_amount, 0), remaining.raw_amount, fine_remaining.raw_amount))
     remaining = remaining - fine_alloc
     fine_remaining = fine_remaining - fine_alloc
 
     mora_owed = inst.expected_mora - inst.mora_paid
-    mora_alloc = Money(min(mora_owed.raw_amount, remaining.raw_amount, mora_remaining.raw_amount))
+    mora_alloc = Money(min(max(mora_owed.raw_amount, 0), remaining.raw_amount, mora_remaining.raw_amount))
     remaining = remaining - mora_alloc
     mora_remaining = mora_remaining - mora_alloc
 
     interest_owed = inst.expected_interest - inst.interest_paid
-    interest_alloc = Money(min(interest_owed.raw_amount, remaining.raw_amount, interest_remaining.raw_amount))
+    interest_alloc = Money(min(max(interest_owed.raw_amount, 0), remaining.raw_amount, interest_remaining.raw_amount))
     remaining = remaining - interest_alloc
     interest_remaining = interest_remaining - interest_alloc
 
     principal_owed = inst.expected_principal - inst.principal_paid
     reserved = interest_remaining + mora_remaining
     available_for_principal = remaining - reserved if remaining.raw_amount > reserved.raw_amount else Money.zero()
-    principal_alloc = Money(min(principal_owed.raw_amount, available_for_principal.raw_amount))
+    principal_alloc = Money(min(max(principal_owed.raw_amount, 0), available_for_principal.raw_amount))
     remaining = remaining - principal_alloc
 
     total = fine_alloc + mora_alloc + interest_alloc + principal_alloc
@@ -290,19 +290,6 @@ def allocate_payment_into_installment(
         is_fully_covered=is_covered,
     )
     return allocation, remaining, fine_remaining, mora_remaining, interest_remaining
-
-
-def _merge_into_last(allocations: List[Allocation], extra: Allocation) -> None:
-    """Merge *extra*'s amounts into the last entry of *allocations* in-place."""
-    last = allocations[-1]
-    allocations[-1] = Allocation(
-        installment_number=last.installment_number,
-        principal_allocated=last.principal_allocated + extra.principal_allocated,
-        interest_allocated=last.interest_allocated + extra.interest_allocated,
-        mora_allocated=last.mora_allocated + extra.mora_allocated,
-        fine_allocated=last.fine_allocated + extra.fine_allocated,
-        is_fully_covered=last.is_fully_covered,
-    )
 
 
 def _fixup_coverage_flags(
@@ -341,21 +328,12 @@ def _fixup_coverage_flags(
     return fixed
 
 
-def _attribute_spill(
+def _compute_spill(
     remaining: Money,
     mora_remaining: Money,
     interest_remaining: Money,
-    allocations: List[Allocation],
-    installments: List[Installment],
 ) -> Tuple[Money, Money, Money]:
-    """Attribute leftover payment to mora, interest, and principal.
-
-    After all installments have been processed, any remaining money
-    is distributed as mora spill, interest spill, then principal spill
-    (in that order, each capped by the corresponding remaining cap).
-
-    The spill is merged into the last allocation so that settlement
-    totals always equal the sum of their per-allocation counterparts.
+    """Distribute leftover payment into mora, interest, and principal.
 
     Returns:
         (mora_spill, interest_spill, principal_spill)
@@ -367,23 +345,58 @@ def _attribute_spill(
     remaining = remaining - interest_spill
 
     principal_spill = remaining if remaining.raw_amount > 0 else Money.zero()
-
-    has_spill = mora_spill.raw_amount or interest_spill.raw_amount or principal_spill.raw_amount
-    if has_spill:
-        spill_alloc = Allocation(
-            installment_number=allocations[-1].installment_number if allocations else installments[-1].number,
-            principal_allocated=principal_spill,
-            interest_allocated=interest_spill,
-            mora_allocated=mora_spill,
-            fine_allocated=Money.zero(),
-            is_fully_covered=False,
-        )
-        if allocations:
-            _merge_into_last(allocations, spill_alloc)
-        elif installments:
-            allocations.append(spill_alloc)
-
     return mora_spill, interest_spill, principal_spill
+
+
+def _reconcile_allocations(
+    allocations: List[Allocation],
+    installments: List[Installment],
+    fine_total: Money,
+    mora_total: Money,
+    interest_total: Money,
+    principal_total: Money,
+) -> None:
+    """Adjust allocations so their sums exactly match the totals.
+
+    Sub-cent allocations and spill can cause the totals to diverge
+    from ``sum(allocations)``.  This single sweep fixes the gap by
+    adjusting the last allocation.  If no allocations exist yet,
+    a new one is created for the last installment.
+    """
+    sum_f = sum((a.fine_allocated.raw_amount for a in allocations), Money.zero().raw_amount)
+    sum_m = sum((a.mora_allocated.raw_amount for a in allocations), Money.zero().raw_amount)
+    sum_i = sum((a.interest_allocated.raw_amount for a in allocations), Money.zero().raw_amount)
+    sum_p = sum((a.principal_allocated.raw_amount for a in allocations), Money.zero().raw_amount)
+
+    f_diff = fine_total.raw_amount - sum_f
+    m_diff = mora_total.raw_amount - sum_m
+    i_diff = interest_total.raw_amount - sum_i
+    p_diff = principal_total.raw_amount - sum_p
+
+    if not (f_diff or m_diff or i_diff or p_diff):
+        return
+
+    if allocations:
+        last = allocations[-1]
+        allocations[-1] = Allocation(
+            installment_number=last.installment_number,
+            principal_allocated=Money(last.principal_allocated.raw_amount + p_diff),
+            interest_allocated=Money(last.interest_allocated.raw_amount + i_diff),
+            mora_allocated=Money(last.mora_allocated.raw_amount + m_diff),
+            fine_allocated=Money(last.fine_allocated.raw_amount + f_diff),
+            is_fully_covered=last.is_fully_covered,
+        )
+    elif installments:
+        allocations.append(
+            Allocation(
+                installment_number=installments[-1].number,
+                principal_allocated=Money(p_diff),
+                interest_allocated=Money(i_diff),
+                mora_allocated=Money(m_diff),
+                fine_allocated=Money(f_diff),
+                is_fully_covered=False,
+            )
+        )
 
 
 def allocate_payment_into_installments(
@@ -402,8 +415,9 @@ def allocate_payment_into_installments(
     anything.
 
     After the per-installment loop, any leftover money (spill) is
-    attributed to the last allocation so that the returned totals
-    always equal the sum of their per-allocation counterparts.
+    distributed into mora, interest, and principal totals.  A final
+    reconciliation sweep adjusts the last allocation so that the
+    totals always equal the sum of their per-allocation counterparts.
 
     Returns:
         (fine_total, mora_total, interest_total, principal_total, allocations)
@@ -436,17 +450,16 @@ def allocate_payment_into_installments(
 
         if allocation.total_allocated.is_positive():
             allocations.append(allocation)
-        elif allocations:
-            _merge_into_last(allocations, allocation)
 
     if remaining.raw_amount > 0:
-        mora_spill, interest_spill, principal_spill = _attribute_spill(
-            remaining, mora_remaining, interest_remaining, allocations, installments,
+        mora_spill, interest_spill, principal_spill = _compute_spill(
+            remaining, mora_remaining, interest_remaining,
         )
         mora_total = mora_total + mora_spill
         interest_total = interest_total + interest_spill
         principal_total = principal_total + principal_spill
 
+    _reconcile_allocations(allocations, installments, fine_total, mora_total, interest_total, principal_total)
     allocations = _fixup_coverage_flags(allocations, installments, ending_balance, principal_total)
     return fine_total, mora_total, interest_total, principal_total, allocations
 
