@@ -3,9 +3,10 @@
 Scenario:
   - 6-installment loan (Mar-Aug 2025), all overdue by Aug 15
   - Single partial payment equal to one scheduled installment amount (354.34)
-  - Inst 1 should absorb fine, mora, interest, and partial principal
-  - Inst 2-4 receive contractual interest and fines (no principal) because the
-    interest cap now includes skipped installments' contractual interest
+  - Loan-level allocation prioritises: fines -> mora -> interest -> principal
+  - All six installments receive fines and interest allocations because the
+    loan-level step pays all accrued fines and interest before any principal
+  - Only inst 1 receives principal (what remains after fines, mora, interest)
 """
 
 from datetime import date, datetime, timezone
@@ -47,9 +48,9 @@ def overdue_settlement(all_overdue_loan):
 
 
 def test_settlement_fine_paid(overdue_settlement):
-    """Fines for inst 1-4 are paid from the interest reservation spill."""
+    """All six installments' fines are paid (loan-level priority: fines first)."""
     _, s = overdue_settlement
-    assert s.fine_paid == Money("28.35")
+    assert s.fine_paid == Money("42.52")
 
 
 def test_settlement_mora_paid(overdue_settlement):
@@ -59,30 +60,32 @@ def test_settlement_mora_paid(overdue_settlement):
 
 
 def test_settlement_interest_paid(overdue_settlement):
-    """Interest includes inst 1's contractual plus skipped installments."""
+    """Interest covers all six installments' contractual interest (loan-level)."""
     _, s = overdue_settlement
-    assert s.interest_paid == Money("104.80")
+    assert s.interest_paid == Money("126.06")
 
 
 def test_settlement_principal_paid(overdue_settlement):
-    """Less principal than before because more goes to interest and fines."""
+    """Principal is the residual after all fines, mora, and interest."""
     _, s = overdue_settlement
-    assert s.principal_paid == Money("112.99")
+    assert s.principal_paid == Money("77.55")
 
 
 def test_settlement_remaining_balance(overdue_settlement):
     _, s = overdue_settlement
-    assert s.remaining_balance == Money("1887.01")
+    assert s.remaining_balance == Money("1922.45")
 
 
-def test_four_installments_receive_allocation(overdue_settlement):
-    """Inst 1-4 receive allocations because the interest cap now spans skipped periods."""
+def test_six_installments_receive_allocation(overdue_settlement):
+    """All six installments receive allocations (fines and interest distributed to each)."""
     _, s = overdue_settlement
-    assert len(s.allocations) == 4
+    assert len(s.allocations) == 6
     assert s.allocations[0].installment_number == 1
     assert s.allocations[1].installment_number == 2
     assert s.allocations[2].installment_number == 3
     assert s.allocations[3].installment_number == 4
+    assert s.allocations[4].installment_number == 5
+    assert s.allocations[5].installment_number == 6
 
 
 def test_first_installment_allocation_breakdown(overdue_settlement):
@@ -91,7 +94,7 @@ def test_first_installment_allocation_breakdown(overdue_settlement):
     assert a.fine_allocated == Money("7.09")
     assert a.mora_allocated == Money("108.21")
     assert a.interest_allocated == Money("33.28")
-    assert a.principal_allocated == Money("112.99")
+    assert a.principal_allocated == Money("77.55")
     assert a.is_fully_covered is False
 
 
@@ -116,16 +119,16 @@ def test_third_installment_allocation_breakdown(overdue_settlement):
 
 
 def test_fourth_installment_allocation_breakdown(overdue_settlement):
-    """Inst 4 gets partial contractual interest and fine."""
+    """Inst 4 gets its full contractual interest and fine."""
     _, s = overdue_settlement
     a = s.allocations[3]
     assert a.fine_allocated == Money("7.09")
-    assert a.interest_allocated == Money("16.38")
+    assert a.interest_allocated == Money("18.91")
     assert a.principal_allocated == Money("0.00")
     assert a.is_fully_covered is False
 
 
 def test_fine_balance_after_payment(overdue_settlement):
-    """Two installments' fines (inst 5, inst 6) remain unpaid."""
+    """All fines are paid because loan-level allocation settles fines first."""
     loan, _ = overdue_settlement
-    assert loan.fine_balance == Money("14.17")
+    assert loan.fine_balance == Money("0.00")
