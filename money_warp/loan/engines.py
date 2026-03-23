@@ -436,8 +436,8 @@ def allocate_payment_into_installments(
         if not remaining.raw_amount:
             break
 
-        allocation, remaining, fine_remaining, mora_remaining, interest_remaining = (
-            allocate_payment_into_installment(inst, remaining, fine_remaining, mora_remaining, interest_remaining)
+        allocation, remaining, fine_remaining, mora_remaining, interest_remaining = allocate_payment_into_installment(
+            inst, remaining, fine_remaining, mora_remaining, interest_remaining
         )
 
         if allocation.total_allocated.raw_amount <= 0:
@@ -453,7 +453,9 @@ def allocate_payment_into_installments(
 
     if remaining.raw_amount > 0:
         mora_spill, interest_spill, principal_spill = _compute_spill(
-            remaining, mora_remaining, interest_remaining,
+            remaining,
+            mora_remaining,
+            interest_remaining,
         )
         mora_total = mora_total + mora_spill
         interest_total = interest_total + interest_spill
