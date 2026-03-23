@@ -330,8 +330,34 @@ def allocate_payment_per_installment(
         remaining = remaining - interest_spill
         interest_total = interest_total + interest_spill
 
+        principal_spill = Money.zero()
         if remaining.raw_amount > 0:
+            principal_spill = remaining
             principal_total = principal_total + remaining
+
+        has_spill = mora_spill.raw_amount or interest_spill.raw_amount or principal_spill.raw_amount
+        if has_spill:
+            if allocations:
+                last = allocations[-1]
+                allocations[-1] = Allocation(
+                    installment_number=last.installment_number,
+                    principal_allocated=last.principal_allocated + principal_spill,
+                    interest_allocated=last.interest_allocated + interest_spill,
+                    mora_allocated=last.mora_allocated + mora_spill,
+                    fine_allocated=last.fine_allocated,
+                    is_fully_covered=last.is_fully_covered,
+                )
+            elif installments:
+                allocations.append(
+                    Allocation(
+                        installment_number=installments[-1].number,
+                        principal_allocated=principal_spill,
+                        interest_allocated=interest_spill,
+                        mora_allocated=mora_spill,
+                        fine_allocated=Money.zero(),
+                        is_fully_covered=False,
+                    )
+                )
 
     allocations = _fixup_coverage_flags(allocations, installments, ending_balance, principal_total)
     return fine_total, mora_total, interest_total, principal_total, allocations
