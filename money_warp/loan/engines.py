@@ -234,6 +234,64 @@ def _skipped_contractual_interest(
 # ------------------------------------------------------------------
 
 
+def allocate_payment_into_installment(
+    inst: Installment,
+    remaining: Money,
+    fine_remaining: Money,
+    mora_remaining: Money,
+    interest_remaining: Money,
+) -> Tuple[Allocation, Money, Money, Money, Money]:
+    """Allocate payment money to a single installment.
+
+    Processes fine -> mora -> interest -> principal sequentially,
+    each capped by both the installment's remaining obligation and
+    the corresponding running cap.
+
+    The running caps prevent over-allocation: they track the
+    loan-level accrual computed during the forward pass.
+
+    Principal allocation reserves ``interest_remaining + mora_remaining``
+    so that later installments can still absorb their share of
+    interest and mora.
+
+    Returns:
+        (allocation, remaining, fine_remaining, mora_remaining, interest_remaining)
+    """
+    fine_owed = inst.expected_fine - inst.fine_paid
+    fine_alloc = Money(min(max(fine_owed.raw_amount, 0), remaining.raw_amount, fine_remaining.raw_amount))
+    remaining = remaining - fine_alloc
+    fine_remaining = fine_remaining - fine_alloc
+
+    mora_owed = inst.expected_mora - inst.mora_paid
+    mora_alloc = Money(min(max(mora_owed.raw_amount, 0), remaining.raw_amount, mora_remaining.raw_amount))
+    remaining = remaining - mora_alloc
+    mora_remaining = mora_remaining - mora_alloc
+
+    interest_owed = inst.expected_interest - inst.interest_paid
+    interest_alloc = Money(min(max(interest_owed.raw_amount, 0), remaining.raw_amount, interest_remaining.raw_amount))
+    remaining = remaining - interest_alloc
+    interest_remaining = interest_remaining - interest_alloc
+
+    principal_owed = inst.expected_principal - inst.principal_paid
+    reserved = interest_remaining + mora_remaining
+    available_for_principal = remaining - reserved if remaining.raw_amount > reserved.raw_amount else Money.zero()
+    principal_alloc = Money(min(max(principal_owed.raw_amount, 0), available_for_principal.raw_amount))
+    remaining = remaining - principal_alloc
+
+    total = fine_alloc + mora_alloc + interest_alloc + principal_alloc
+    is_covered = total >= (inst.balance - _COVERAGE_TOLERANCE)
+
+    allocation = Allocation(
+        installment_number=inst.number,
+        principal_allocated=principal_alloc,
+        interest_allocated=interest_alloc,
+        mora_allocated=mora_alloc,
+        fine_allocated=fine_alloc,
+        is_fully_covered=is_covered,
+    )
+    return allocation, remaining, fine_remaining, mora_remaining, interest_remaining
+
+
 def _fixup_coverage_flags(
     allocations: List[Allocation],
     installments: List[Installment],
@@ -270,7 +328,78 @@ def _fixup_coverage_flags(
     return fixed
 
 
-def allocate_payment_per_installment(
+def _compute_spill(
+    remaining: Money,
+    mora_remaining: Money,
+    interest_remaining: Money,
+) -> Tuple[Money, Money, Money]:
+    """Distribute leftover payment into mora, interest, and principal.
+
+    Returns:
+        (mora_spill, interest_spill, principal_spill)
+    """
+    mora_spill = Money(min(remaining.raw_amount, mora_remaining.raw_amount))
+    remaining = remaining - mora_spill
+
+    interest_spill = Money(min(remaining.raw_amount, interest_remaining.raw_amount))
+    remaining = remaining - interest_spill
+
+    principal_spill = remaining if remaining.raw_amount > 0 else Money.zero()
+    return mora_spill, interest_spill, principal_spill
+
+
+def _reconcile_allocations(
+    allocations: List[Allocation],
+    installments: List[Installment],
+    fine_total: Money,
+    mora_total: Money,
+    interest_total: Money,
+    principal_total: Money,
+) -> None:
+    """Adjust allocations so their sums exactly match the totals.
+
+    Sub-cent allocations and spill can cause the totals to diverge
+    from ``sum(allocations)``.  This single sweep fixes the gap by
+    adjusting the last allocation.  If no allocations exist yet,
+    a new one is created for the last installment.
+    """
+    sum_f = sum((a.fine_allocated.raw_amount for a in allocations), Money.zero().raw_amount)
+    sum_m = sum((a.mora_allocated.raw_amount for a in allocations), Money.zero().raw_amount)
+    sum_i = sum((a.interest_allocated.raw_amount for a in allocations), Money.zero().raw_amount)
+    sum_p = sum((a.principal_allocated.raw_amount for a in allocations), Money.zero().raw_amount)
+
+    f_diff = fine_total.raw_amount - sum_f
+    m_diff = mora_total.raw_amount - sum_m
+    i_diff = interest_total.raw_amount - sum_i
+    p_diff = principal_total.raw_amount - sum_p
+
+    if not (f_diff or m_diff or i_diff or p_diff):
+        return
+
+    if allocations:
+        last = allocations[-1]
+        allocations[-1] = Allocation(
+            installment_number=last.installment_number,
+            principal_allocated=Money(last.principal_allocated.raw_amount + p_diff),
+            interest_allocated=Money(last.interest_allocated.raw_amount + i_diff),
+            mora_allocated=Money(last.mora_allocated.raw_amount + m_diff),
+            fine_allocated=Money(last.fine_allocated.raw_amount + f_diff),
+            is_fully_covered=last.is_fully_covered,
+        )
+    elif installments:
+        allocations.append(
+            Allocation(
+                installment_number=installments[-1].number,
+                principal_allocated=Money(p_diff),
+                interest_allocated=Money(i_diff),
+                mora_allocated=Money(m_diff),
+                fine_allocated=Money(f_diff),
+                is_fully_covered=False,
+            )
+        )
+
+
+def allocate_payment_into_installments(
     amount: Money,
     installments: List[Installment],
     ending_balance: Money,
@@ -280,10 +409,15 @@ def allocate_payment_per_installment(
 ) -> Tuple[Money, Money, Money, Money, List[Allocation]]:
     """Allocate a payment across installments in priority order.
 
-    Each installment is processed sequentially. Within each
-    installment the priority is fine -> mora -> interest -> principal.
-    Installment 1's obligations are fully addressed before
-    installment 2 receives anything.
+    Each installment is processed sequentially via
+    :func:`allocate_payment_into_installment`.  Installment 1's
+    obligations are fully addressed before installment 2 receives
+    anything.
+
+    After the per-installment loop, any leftover money (spill) is
+    distributed into mora, interest, and principal totals.  A final
+    reconciliation sweep adjusts the last allocation so that the
+    totals always equal the sum of their per-allocation counterparts.
 
     Returns:
         (fine_total, mora_total, interest_total, principal_total, allocations)
@@ -302,11 +436,8 @@ def allocate_payment_per_installment(
         if not remaining.raw_amount:
             break
 
-        allocation, remaining, fine_remaining, mora_remaining, interest_remaining = inst.allocate_from_payment(
-            remaining,
-            fine_remaining,
-            mora_remaining,
-            interest_remaining,
+        allocation, remaining, fine_remaining, mora_remaining, interest_remaining = (
+            allocate_payment_into_installment(inst, remaining, fine_remaining, mora_remaining, interest_remaining)
         )
 
         if allocation.total_allocated.raw_amount <= 0:
@@ -317,22 +448,18 @@ def allocate_payment_per_installment(
         interest_total = interest_total + allocation.interest_allocated
         principal_total = principal_total + allocation.principal_allocated
 
-        if not allocation.total_allocated.is_positive():
-            continue
-        allocations.append(allocation)
+        if allocation.total_allocated.is_positive():
+            allocations.append(allocation)
 
     if remaining.raw_amount > 0:
-        mora_spill = Money(min(remaining.raw_amount, mora_remaining.raw_amount))
-        remaining = remaining - mora_spill
+        mora_spill, interest_spill, principal_spill = _compute_spill(
+            remaining, mora_remaining, interest_remaining,
+        )
         mora_total = mora_total + mora_spill
-
-        interest_spill = Money(min(remaining.raw_amount, interest_remaining.raw_amount))
-        remaining = remaining - interest_spill
         interest_total = interest_total + interest_spill
+        principal_total = principal_total + principal_spill
 
-        if remaining.raw_amount > 0:
-            principal_total = principal_total + remaining
-
+    _reconcile_allocations(allocations, installments, fine_total, mora_total, interest_total, principal_total)
     allocations = _fixup_coverage_flags(allocations, installments, ending_balance, principal_total)
     return fine_total, mora_total, interest_total, principal_total, allocations
 
@@ -498,7 +625,7 @@ def compute_state(
         if fine_balance.is_negative():
             fine_balance = Money.zero()
 
-        fine_paid, mora_paid, interest_paid, principal_paid, allocations = allocate_payment_per_installment(
+        fine_paid, mora_paid, interest_paid, principal_paid, allocations = allocate_payment_into_installments(
             payment.amount,
             installments,
             running_principal,

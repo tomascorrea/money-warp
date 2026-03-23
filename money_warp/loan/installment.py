@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date
-from typing import List, Tuple
+from typing import List
 
 from ..money import Money
 from ..scheduler import PaymentScheduleEntry
@@ -48,56 +48,6 @@ class Installment:
     def is_fully_paid(self) -> bool:
         """Whether this installment has been fully settled (within rounding tolerance)."""
         return self.balance <= _COVERAGE_TOLERANCE
-
-    def allocate_from_payment(
-        self,
-        remaining: Money,
-        fine_remaining: Money,
-        mora_remaining: Money,
-        interest_remaining: Money,
-    ) -> Tuple[Allocation, Money, Money, Money, Money]:
-        """Allocate from a single payment amount in priority order.
-
-        Processes fine -> mora -> interest -> principal sequentially,
-        each capped by both the installment's remaining obligation and
-        the corresponding running cap.
-
-        The running caps prevent over-allocation: they match the
-        loan-level accrual computed during the forward pass.
-        """
-        fine_owed = self.expected_fine - self.fine_paid
-        fine_alloc = Money(min(fine_owed.raw_amount, remaining.raw_amount, fine_remaining.raw_amount))
-        remaining = remaining - fine_alloc
-        fine_remaining = fine_remaining - fine_alloc
-
-        mora_owed = self.expected_mora - self.mora_paid
-        mora_alloc = Money(min(mora_owed.raw_amount, remaining.raw_amount, mora_remaining.raw_amount))
-        remaining = remaining - mora_alloc
-        mora_remaining = mora_remaining - mora_alloc
-
-        interest_owed = self.expected_interest - self.interest_paid
-        interest_alloc = Money(min(interest_owed.raw_amount, remaining.raw_amount, interest_remaining.raw_amount))
-        remaining = remaining - interest_alloc
-        interest_remaining = interest_remaining - interest_alloc
-
-        principal_owed = self.expected_principal - self.principal_paid
-        reserved = interest_remaining + mora_remaining
-        available_for_principal = remaining - reserved if remaining.raw_amount > reserved.raw_amount else Money.zero()
-        principal_alloc = Money(min(principal_owed.raw_amount, available_for_principal.raw_amount))
-        remaining = remaining - principal_alloc
-
-        total = fine_alloc + mora_alloc + interest_alloc + principal_alloc
-        is_covered = total >= (self.balance - _COVERAGE_TOLERANCE)
-
-        allocation = Allocation(
-            installment_number=self.number,
-            principal_allocated=principal_alloc,
-            interest_allocated=interest_alloc,
-            mora_allocated=mora_alloc,
-            fine_allocated=fine_alloc,
-            is_fully_covered=is_covered,
-        )
-        return allocation, remaining, fine_remaining, mora_remaining, interest_remaining
 
     @classmethod
     def from_schedule_entry(
