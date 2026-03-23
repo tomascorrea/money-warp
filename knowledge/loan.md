@@ -11,7 +11,8 @@ The Loan delegates computation to two focused components in `engines.py`:
   - `compute_state(...)` — the forward pass that produces a `LoanState` (settlements, principal balance, fines applied, fines paid total, last payment date).
   - `build_installments(...)` — builds `Installment` objects from settlements + schedule.
   - `compute_fines_at(...)` — determines which due dates should have fines applied.
-  - `allocate_payment_per_installment(...)` — runs the per-installment allocation algorithm.
+  - `allocate_payment_into_installments(...)` — orchestrates per-installment allocation.
+  - `allocate_payment_into_installment(...)` — allocates payment to a single installment (fine -> mora -> interest -> principal).
   - `covered_due_date_count(...)` — how many due dates are covered given a remaining balance.
   - `is_payment_late(...)` — grace-period-aware lateness check.
 - **TVM functions** (`tvm.py`) — standalone `loan_present_value`, `loan_irr`, `loan_calculate_anticipation`.
@@ -110,17 +111,17 @@ The central algorithm in `engines.compute_state`. It processes a merged timeline
    a. Compute interest (regular + mora) since last payment.
    b. Build installment snapshot reflecting all prior allocations.
    c. Add skipped contractual interest for periods beyond the current due-date boundary.
-   d. Run per-installment allocation (`allocate_payment_per_installment`).
+   d. Run per-installment allocation (`allocate_payment_into_installments`).
    e. Update running principal, fines paid total, and allocation history.
    f. Create a `Settlement` object.
 3. Return `LoanState` with all settlements and running state.
 
 ### `is_fully_covered` Post-Payment Fixup
 
-The `allocate_payment_per_installment` function determines `is_fully_covered` per allocation in two stages:
+The `allocate_payment_into_installments` function determines `is_fully_covered` per allocation in two stages:
 
-1. **During the loop:** `Installment.allocate_from_payment` computes `is_covered` by comparing the total allocated against the installment's remaining balance. This can be `False` when interest caps prevent full interest allocation (e.g., paying all installments at once on the first due date).
-2. **After the loop:** If the post-payment balance (`ending_balance - principal_total`) is within tolerance of zero, the function does a second pass. Any allocation whose principal is fully covered gets `is_fully_covered` overridden to `True`. This handles the case where the loan is paid off but interest caps prevented exact coverage of each installment's interest obligation.
+1. **During the loop:** `allocate_payment_into_installment` computes `is_covered` by comparing the total allocated against the installment's remaining balance. This can be `False` when interest caps prevent full interest allocation (e.g., paying all installments at once on the first due date).
+2. **After the loop:** `_fixup_coverage_flags` checks if the post-payment balance is within tolerance of zero. If so, any allocation whose principal was fully covered gets `is_fully_covered` overridden to `True`. This handles the case where the loan is paid off but interest caps prevented exact coverage of each installment's interest obligation.
 
 ## Dynamic Amortization Schedule
 
@@ -205,7 +206,8 @@ Fields: `number`, `due_date`, `days_in_period`, `expected_payment`, `expected_pr
 
 - `balance` — amount still owed to fully settle this installment.
 - `is_fully_paid` — `True` when `balance` is within tolerance of zero.
-- `allocate_from_payment(remaining, fine_remaining, mora_remaining, interest_remaining)` — allocates in priority order (fine -> mora -> interest -> principal), each capped by both the installment's remaining obligation and running caps.
+
+Per-installment allocation logic lives in `engines.allocate_payment_into_installment` (not on the Installment class).
 
 ### Settlement (`loan.settlements`)
 
@@ -268,13 +270,13 @@ Internal dataclass returned by `compute_state`: `settlements`, `principal_balanc
 
 ### Payment allocation order was loan-level, not per-installment (fixed 2026-03-20)
 
-**Fix:** Rewrote allocation to be strictly per-installment sequential. `allocate_payment_per_installment` walks installments in order. Within each, `Installment.allocate_from_payment` applies fine -> mora -> interest -> principal.
+**Fix:** Rewrote allocation to be strictly per-installment sequential. `allocate_payment_into_installments` walks installments in order. Within each, `allocate_payment_into_installment` applies fine -> mora -> interest -> principal.
 
 **Lesson:** The per-installment interpretation is correct for Brazilian lending: installment 1's mora interest is more urgent than installment 2's fine.
 
 ### Sub-cent precision loss in allocation loop (fixed 2026-03-20)
 
-**Fix:** Use `raw_amount` comparisons in the allocation loop instead of `Money`'s 2dp-rounded methods. Sub-cent allocations are included in component totals but excluded from the `allocations` list.
+**Fix:** Use `raw_amount` comparisons in the allocation loop instead of `Money`'s 2dp-rounded methods. Sub-cent allocations are included in component totals; the `_reconcile_allocations` sweep adjusts the last allocation to match.
 
 **Lesson:** `Money`'s `real_amount`-based comparisons are correct for business display but dangerous in accounting loops where sub-cent values compound.
 
@@ -286,7 +288,7 @@ Internal dataclass returned by `compute_state`: `settlements`, `principal_balanc
 
 **Symptom:** When a single payment fully paid off the loan, some allocations had `is_fully_covered = False` even though the loan's remaining balance was zero. This happened because the interest cap prevented full interest allocation to later installments (their interest hadn't accrued yet), and the coverage check failed since `total_allocated < installment.balance`.
 
-**Root cause:** `allocate_payment_per_installment` checked `ending_balance <= tolerance` at the **start** of the function (line 183), using the pre-payment principal. For a payment that fully pays off the loan, the pre-payment balance is the full remaining principal, so this check was always `False`. The override that corrects `is_fully_covered` when principal is fully covered never activated.
+**Root cause:** The allocation function checked `ending_balance <= tolerance` at the **start**, using the pre-payment principal. For a payment that fully pays off the loan, the pre-payment balance is the full remaining principal, so this check was always `False`. The override that corrects `is_fully_covered` when principal is fully covered never activated.
 
 **Fix:** Moved the override to a post-loop fixup. After the allocation loop and spillover handling, compute `post_balance = ending_balance - principal_total`. If `post_balance <= tolerance`, iterate through allocations and fix `is_fully_covered` for any installment whose principal was fully allocated (within tolerance).
 
@@ -296,8 +298,21 @@ Internal dataclass returned by `compute_state`: `settlements`, `principal_balanc
 
 **Symptom:** After paying the exact scheduled amount, `is_fully_covered` and `is_fully_paid` returned `True` but `is_paid_off` returned `False` and `remaining_balance` showed a sub-cent residual (0.005--0.012). Consumer code marked all installments as PAID but never marked the loan as SETTLED.
 
-**Root cause:** Full-precision interest accrual consumed slightly more than the schedule's 2dp interest, leaving a sub-cent gap on the principal. `allocate_payment_per_installment` and `Installment.is_fully_paid` used `_COVERAGE_TOLERANCE` (1 cent) for their checks, but `compute_state` only snapped `running_principal` to zero when negative — not when it was a sub-cent positive residual. `Loan.is_paid_off` checked `current_balance.is_zero()` (exact zero), which failed for the residual.
+**Root cause:** Full-precision interest accrual consumed slightly more than the schedule's 2dp interest, leaving a sub-cent gap on the principal. `allocate_payment_into_installments` and `Installment.is_fully_paid` used `_COVERAGE_TOLERANCE` (1 cent) for their checks, but `compute_state` only snapped `running_principal` to zero when negative — not when it was a sub-cent positive residual. `Loan.is_paid_off` checked `current_balance.is_zero()` (exact zero), which failed for the residual.
 
 **Fix:** In `compute_state`, after subtracting `principal_paid` from `running_principal`, also snap to zero when the balance is positive but within `_COVERAGE_TOLERANCE`. This aligns the principal balance with the same tolerance used by the allocation and installment layers.
 
 **Lesson:** All consistency checks across a system must use the same tolerance. When tolerance-based flags (`is_fully_covered`, `is_fully_paid`) coexist with exact checks (`is_paid_off` via `is_zero()`), the exact check must be relaxed to match, or the underlying data must be snapped so the exact check naturally passes.
+
+### Settlement spill invariant (fixed 2026-03-23)
+
+**Symptom:** `settlement.X_paid != sum(a.X_allocated for a in settlement.allocations)` for interest and principal. The totals included amounts not reflected in any `Allocation` object.
+
+**Root cause:** Two sources of discrepancy: (1) the "reserved" hold-back for future mora/interest prevented some principal from being allocated to an installment, leaving a remainder ("spill") that was added to totals but not to any allocation; (2) sub-cent allocations (positive at `raw_amount` but zero at `real_amount`) were counted in totals but dropped from the allocations list.
+
+**Fix:** Three changes:
+1. `_compute_spill` distributes leftover payment into mora, interest, and principal totals (pure function, no allocation mutation).
+2. `_reconcile_allocations` does a single sweep after all allocation is done, adjusting the last allocation's amounts so that `sum(allocations.X) == X_total` for all four components. If no allocations exist, it creates one for the last installment.
+3. Per-installment owed amounts are clamped to non-negative (`max(owed, 0)`) to prevent negative allocations when a previous payment's spill over-credited an installment.
+
+**Lesson:** Instead of trying to patch up discrepancies as they arise (merging sub-cent into last, merging spill into last), a single reconciliation sweep at the end is both simpler and more robust. It handles all sources of drift in one place.
