@@ -1,9 +1,9 @@
 """Base billing cycle abstraction for periodic statement generation."""
 
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
-from typing import List
+from typing import List, Optional
 
 from ..cash_flow import CashFlow
 from ..money import Money
@@ -21,7 +21,19 @@ class BaseBillingCycle(ABC):
     Statement building is concrete: it relies on the abstract date
     methods and the cash-flow query API, so it works for every
     implementation.
+
+    Args:
+        due_dates: Optional explicit due dates.  When provided, these
+            override the dates that would be computed from closing dates
+            via :meth:`due_date_for`.  Useful when the payment schedule
+            has non-standard due dates that don't follow the closing-day
+            offset rule.
     """
+
+    def __init__(self, due_dates: Optional[List[date]] = None) -> None:
+        self._explicit_due_dates: Optional[List[date]] = (
+            sorted(due_dates) if due_dates else None
+        )
 
     @abstractmethod
     def closing_dates_between(self, start: datetime, end: datetime) -> List[datetime]:
@@ -34,6 +46,22 @@ class BaseBillingCycle(ABC):
     @abstractmethod
     def due_date_for(self, closing_date: datetime) -> datetime:
         """Payment due date for a given statement closing date."""
+
+    def due_dates_between(self, start: datetime, end: datetime) -> List[date]:
+        """Return payment due dates for all cycles in ``[start, end]``.
+
+        When explicit *due_dates* were provided at construction, returns
+        those falling strictly after *start* and at or before *end*.
+        Otherwise derives them from :meth:`closing_dates_between` and
+        :meth:`due_date_for`.
+        """
+        if self._explicit_due_dates is not None:
+            start_d = start.date() if isinstance(start, datetime) else start
+            end_d = end.date() if isinstance(end, datetime) else end
+            return [d for d in self._explicit_due_dates if start_d < d <= end_d]
+
+        closing_dates = self.closing_dates_between(start, end)
+        return [self.due_date_for(cd).date() for cd in closing_dates]
 
     # ------------------------------------------------------------------
     # Statement building
