@@ -1,7 +1,7 @@
 """Monthly billing cycle — statements close on a fixed day each month."""
 
-from datetime import datetime, timedelta
-from typing import List
+from datetime import date, datetime, timedelta
+from typing import List, Optional
 
 from dateutil.relativedelta import relativedelta
 
@@ -16,9 +16,17 @@ class MonthlyBillingCycle(BaseBillingCycle):
         closing_day: Day of month (1-28) when the statement closes.
         payment_due_days: Number of days after closing for the payment
             due date.  Defaults to 15.
+        due_dates: Optional explicit due dates that override the computed
+            ones.  See :class:`BaseBillingCycle` for details.
     """
 
-    def __init__(self, closing_day: int = 1, payment_due_days: int = 15) -> None:
+    def __init__(
+        self,
+        closing_day: int = 1,
+        payment_due_days: int = 15,
+        due_dates: Optional[List[date]] = None,
+    ) -> None:
+        super().__init__(due_dates=due_dates)
         if not 1 <= closing_day <= 28:
             raise ValueError("closing_day must be between 1 and 28")
         if payment_due_days < 1:
