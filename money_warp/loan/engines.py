@@ -5,13 +5,21 @@ components.  Settlement computation replays payments against the
 schedule using a forward pass.  Each payment is allocated in two
 steps: loan-level math (fine -> mora -> interest -> principal)
 followed by per-installment distribution for reporting.
+
+Shared building blocks (:class:`InterestCalculator`,
+:class:`MoraStrategy`) are defined in :mod:`money_warp.engines`
+and re-exported here for backward compatibility.
 """
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
+from ..engines import (  # noqa: F401 – re-export
+    InterestCalculator,
+    MoraRateCallback,
+    MoraStrategy,
+)
 from ..interest_rate import InterestRate
 from ..money import Money
 from ..scheduler import PaymentSchedule
@@ -19,81 +27,6 @@ from ..tz import to_datetime
 from .allocation import Allocation
 from .installment import Installment
 from .settlement import Settlement
-
-# ===================================================================
-# Interest calculator
-# ===================================================================
-
-
-class MoraStrategy(Enum):
-    """Strategy for computing mora (late) interest.
-
-    SIMPLE: mora rate is applied to the outstanding principal only.
-    COMPOUND: mora rate is applied to principal + accrued regular interest.
-    """
-
-    SIMPLE = "simple"
-    COMPOUND = "compound"
-
-
-class InterestCalculator:
-    """Pure interest math — no mutable state, no time context.
-
-    Holds three immutable rate parameters and computes accrued interest
-    split into regular and mora components.
-    """
-
-    def __init__(
-        self,
-        interest_rate: InterestRate,
-        mora_interest_rate: InterestRate,
-        mora_strategy: MoraStrategy = MoraStrategy.COMPOUND,
-    ) -> None:
-        self.interest_rate = interest_rate
-        self.mora_interest_rate = mora_interest_rate
-        self.mora_strategy = mora_strategy
-
-    def compute_accrued_interest(
-        self,
-        days: int,
-        principal_balance: Money,
-        due_date: Optional[date] = None,
-        last_payment_date: Optional[datetime] = None,
-        mora_rate_override: Optional[InterestRate] = None,
-    ) -> Tuple[Money, Money]:
-        """Compute accrued interest split into regular and mora components.
-
-        Returns (regular_accrued, mora_accrued). All interest is regular when
-        due_date is not provided or the payment is not late.
-
-        Args:
-            mora_rate_override: When provided, used instead of
-                ``self.mora_interest_rate`` for this single computation.
-                Existing callers that omit it get the original behaviour.
-        """
-        mora_rate = mora_rate_override or self.mora_interest_rate
-
-        if due_date is None or last_payment_date is None:
-            return self.interest_rate.accrue(principal_balance, days), Money.zero()
-
-        regular_days = (due_date - last_payment_date.date()).days
-
-        if regular_days <= 0:
-            return Money.zero(), mora_rate.accrue(principal_balance, days)
-
-        if regular_days >= days:
-            return self.interest_rate.accrue(principal_balance, days), Money.zero()
-
-        mora_days = days - regular_days
-        regular_accrued = self.interest_rate.accrue(principal_balance, regular_days)
-
-        if self.mora_strategy == MoraStrategy.COMPOUND:
-            mora_accrued = mora_rate.accrue(principal_balance + regular_accrued, mora_days)
-        else:
-            mora_accrued = mora_rate.accrue(principal_balance, mora_days)
-
-        return regular_accrued, mora_accrued
-
 
 # ===================================================================
 # Settlement engine
@@ -321,14 +254,16 @@ def distribute_into_installments(
         total = fine_alloc + mora_alloc + interest_alloc + principal_alloc
         if total.is_positive():
             is_covered = total >= (inst.balance - _COVERAGE_TOLERANCE)
-            allocations.append(Allocation(
-                installment_number=inst.number,
-                principal_allocated=principal_alloc,
-                interest_allocated=interest_alloc,
-                mora_allocated=mora_alloc,
-                fine_allocated=fine_alloc,
-                is_fully_covered=is_covered,
-            ))
+            allocations.append(
+                Allocation(
+                    installment_number=inst.number,
+                    principal_allocated=principal_alloc,
+                    interest_allocated=interest_alloc,
+                    mora_allocated=mora_alloc,
+                    fine_allocated=fine_alloc,
+                    is_fully_covered=is_covered,
+                )
+            )
 
     _apply_residual(allocations, installments, fine_total, mora_total, interest_total, principal_total)
     _apply_coverage_fixup(allocations, installments, ending_balance, principal_total)
@@ -440,11 +375,19 @@ def allocate_payment_into_installments(
         (fine_total, mora_total, interest_total, principal_total, allocations)
     """
     fine_paid, mora_paid, interest_paid, principal_paid = allocate_payment(
-        amount, fine_cap, mora_cap, interest_cap,
+        amount,
+        fine_cap,
+        mora_cap,
+        interest_cap,
     )
 
     allocations = distribute_into_installments(
-        installments, fine_paid, mora_paid, interest_paid, principal_paid, ending_balance,
+        installments,
+        fine_paid,
+        mora_paid,
+        interest_paid,
+        principal_paid,
+        ending_balance,
     )
 
     return fine_paid, mora_paid, interest_paid, principal_paid, allocations
@@ -539,6 +482,7 @@ def compute_state(
     payment_entries: list,
     as_of: datetime,
     fine_observation_dates: Optional[List[datetime]] = None,
+    mora_rate_for_event: MoraRateCallback = None,
 ) -> LoanState:
     """Forward pass: compute all settlements and derived state from payments.
 
@@ -549,8 +493,16 @@ def compute_state(
     Fines are computed at each payment date AND at any explicit
     ``fine_observation_dates`` (from Warp or calculate_late_fines calls).
     Without observation dates, fines are only computed when payments
-    are processed -- matching the old behavior where fines required
-    an explicit trigger.
+    are processed.
+
+    Args:
+        mora_rate_for_event: Optional callback ``(next_due) -> InterestRate``
+            called before each interest computation.  When it returns a
+            non-``None`` value, that rate is passed as
+            ``mora_rate_override`` to the interest calculator.  Used by
+            ``BillingCycleLoan`` to resolve per-cycle mora rates.
+            ``Loan`` omits this (``None``), getting the calculator's
+            default mora rate.
     """
     running_principal = principal
     last_payment_date = disbursement_date
@@ -586,11 +538,14 @@ def compute_state(
         covered = covered_due_date_count(running_principal, schedule)
         next_due = due_dates[covered] if covered < len(due_dates) else None
 
+        mora_override = mora_rate_for_event(next_due) if mora_rate_for_event else None
+
         regular, mora = interest_calc.compute_accrued_interest(
             days,
             running_principal,
             next_due,
             last_payment_date,
+            mora_rate_override=mora_override,
         )
 
         installments = _build_installments_snapshot(

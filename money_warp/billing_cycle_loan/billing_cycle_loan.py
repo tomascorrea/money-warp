@@ -6,15 +6,9 @@ from typing import Dict, List, Optional, Type
 
 from ..billing_cycle import BaseBillingCycle
 from ..cash_flow import CashFlow, CashFlowItem, CashFlowType
+from ..engines import InterestCalculator, MoraStrategy
 from ..interest_rate import InterestRate
-from ..loan.engines import (
-    InterestCalculator,
-    LoanState,
-    MoraStrategy,
-    build_installments,
-    covered_due_date_count,
-    is_payment_late,
-)
+from ..loan.engines import LoanState, build_installments, covered_due_date_count, is_payment_late
 from ..loan.installment import Installment
 from ..loan.settlement import Settlement
 from ..money import Money
@@ -100,16 +94,16 @@ class BillingCycleLoan:
         self.grace_period_days = grace_period_days
 
         self._interest = InterestCalculator(
-            interest_rate, self.mora_interest_rate, mora_strategy,
+            interest_rate,
+            self.mora_interest_rate,
+            mora_strategy,
         )
         self._fine_observation_dates: List[datetime] = []
 
         self._closing_dates = self._derive_closing_dates()
         self.due_dates = self._derive_due_dates()
 
-        self.disbursement_date = (
-            disbursement_date if disbursement_date is not None else self._time_ctx.now()
-        )
+        self.disbursement_date = disbursement_date if disbursement_date is not None else self._time_ctx.now()
         if self.disbursement_date.date() >= self.due_dates[0]:
             raise ValueError("disbursement_date must be before the first due date")
 
@@ -137,18 +131,13 @@ class BillingCycleLoan:
         """
         from dateutil.relativedelta import relativedelta
 
-        last_closing = (
-            self._closing_dates[-1] if self._closing_dates else self.start_date
-        )
+        last_closing = self._closing_dates[-1] if self._closing_dates else self.start_date
         search_end = last_closing + relativedelta(months=1)
         explicit = self.billing_cycle.due_dates_between(self.start_date, search_end)
         if explicit:
             return explicit[: self.num_installments]
 
-        return [
-            self.billing_cycle.due_date_for(cd).date()
-            for cd in self._closing_dates
-        ]
+        return [self.billing_cycle.due_date_for(cd).date() for cd in self._closing_dates]
 
     @property
     def closing_dates(self) -> List[datetime]:
@@ -358,7 +347,8 @@ class BillingCycleLoan:
 
         if state.principal_balance.is_positive() and days > 0:
             covered = covered_due_date_count(
-                state.principal_balance, self.get_original_schedule(),
+                state.principal_balance,
+                self.get_original_schedule(),
             )
             next_due = self.due_dates[covered] if covered < len(self.due_dates) else None
 
@@ -394,9 +384,7 @@ class BillingCycleLoan:
         """Unpaid fines."""
         state = self._compute_state()
         total_fines = (
-            Money(sum(f.raw_amount for f in state.fines_applied.values()))
-            if state.fines_applied
-            else Money.zero()
+            Money(sum(f.raw_amount for f in state.fines_applied.values())) if state.fines_applied else Money.zero()
         )
         outstanding = total_fines - state.fines_paid_total
         return outstanding if outstanding.is_positive() else Money.zero()
@@ -404,12 +392,7 @@ class BillingCycleLoan:
     @property
     def current_balance(self) -> Money:
         """Total outstanding balance."""
-        return (
-            self.principal_balance
-            + self.interest_balance
-            + self.mora_interest_balance
-            + self.fine_balance
-        )
+        return self.principal_balance + self.interest_balance + self.mora_interest_balance + self.fine_balance
 
     @property
     def is_paid_off(self) -> bool:

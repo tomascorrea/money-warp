@@ -1,34 +1,24 @@
-"""Forward pass and statement builder for billing-cycle loans.
+"""Billing-cycle loan engine — product-specific logic only.
 
-Reuses allocation, distribution, fine, and coverage logic from
-:mod:`money_warp.loan.engines`.  The main difference is that the
-mora interest rate is resolved per billing cycle via an optional
-:class:`MoraRateResolver`.
+Mora rate resolution and statement building live here.
+The forward pass and all allocation logic come from
+:mod:`money_warp.loan.engines`.  Shared building blocks come from
+:mod:`money_warp.engines`.
 """
 
 from datetime import date, datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional
 
 from ..billing_cycle import BaseBillingCycle
+from ..engines import InterestCalculator, MoraRateCallback
 from ..interest_rate import InterestRate
-from ..loan.engines import (
-    InterestCalculator,
-    LoanState,
-    _build_event_timeline,
-    _build_installments_snapshot,
-    _skipped_contractual_interest,
-    allocate_payment_into_installments,
-    compute_fines_at,
-    covered_due_date_count,
-)
+from ..loan.engines import LoanState
+from ..loan.engines import compute_state as _compute_state
 from ..loan.settlement import Settlement
 from ..money import Money
 from ..scheduler import PaymentSchedule
 from .mora_rate_resolver import MoraRateResolver
 from .statement import BillingCycleLoanStatement
-
-_COVERAGE_TOLERANCE = Money("0.01")
-
 
 # ------------------------------------------------------------------
 # Mora rate resolution
@@ -58,8 +48,28 @@ def resolve_mora_rate(
     return base_mora_rate
 
 
+def make_mora_callback(
+    due_dates: List[date],
+    closing_dates: List[datetime],
+    base_mora_rate: InterestRate,
+    resolver: Optional[MoraRateResolver],
+) -> MoraRateCallback:
+    """Build a :data:`~money_warp.engines.MoraRateCallback` for the forward pass.
+
+    Returns ``None`` when no resolver is set (the unified
+    ``compute_state`` then uses the calculator's default rate).
+    """
+    if resolver is None:
+        return None
+
+    def _callback(next_due: Optional[date]) -> Optional[InterestRate]:
+        return resolve_mora_rate(due_dates, closing_dates, next_due, base_mora_rate, resolver)
+
+    return _callback
+
+
 # ------------------------------------------------------------------
-# Forward pass
+# Forward pass (delegates to unified compute_state)
 # ------------------------------------------------------------------
 
 
@@ -78,129 +88,25 @@ def compute_state(
     mora_rate_resolver: Optional[MoraRateResolver] = None,
     fine_observation_dates: Optional[List[datetime]] = None,
 ) -> LoanState:
-    """Forward pass adapted for billing-cycle loans.
+    """Forward pass for billing-cycle loans.
 
-    Identical to :func:`money_warp.loan.engines.compute_state` except
-    that the mora rate is resolved per billing cycle via
-    *mora_rate_resolver* instead of using a fixed rate.
+    Wraps :func:`money_warp.loan.engines.compute_state` with a
+    ``mora_rate_for_event`` callback that resolves the mora rate
+    per billing cycle.
     """
-    running_principal = principal
-    last_payment_date = disbursement_date
-    fines_applied: Dict[date, Money] = {}
-    fines_paid_total = Money.zero()
-    overpaid = Money.zero()
-    settlements = []
-    allocs_by_number: Dict[int, list] = {}
-    processed_payments: list = []
-
-    events = _build_event_timeline(payment_entries, fine_observation_dates)
-
-    for event_dt, is_payment, payment in events:
-        if event_dt > as_of:
-            break
-
-        fines_applied = compute_fines_at(
-            event_dt,
-            due_dates,
-            schedule,
-            fine_rate,
-            grace_period_days,
-            fines_applied,
-            processed_payments,
-        )
-
-        if not is_payment:
-            continue
-
-        interest_date = (
-            payment.interest_date
-            if payment.interest_date is not None
-            else payment.datetime
-        )
-        days = max(0, (interest_date.date() - last_payment_date.date()).days)
-
-        covered = covered_due_date_count(running_principal, schedule)
-        next_due = due_dates[covered] if covered < len(due_dates) else None
-
-        mora_rate = resolve_mora_rate(
-            due_dates, closing_dates, next_due, base_mora_rate, mora_rate_resolver,
-        )
-
-        regular, mora = interest_calc.compute_accrued_interest(
-            days,
-            running_principal,
-            next_due,
-            last_payment_date,
-            mora_rate_override=mora_rate,
-        )
-
-        installments = _build_installments_snapshot(
-            allocs_by_number,
-            running_principal,
-            payment.datetime,
-            schedule,
-            fines_applied,
-            interest_calc,
-            last_payment_date=last_payment_date,
-        )
-
-        skipped = _skipped_contractual_interest(installments, next_due, interest_date.date())
-        interest_cap = Money(regular.raw_amount + skipped.raw_amount)
-
-        total_fines = (
-            Money(sum(f.raw_amount for f in fines_applied.values()))
-            if fines_applied
-            else Money.zero()
-        )
-        fine_balance = total_fines - fines_paid_total
-        if fine_balance.is_negative():
-            fine_balance = Money.zero()
-
-        fine_paid, mora_paid, interest_paid, principal_paid, allocations = (
-            allocate_payment_into_installments(
-                payment.amount,
-                installments,
-                running_principal,
-                fine_cap=fine_balance,
-                interest_cap=interest_cap,
-                mora_cap=mora,
-            )
-        )
-
-        fines_paid_total = fines_paid_total + fine_paid
-        running_principal = running_principal - principal_paid
-        if running_principal.is_negative():
-            overpaid = overpaid + Money(-running_principal.raw_amount)
-            running_principal = Money.zero()
-        elif running_principal.is_positive() and running_principal <= _COVERAGE_TOLERANCE:
-            running_principal = Money.zero()
-
-        for a in allocations:
-            allocs_by_number.setdefault(a.installment_number, []).append(a)
-
-        settlements.append(
-            Settlement(
-                payment_amount=payment.amount,
-                payment_date=payment.datetime,
-                fine_paid=fine_paid,
-                interest_paid=interest_paid,
-                mora_paid=mora_paid,
-                principal_paid=principal_paid,
-                remaining_balance=running_principal,
-                allocations=allocations,
-            )
-        )
-
-        last_payment_date = payment.datetime
-        processed_payments.append(payment)
-
-    return LoanState(
-        settlements=settlements,
-        principal_balance=running_principal,
-        fines_applied=fines_applied,
-        fines_paid_total=fines_paid_total,
-        last_payment_date=last_payment_date,
-        overpaid=overpaid,
+    callback = make_mora_callback(due_dates, closing_dates, base_mora_rate, mora_rate_resolver)
+    return _compute_state(
+        principal=principal,
+        interest_calc=interest_calc,
+        schedule=schedule,
+        due_dates=due_dates,
+        fine_rate=fine_rate,
+        grace_period_days=grace_period_days,
+        disbursement_date=disbursement_date,
+        payment_entries=payment_entries,
+        as_of=as_of,
+        fine_observation_dates=fine_observation_dates,
+        mora_rate_for_event=callback,
     )
 
 
@@ -214,7 +120,7 @@ def build_statements(
     due_dates: List[date],
     closing_dates: List[datetime],
     billing_cycle: BaseBillingCycle,
-    settlements: List,
+    settlements: List[Settlement],
     fines_applied: Dict[date, Money],
     principal: Money,
     base_mora_rate: InterestRate,
@@ -251,7 +157,11 @@ def build_statements(
         expected_interest = entry.interest_payment if entry else Money.zero()
 
         mora_rate = resolve_mora_rate(
-            due_dates, closing_dates, dd, base_mora_rate, mora_rate_resolver,
+            due_dates,
+            closing_dates,
+            dd,
+            base_mora_rate,
+            mora_rate_resolver,
         )
 
         fine_charged = fines_applied.get(dd, Money.zero())
@@ -261,10 +171,7 @@ def build_statements(
         mora_charged = Money.zero()
         for s_list in settlement_by_date.values():
             for s in s_list:
-                in_period = (
-                    (prev_closing is None or s.payment_date > prev_closing)
-                    and s.payment_date <= closing_date
-                )
+                in_period = (prev_closing is None or s.payment_date > prev_closing) and s.payment_date <= closing_date
                 if in_period:
                     payments_received = payments_received + s.payment_amount
                     mora_charged = mora_charged + s.mora_paid

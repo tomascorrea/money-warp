@@ -11,8 +11,9 @@ The `BillingCycleLoan` models a personal loan where principal is amortized on a 
 - **`BillingCycleLoan`** (facade) — wires billing cycle, scheduler, interest calculator, and mora rate resolver. Provides payment methods and property views.
 - **`BaseBillingCycle`** — existing factory that generates closing dates and due dates. Enhanced with optional explicit `due_dates` and a `due_dates_between()` method.
 - **`MoraRateResolver`** (protocol) — callable `(date, InterestRate) -> InterestRate` that adjusts the mora rate per cycle. The first argument is the cycle's closing date; the second is the base mora rate.
-- **`InterestCalculator`** — reused from `loan/engines.py`, enhanced with `mora_rate_override` parameter.
-- **`billing_cycle_loan/engines.py`** — adapted forward pass that resolves mora rate per cycle and delegates allocation/distribution/fines to `loan/engines.py`.
+- **`engines.py`** (root) — shared building blocks (`InterestCalculator`, `MoraStrategy`, `MoraRateCallback`) used by both `Loan` and `BillingCycleLoan`. No dependency on domain objects.
+- **`loan/engines.py`** — unified forward pass (`compute_state`) with an optional `mora_rate_for_event` callback, plus all allocation, fine, and installment logic. `Loan` omits the callback; `BillingCycleLoan` passes one.
+- **`billing_cycle_loan/engines.py`** — thin product-specific layer: `resolve_mora_rate`, `make_mora_callback`, a wrapper `compute_state` that builds the callback and delegates, and `build_statements`.
 - **`BillingCycleLoanStatement`** — per-period view combining schedule expectations with actual payments, mora rate used, and fine activity.
 
 ### Key Differences from Loan
@@ -61,9 +62,7 @@ The `BillingCycleLoan` constructor calls `billing_cycle.due_dates_between(...)` 
 
 ## Forward Pass
 
-`billing_cycle_loan.engines.compute_state` is an adapted version of `loan.engines.compute_state`. The only structural difference: at each payment event, it resolves the mora rate for the current billing cycle and passes it as `mora_rate_override` to `InterestCalculator.compute_accrued_interest`.
-
-All other engine functions are reused directly from `loan/engines.py`: `allocate_payment`, `distribute_into_installments`, `compute_fines_at`, `covered_due_date_count`, `_build_event_timeline`, `_build_installments_snapshot`, `_skipped_contractual_interest`.
+There is a single unified `compute_state` in `loan/engines.py` with an optional `mora_rate_for_event: MoraRateCallback` parameter. `Loan` calls it without the callback (default mora rate). `BillingCycleLoan`'s `billing_cycle_loan/engines.py` builds a callback via `make_mora_callback` that resolves the per-cycle mora rate and delegates to the same unified function. No forward-pass logic is duplicated.
 
 ## Statements
 
@@ -88,7 +87,8 @@ Statements are a reporting view — they don't affect the financial computation.
 
 ## Key Design Decisions
 
-- **No duplication of engine logic**: the adapted forward pass reuses 90%+ of `loan/engines.py` functions. Only mora rate resolution is new.
+- **No duplication of engine logic**: `loan/engines.py` has a single unified `compute_state` with a `MoraRateCallback` hook. BCL injects its per-cycle resolver via the callback; `Loan` omits it. All allocation, fine, and installment functions are shared.
+- **Three-layer engine architecture**: `engines.py` (root) → `loan/engines.py` → `billing_cycle_loan/engines.py`. Root has standalone types (no `loan/` dependency, avoids circular imports). Loan engines have the full forward pass. BCL engines add product-specific wrappers.
 - **Resolver is optional**: without it, behavior is identical to a `Loan` with billing-cycle-derived due dates.
 - **Billing cycle owns all date logic**: the loan never receives explicit `due_dates` — it always derives them from the billing cycle. To customize due dates, pass them to the billing cycle constructor.
 - **`InterestCalculator.compute_accrued_interest` gained `mora_rate_override`**: backward-compatible (optional param), allows per-call mora rate without duplicating the calculator.
