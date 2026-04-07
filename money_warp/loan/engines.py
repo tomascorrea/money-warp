@@ -59,20 +59,27 @@ class InterestCalculator:
         principal_balance: Money,
         due_date: Optional[date] = None,
         last_payment_date: Optional[datetime] = None,
+        mora_rate_override: Optional[InterestRate] = None,
     ) -> Tuple[Money, Money]:
         """Compute accrued interest split into regular and mora components.
 
         Returns (regular_accrued, mora_accrued). All interest is regular when
-        due_date is not provided or the payment is not late. Uses
-        ``mora_interest_rate`` and ``mora_strategy`` for the mora portion.
+        due_date is not provided or the payment is not late.
+
+        Args:
+            mora_rate_override: When provided, used instead of
+                ``self.mora_interest_rate`` for this single computation.
+                Existing callers that omit it get the original behaviour.
         """
+        mora_rate = mora_rate_override or self.mora_interest_rate
+
         if due_date is None or last_payment_date is None:
             return self.interest_rate.accrue(principal_balance, days), Money.zero()
 
         regular_days = (due_date - last_payment_date.date()).days
 
         if regular_days <= 0:
-            return Money.zero(), self.mora_interest_rate.accrue(principal_balance, days)
+            return Money.zero(), mora_rate.accrue(principal_balance, days)
 
         if regular_days >= days:
             return self.interest_rate.accrue(principal_balance, days), Money.zero()
@@ -81,9 +88,9 @@ class InterestCalculator:
         regular_accrued = self.interest_rate.accrue(principal_balance, regular_days)
 
         if self.mora_strategy == MoraStrategy.COMPOUND:
-            mora_accrued = self.mora_interest_rate.accrue(principal_balance + regular_accrued, mora_days)
+            mora_accrued = mora_rate.accrue(principal_balance + regular_accrued, mora_days)
         else:
-            mora_accrued = self.mora_interest_rate.accrue(principal_balance, mora_days)
+            mora_accrued = mora_rate.accrue(principal_balance, mora_days)
 
         return regular_accrued, mora_accrued
 
