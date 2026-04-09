@@ -31,9 +31,7 @@ class BaseBillingCycle(ABC):
     """
 
     def __init__(self, due_dates: Optional[List[date]] = None) -> None:
-        self._explicit_due_dates: Optional[List[date]] = (
-            sorted(due_dates) if due_dates else None
-        )
+        self._explicit_due_dates: Optional[List[date]] = sorted(due_dates) if due_dates else None
 
     @abstractmethod
     def closing_dates_between(self, start: datetime, end: datetime) -> List[datetime]:

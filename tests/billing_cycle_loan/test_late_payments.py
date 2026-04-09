@@ -7,7 +7,8 @@ from money_warp import Money
 
 def test_late_payment_incurs_mora_and_fine(simple_loan):
     s = simple_loan.record_payment(
-        Money("1022.58"), datetime(2025, 3, 4, tzinfo=timezone.utc),
+        Money("1022.58"),
+        datetime(2025, 3, 4, tzinfo=timezone.utc),
     )
     assert s.fine_paid == Money("20.45")
     assert s.mora_paid == Money("18.93")
@@ -17,14 +18,16 @@ def test_late_payment_incurs_mora_and_fine(simple_loan):
 
 def test_late_payment_remaining_balance(simple_loan):
     s = simple_loan.record_payment(
-        Money("1022.58"), datetime(2025, 3, 4, tzinfo=timezone.utc),
+        Money("1022.58"),
+        datetime(2025, 3, 4, tzinfo=timezone.utc),
     )
     assert s.remaining_balance == Money("2056.18")
 
 
 def test_late_payment_allocation_not_fully_covered(simple_loan):
     s = simple_loan.record_payment(
-        Money("1022.58"), datetime(2025, 3, 4, tzinfo=timezone.utc),
+        Money("1022.58"),
+        datetime(2025, 3, 4, tzinfo=timezone.utc),
     )
     assert s.allocations[0].is_fully_covered is False
 

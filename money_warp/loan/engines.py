@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from ..engines import (  # noqa: F401 – re-export
+from ..engines import (  # noqa: F401 - re-export
     InterestCalculator,
     MoraRateCallback,
     MoraStrategy,

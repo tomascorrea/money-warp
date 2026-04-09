@@ -7,7 +7,8 @@ from money_warp import Money
 
 def test_on_time_payment_first_installment(simple_loan):
     s = simple_loan.record_payment(
-        Money("1022.58"), datetime(2025, 2, 12, tzinfo=timezone.utc),
+        Money("1022.58"),
+        datetime(2025, 2, 12, tzinfo=timezone.utc),
     )
     assert s.fine_paid == Money("0.00")
     assert s.mora_paid == Money("0.00")
@@ -28,7 +29,8 @@ def test_on_time_payment_all_installments(simple_loan):
 def test_on_time_second_settlement_values(simple_loan):
     simple_loan.record_payment(Money("1022.58"), datetime(2025, 2, 12, tzinfo=timezone.utc))
     s2 = simple_loan.record_payment(
-        Money("1022.58"), datetime(2025, 3, 15, tzinfo=timezone.utc),
+        Money("1022.58"),
+        datetime(2025, 3, 15, tzinfo=timezone.utc),
     )
     assert s2.fine_paid == Money("0.00")
     assert s2.mora_paid == Money("0.00")
@@ -40,7 +42,8 @@ def test_on_time_third_settlement_values(simple_loan):
     simple_loan.record_payment(Money("1022.58"), datetime(2025, 2, 12, tzinfo=timezone.utc))
     simple_loan.record_payment(Money("1022.58"), datetime(2025, 3, 15, tzinfo=timezone.utc))
     s3 = simple_loan.record_payment(
-        Money("1022.58"), datetime(2025, 4, 12, tzinfo=timezone.utc),
+        Money("1022.58"),
+        datetime(2025, 4, 12, tzinfo=timezone.utc),
     )
     assert s3.fine_paid == Money("0.00")
     assert s3.mora_paid == Money("0.00")
@@ -50,7 +53,8 @@ def test_on_time_third_settlement_values(simple_loan):
 
 def test_allocation_installment_numbers(simple_loan):
     s = simple_loan.record_payment(
-        Money("1022.58"), datetime(2025, 2, 12, tzinfo=timezone.utc),
+        Money("1022.58"),
+        datetime(2025, 2, 12, tzinfo=timezone.utc),
     )
     assert len(s.allocations) == 1
     assert s.allocations[0].installment_number == 1

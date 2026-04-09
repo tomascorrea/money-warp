@@ -30,7 +30,8 @@ def test_warp_principal_unchanged_without_payments(simple_loan):
 
 def test_warp_with_payments(simple_loan):
     simple_loan.record_payment(
-        Money("1022.58"), datetime(2025, 2, 12, tzinfo=timezone.utc),
+        Money("1022.58"),
+        datetime(2025, 2, 12, tzinfo=timezone.utc),
     )
     with Warp(simple_loan, "2025-06-01") as warped:
         assert warped.principal_balance == Money("2016.80")

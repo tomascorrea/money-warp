@@ -7,7 +7,7 @@ The forward pass and all allocation logic come from
 """
 
 from datetime import date, datetime
-from typing import Callable, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from ..billing_cycle import BaseBillingCycle
 from ..engines import InterestCalculator, MoraRateCallback
