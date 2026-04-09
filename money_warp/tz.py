@@ -36,20 +36,28 @@ def now() -> datetime:
 
 
 def ensure_aware(dt: datetime) -> datetime:
-    """Guarantee that *dt* is timezone-aware.
+    """Guarantee that *dt* is timezone-aware and in the configured timezone.
 
-    If *dt* is naive, the configured default timezone is attached.
-    If *dt* is already aware, it is returned unchanged.
+    If *dt* is naive, the configured default timezone is stamped
+    (wall-clock time is preserved).
+    If *dt* is already aware, it is converted to the configured
+    timezone via ``astimezone`` (the instant is preserved, wall-clock
+    time adjusts).
     """
     if dt.tzinfo is None:
         return dt.replace(tzinfo=_default_tz)
-    return dt
+    return dt.astimezone(_default_tz)
 
 
 def to_date(dt: Union[date, datetime]) -> date:
-    """Extract the calendar date from a datetime, or return a date as-is."""
+    """Extract the calendar date in the configured timezone.
+
+    For ``datetime`` inputs the value is first converted to the
+    configured timezone so the extracted date reflects the correct
+    business day.  Plain ``date`` inputs pass through unchanged.
+    """
     if isinstance(dt, datetime):
-        return dt.date()
+        return dt.astimezone(_default_tz).date()
     return dt
 
 

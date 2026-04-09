@@ -1,12 +1,12 @@
 """Tests for the timezone configuration module."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from money_warp.tz import _DefaultTimeSource, ensure_aware, get_tz, now, set_tz, tz_aware
+from money_warp.tz import _DefaultTimeSource, ensure_aware, get_tz, now, set_tz, to_date, tz_aware
 
 # --- get_tz / set_tz ---
 
@@ -76,11 +76,12 @@ def test_ensure_aware_attaches_default_tz_to_naive():
     assert result.tzinfo == timezone.utc
 
 
-def test_ensure_aware_preserves_already_aware():
+def test_ensure_aware_normalizes_already_aware_to_default_tz():
     tz = ZoneInfo("Asia/Tokyo")
     aware = datetime(2024, 6, 15, 12, 0, 0, tzinfo=tz)
     result = ensure_aware(aware)
-    assert result.tzinfo is tz
+    assert result.tzinfo == timezone.utc
+    assert result == aware
 
 
 def test_ensure_aware_uses_configured_tz_for_naive():
@@ -154,7 +155,7 @@ def test_tz_aware_coerces_naive_keyword_arg():
     assert result.tzinfo == timezone.utc
 
 
-def test_tz_aware_preserves_already_aware_arg():
+def test_tz_aware_normalizes_already_aware_arg_to_default_tz():
     tz = ZoneInfo("Asia/Tokyo")
 
     @tz_aware
@@ -163,7 +164,8 @@ def test_tz_aware_preserves_already_aware_arg():
 
     aware = datetime(2024, 1, 1, tzinfo=tz)
     result = func(aware)
-    assert result.tzinfo is tz
+    assert result.tzinfo == timezone.utc
+    assert result == aware
 
 
 def test_tz_aware_coerces_list_of_datetimes():
@@ -215,3 +217,69 @@ def test_tz_aware_uses_configured_timezone():
         assert result.tzinfo == ZoneInfo("America/Sao_Paulo")
     finally:
         set_tz(original)
+
+
+# --- ensure_aware: cross-timezone normalization ---
+
+
+def test_ensure_aware_converts_sao_paulo_to_utc():
+    sp = ZoneInfo("America/Sao_Paulo")
+    aware = datetime(2024, 1, 15, 20, 0, 0, tzinfo=sp)
+    result = ensure_aware(aware)
+    assert result.tzinfo == timezone.utc
+    assert result.hour == 23
+    assert result.day == 15
+
+
+def test_ensure_aware_converts_utc_to_configured_tz():
+    original = get_tz()
+    try:
+        set_tz("America/Sao_Paulo")
+        utc_dt = datetime(2024, 1, 16, 2, 0, 0, tzinfo=timezone.utc)
+        result = ensure_aware(utc_dt)
+        assert result.tzinfo == ZoneInfo("America/Sao_Paulo")
+        assert result.hour == 23
+        assert result.day == 15
+    finally:
+        set_tz(original)
+
+
+def test_ensure_aware_cross_midnight_date_change():
+    sp = ZoneInfo("America/Sao_Paulo")
+    sp_dt = datetime(2024, 1, 15, 23, 0, 0, tzinfo=sp)
+    assert sp_dt.date().day == 15
+
+    result = ensure_aware(sp_dt)
+    assert result.tzinfo == timezone.utc
+    assert result.date().day == 16
+
+
+def test_ensure_aware_preserves_instant():
+    sp = ZoneInfo("America/Sao_Paulo")
+    tokyo = ZoneInfo("Asia/Tokyo")
+    sp_dt = datetime(2024, 6, 15, 10, 0, 0, tzinfo=sp)
+    tokyo_dt = datetime(2024, 6, 15, 22, 0, 0, tzinfo=tokyo)
+    assert ensure_aware(sp_dt) == ensure_aware(tokyo_dt)
+
+
+# --- to_date: timezone-aware date extraction ---
+
+
+def test_to_date_extracts_date_in_configured_tz():
+    original = get_tz()
+    try:
+        set_tz("America/Sao_Paulo")
+        utc_dt = datetime(2024, 1, 16, 2, 0, 0, tzinfo=timezone.utc)
+        assert to_date(utc_dt) == date(2024, 1, 15)
+    finally:
+        set_tz(original)
+
+
+def test_to_date_passes_plain_date_through():
+    d = date(2024, 6, 15)
+    assert to_date(d) is d
+
+
+def test_to_date_utc_datetime_gives_utc_date():
+    utc_dt = datetime(2024, 1, 16, 2, 0, 0, tzinfo=timezone.utc)
+    assert to_date(utc_dt) == date(2024, 1, 16)
