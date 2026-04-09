@@ -342,7 +342,7 @@ class Loan:
             state.principal_balance,
             self.now(),
             self._interest,
-            state.last_payment_date,
+            state.last_accrual_end,
         )
 
     # ------------------------------------------------------------------
@@ -357,7 +357,7 @@ class Loan:
     def _accrued_interest_components(self) -> tuple:
         """Return (regular, mora) accrued interest since last payment."""
         state = self._compute_state()
-        days = (self.now().date() - state.last_payment_date.date()).days
+        days = (self.now().date() - state.last_accrual_end.date()).days
 
         if state.principal_balance.is_positive() and days > 0:
             covered = covered_due_date_count(state.principal_balance, self.get_original_schedule())
@@ -366,7 +366,7 @@ class Loan:
                 days,
                 state.principal_balance,
                 next_due,
-                state.last_payment_date,
+                state.last_accrual_end,
             )
 
         return Money.zero(), Money.zero()

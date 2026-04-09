@@ -222,7 +222,10 @@ Shared between Settlement (forward view) and Installment (reverse view).
 
 ### LoanState
 
-Internal dataclass returned by `compute_state`: `settlements`, `principal_balance`, `fines_applied`, `fines_paid_total`, `last_payment_date`.
+Internal dataclass returned by `compute_state`: `settlements`, `principal_balance`, `fines_applied`, `fines_paid_total`, `last_payment_date`, `last_accrual_end`, `overpaid`.
+
+- `last_payment_date` — when money last moved (user-facing via `Loan.last_payment_date`).
+- `last_accrual_end` — end of the last interest accrual period (`max(payment_date, interest_date)`). Used internally for interest computation and installment snapshot building. Prevents double-counting when `interest_date > payment_date`.
 
 ## Cash Flow
 
@@ -316,3 +319,15 @@ Internal dataclass returned by `compute_state`: `settlements`, `principal_balanc
 **Original root cause:** The per-installment reservation held back principal from being allocated, creating "spill" that appeared in totals but not in allocations. Fixed with `_compute_spill` + `_reconcile_allocations`.
 
 **Permanent fix:** The two-step allocation refactor eliminated the reservation and spill entirely. The invariant now holds by construction: `distribute_into_installments` fills from exact loan-level totals, and `_apply_residual` handles only the residual gap (loan-level accrual exceeding per-installment expectations). Per-installment owed amounts are still clamped to non-negative (`max(owed, 0)`) to prevent negative allocations.
+
+### Interest double-counted on sequential early partial payments (fixed 2026-04-09)
+
+**Symptom:** Two sequential `pay_installment` calls before the due date produced a different (worse) outcome than a single combined payment of the same total. The second payment charged spurious interest for the overlap period between `payment_date` and `interest_date`, starving the current installment of principal and preventing full coverage.
+
+**Root cause:** `compute_state` set `last_payment_date = payment.datetime` after each payment. For early payments, `interest_date = max(payment_date, next_due_date) > payment_date`, so the accrual period `[last_payment_date, interest_date]` extended past the payment timestamp. The next payment then re-accrued interest from `payment_date` to its own `interest_date`, double-counting the overlap.
+
+**Fix:** Introduced `last_accrual_end` in the forward pass, set to `max(payment.datetime, interest_date)` after each payment. All subsequent interest computation, regular/mora splitting, and installment snapshot building use `last_accrual_end` instead of `last_payment_date`. The user-facing `Loan.last_payment_date` property is unchanged — `LoanState` now carries both fields.
+
+**Scope:** Both `Loan` and `BillingCycleLoan` were affected and fixed.
+
+**Lesson:** In a forward pass that processes events chronologically, the start of the next accrual period must be the *end* of the previous one, not the timestamp of the event that triggered it. When `interest_date` and `payment_date` diverge, using the wrong one as the accrual boundary creates invisible overlap.

@@ -99,9 +99,9 @@ def test_catchup_settlement_exact_totals(catchup_loan):
     with Warp(catchup_loan, datetime(2026, 5, 25, tzinfo=timezone.utc)) as w:
         settlement = w.pay_installment(Money(5000))
 
-    assert settlement.principal_paid == Money("4512.07")
-    assert settlement.interest_paid == Money("294.98")
-    assert settlement.mora_paid == Money("106.58")
+    assert settlement.principal_paid == Money("4585.44")
+    assert settlement.interest_paid == Money("223.41")
+    assert settlement.mora_paid == Money("104.78")
     assert settlement.fine_paid == Money("86.38")
     assert settlement.remaining_balance == Money("0.00")
 

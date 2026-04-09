@@ -78,24 +78,24 @@ def test_p1_first_installment(six_partial_settlements):
 
 
 def test_p2_settlement_totals(six_partial_settlements):
-    """Second payment: small interest for 5-day period, rest to principal."""
+    """Second payment: no new interest (P1 already covered up to due date), all to principal."""
     _, settlements = six_partial_settlements
-    assert settlements[1].interest_paid == Money("2.15")
-    assert settlements[1].principal_paid == Money("97.85")
+    assert settlements[1].interest_paid == Money("0.00")
+    assert settlements[1].principal_paid == Money("100.00")
 
 
 def test_p2_allocation_count(six_partial_settlements):
-    """P2 touches 2 installments (inst 1 principal + inst 2 interest spillover)."""
+    """P2 touches 1 installment (inst 1 principal only, no interest spillover)."""
     _, settlements = six_partial_settlements
-    assert len(settlements[1].allocations) == 2
+    assert len(settlements[1].allocations) == 1
 
 
 def test_p2_first_installment(six_partial_settlements):
-    """Inst 1 gets principal portion — still not fully covered."""
+    """Inst 1 gets all principal — still not fully covered."""
     _, settlements = six_partial_settlements
     a = settlements[1].allocations[0]
     assert a.installment_number == 1
-    assert a.principal_allocated == Money("97.85")
+    assert a.principal_allocated == Money("100.00")
     assert a.interest_allocated == Money("0.00")
     assert a.is_fully_covered is False
 
@@ -108,7 +108,7 @@ def test_p3_completes_installment_one(six_partial_settlements):
     _, settlements = six_partial_settlements
     first_alloc = settlements[2].allocations[0]
     assert first_alloc.installment_number == 1
-    assert first_alloc.principal_allocated == Money("105.77")
+    assert first_alloc.principal_allocated == Money("103.62")
     assert first_alloc.is_fully_covered is True
 
 
@@ -116,51 +116,62 @@ def test_p3_completes_installment_one(six_partial_settlements):
 
 
 def test_p4_settlement_totals(six_partial_settlements):
-    """P4 between due dates: 6.40 interest, 193.60 principal."""
+    """P4 between due dates: 6.37 interest, 193.63 principal."""
     _, settlements = six_partial_settlements
-    assert settlements[3].interest_paid == Money("6.40")
-    assert settlements[3].principal_paid == Money("193.60")
+    assert settlements[3].interest_paid == Money("6.37")
+    assert settlements[3].principal_paid == Money("193.63")
 
 
 def test_p4_allocation_count(six_partial_settlements):
-    """P4 touches inst 2 (principal+interest) and inst 3 (interest spillover)."""
+    """P4 touches inst 2 only (interest + principal)."""
     _, settlements = six_partial_settlements
-    assert len(settlements[3].allocations) == 2
+    assert len(settlements[3].allocations) == 1
 
 
 def test_p4_second_installment(six_partial_settlements):
-    """Inst 2 gets bulk of P4 — not yet fully covered."""
+    """Inst 2 gets all of P4 — not yet fully covered."""
     _, settlements = six_partial_settlements
     a = settlements[3].allocations[0]
     assert a.installment_number == 2
-    assert a.principal_allocated == Money("193.60")
-    assert a.interest_allocated == Money("3.75")
+    assert a.principal_allocated == Money("193.63")
+    assert a.interest_allocated == Money("6.37")
     assert a.is_fully_covered is False
 
 
 # --- Payment 5: R$200 on Mar 1 (completes installment 2) ---
 
 
-def test_p5_completes_installment_two(six_partial_settlements):
-    """P5 on the second due date finishes off installment 2."""
+def test_p5_second_installment(six_partial_settlements):
+    """P5 on the second due date pays inst 2's remaining principal and spills to inst 3."""
     _, settlements = six_partial_settlements
     first_alloc = settlements[4].allocations[0]
     assert first_alloc.installment_number == 2
-    assert first_alloc.principal_allocated == Money("99.89")
-    assert first_alloc.is_fully_covered is True
+    assert first_alloc.principal_allocated == Money("97.17")
+    assert first_alloc.interest_allocated == Money("0.00")
+    assert first_alloc.is_fully_covered is False
 
 
 # --- Payment 6: R$200 on Apr 1 (inst 3 remains partially unpaid) ---
 
 
-def test_p6_third_installment_not_covered(six_partial_settlements):
-    """Inst 3 gets all of P6 plus interest spill — still NOT fully covered."""
+def test_p6_third_installment_allocation(six_partial_settlements):
+    """Inst 3 gets principal + interest from P6."""
+    _, settlements = six_partial_settlements
+    a = settlements[5].allocations[1]
+    assert a.installment_number == 3
+    assert a.principal_allocated == Money("197.65")
+    assert a.interest_allocated == Money("2.28")
+    assert a.is_fully_covered is True
+
+
+def test_p6_finishes_second_installment(six_partial_settlements):
+    """P6 also covers inst 2's remaining interest (0.07)."""
     _, settlements = six_partial_settlements
     a = settlements[5].allocations[0]
-    assert a.installment_number == 3
-    assert a.principal_allocated == Money("197.59")
-    assert a.interest_allocated == Money("2.41")
-    assert a.is_fully_covered is False
+    assert a.installment_number == 2
+    assert a.interest_allocated == Money("0.07")
+    assert a.principal_allocated == Money("0.00")
+    assert a.is_fully_covered is True
 
 
 # --- Final state ---

@@ -44,6 +44,7 @@ class LoanState:
     fines_applied: Dict[date, Money]
     fines_paid_total: Money
     last_payment_date: datetime
+    last_accrual_end: datetime
     overpaid: Money
 
 
@@ -506,6 +507,7 @@ def compute_state(
     """
     running_principal = principal
     last_payment_date = disbursement_date
+    last_accrual_end = disbursement_date
     fines_applied: Dict[date, Money] = {}
     fines_paid_total = Money.zero()
     overpaid = Money.zero()
@@ -533,7 +535,7 @@ def compute_state(
             continue
 
         interest_date = payment.interest_date if payment.interest_date is not None else payment.datetime
-        days = max(0, (interest_date.date() - last_payment_date.date()).days)
+        days = max(0, (interest_date.date() - last_accrual_end.date()).days)
 
         covered = covered_due_date_count(running_principal, schedule)
         next_due = due_dates[covered] if covered < len(due_dates) else None
@@ -544,7 +546,7 @@ def compute_state(
             days,
             running_principal,
             next_due,
-            last_payment_date,
+            last_accrual_end,
             mora_rate_override=mora_override,
         )
 
@@ -555,7 +557,7 @@ def compute_state(
             schedule,
             fines_applied,
             interest_calc,
-            last_payment_date=last_payment_date,
+            last_payment_date=last_accrual_end,
         )
 
         skipped = _skipped_contractual_interest(installments, next_due, interest_date.date())
@@ -600,6 +602,7 @@ def compute_state(
         )
 
         last_payment_date = payment.datetime
+        last_accrual_end = max(payment.datetime, interest_date)
         processed_payments.append(payment)
 
     return LoanState(
@@ -608,6 +611,7 @@ def compute_state(
         fines_applied=fines_applied,
         fines_paid_total=fines_paid_total,
         last_payment_date=last_payment_date,
+        last_accrual_end=last_accrual_end,
         overpaid=overpaid,
     )
 
@@ -624,7 +628,7 @@ def build_installments(
     principal_balance: Money,
     as_of: datetime,
     interest_calc: InterestCalculator,
-    last_payment_date: datetime,
+    last_accrual_end: datetime,
 ) -> List[Installment]:
     """Build the installment view from settlements + schedule."""
     allocs_by_number: Dict[int, List[Allocation]] = {}
@@ -639,5 +643,5 @@ def build_installments(
         schedule,
         fines_applied,
         interest_calc,
-        last_payment_date=last_payment_date,
+        last_payment_date=last_accrual_end,
     )
