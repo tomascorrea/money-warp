@@ -11,7 +11,7 @@ payments where interest accrues to the due date), the gap between
 second payment, starving inst#1 of principal and preventing full coverage.
 """
 
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -32,7 +32,7 @@ def six_installment_loan():
             date(2026, 3, 12),
             date(2026, 4, 12),
         ],
-        disbursement_date=datetime(2025, 10, 9, 18, 0, tzinfo=UTC),
+        disbursement_date=datetime(2025, 10, 9, 18, 0, tzinfo=timezone.utc),
         scheduler=PriceScheduler,
         mora_interest_rate=InterestRate("1% a.m."),
         fine_rate=InterestRate("2% a.m."),
@@ -41,7 +41,7 @@ def six_installment_loan():
 
 @pytest.fixture
 def warp_dt():
-    return datetime(2025, 11, 10, 18, 0, tzinfo=UTC)
+    return datetime(2025, 11, 10, 18, 0, tzinfo=timezone.utc)
 
 
 # --- Single combined payment baseline ---
