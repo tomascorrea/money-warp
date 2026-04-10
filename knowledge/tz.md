@@ -1,36 +1,66 @@
 # Timezone Configuration (tz)
 
-The `tz` module centralises all timezone handling for MoneyWarp. Every datetime produced or stored by the library is timezone-aware and normalised to the configured timezone (UTC by default).
+The `tz` module centralises all timezone handling for MoneyWarp. It implements a **two-timezone architecture**: all internal datetimes are stored in UTC, while calendar-date extraction uses the configured business timezone (UTC by default).
 
 ## Design Decisions
 
-### UTC by Default, Configurable
+### Two-Timezone Architecture
 
-The module-level default timezone starts as `timezone.utc`. Callers can change it globally with `set_tz("America/Sao_Paulo")` or `set_tz(some_tzinfo)`. The change affects `now()`, `ensure_aware()`, `to_date()`, and the `tz_aware` decorator — all of which read `get_tz()` at call time.
+The module distinguishes two concerns:
 
-The configured timezone acts as the **business timezone** — the timezone in which calendar dates are interpreted. All internal datetimes are stored in this timezone so that `.date()` extractions yield the correct business day.
+1. **Storage timezone** — always UTC. `ensure_aware` converts every incoming datetime to UTC before it is stored or used internally.
+2. **Business timezone** — configurable via `set_tz()`, defaults to UTC. `to_date` converts a UTC datetime to the business timezone before extracting the calendar date.
 
-### Timezone Normalisation in `ensure_aware`
+This separation guarantees that a Brazilian user operating in `America/Sao_Paulo` can pass a BRT datetime, have it stored as UTC internally, and still get the correct BRT calendar date when the library computes due dates and day counts.
 
-`ensure_aware` handles two cases:
+### UTC Storage via `ensure_aware`
 
-- **Naive datetimes**: stamped with the configured timezone via `dt.replace(tzinfo=...)`. Wall-clock time is preserved; the datetime is interpreted as being in the configured timezone.
-- **Aware datetimes**: converted to the configured timezone via `dt.astimezone(get_tz())`. The instant is preserved; wall-clock time adjusts to reflect the configured timezone.
+`ensure_aware` handles two cases, both producing UTC:
 
-This means a `datetime` in any timezone can be passed to any library entry point and it will be normalised automatically. For example, `datetime(2024, 1, 15, 23, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))` becomes `datetime(2024, 1, 16, 2, 0, tzinfo=UTC)` when the library is configured for UTC.
+- **Naive datetimes**: interpreted as being in the business timezone (`_default_tz`), then converted to UTC. `dt.replace(tzinfo=_default_tz).astimezone(timezone.utc)`.
+- **Aware datetimes**: converted to UTC directly via `dt.astimezone(timezone.utc)`.
 
-### Timezone-Aware Date Extraction in `to_date`
+Example: `datetime(2024, 1, 15, 23, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))` becomes `datetime(2024, 1, 16, 2, 0, tzinfo=UTC)`.
 
-`to_date` converts a datetime to the configured timezone before extracting the calendar date. This ensures the extracted date reflects the correct business day even if the datetime originates from a different timezone. Plain `date` inputs pass through unchanged.
+### Business-Date Extraction via `to_date`
+
+`to_date` converts a datetime to the business timezone before calling `.date()`. This ensures the extracted date reflects the correct business day. Plain `date` inputs pass through unchanged.
+
+Example with `set_tz("America/Sao_Paulo")`: `to_date(datetime(2024, 1, 16, 2, 0, tzinfo=UTC))` returns `date(2024, 1, 15)` — the correct BRT calendar day.
+
+### Round-Trip Integrity
+
+The pair `ensure_aware` + `to_date` preserves calendar dates:
+
+```
+set_tz("America/Sao_Paulo")
+naive = datetime(2024, 1, 15, 22, 0, 0)    # interpreted as BRT
+stored = ensure_aware(naive)                 # → 2024-01-16 01:00 UTC
+to_date(stored)                              # → date(2024, 1, 15) ✓
+```
+
+Similarly, `to_datetime(d)` creates midnight in the business timezone then converts to UTC, and `to_date(to_datetime(d))` round-trips back to `d`.
+
+### `now()` Returns Business Timezone
+
+`now()` returns `datetime.now(_default_tz)` — the current wall-clock time in the business timezone. When this value passes through `@tz_aware` (e.g. as a `payment_date` argument), `ensure_aware` converts it to UTC. Library code uses `to_date(self.now())` for calendar-date extraction.
+
+### All `.date()` Calls Use `to_date()`
+
+Every `.date()` call on a datetime inside the library has been replaced with `to_date()`. This ensures consistent business-day extraction regardless of whether the datetime is in UTC (from storage) or business-tz (from `now()`).
+
+### Default `disbursement_date` Normalisation
+
+When `disbursement_date` is not provided, both `Loan` and `BillingCycleLoan` wrap the default with `ensure_aware(self._time_ctx.now())` so that the stored value is always UTC, matching datetimes that pass through `@tz_aware`.
 
 ### Boundary Coercion via Decorator
 
-Rather than scattering `ensure_aware()` calls in every method body, the `@tz_aware` decorator is applied to public functions and methods that accept datetime arguments. At call time it inspects `BoundArguments` and coerces:
+The `@tz_aware` decorator is applied to public functions and methods that accept datetime arguments. At call time it inspects `BoundArguments` and coerces:
 
-- `datetime` values through `ensure_aware`
+- `datetime` values through `ensure_aware` (→ UTC)
 - `list` values whose first element is a `datetime` element-wise
 
-Everything else (including `None` for optional params) passes through untouched. Lists are only coerced when the first element is a `datetime`; `List[date]` arguments (e.g. loan `due_dates`) are left as-is. This keeps method bodies free of boilerplate.
+Everything else (including `None` for optional params) passes through untouched. Lists are only coerced when the first element is a `datetime`; `List[date]` arguments (e.g. loan `due_dates`) are left as-is.
 
 ### No New Dependencies
 
@@ -40,18 +70,19 @@ Uses `zoneinfo.ZoneInfo` from the standard library (Python 3.9+). The project re
 
 | Symbol | Kind | Description |
 |---|---|---|
-| `get_tz()` | function | Return the current default `tzinfo` |
-| `set_tz(tz)` | function | Set the default timezone (string or `tzinfo`) |
-| `now()` | function | `datetime.now(get_tz())` — always aware |
-| `ensure_aware(dt)` | function | Naive: stamp with configured tz; aware: convert to configured tz |
-| `to_date(dt)` | function | Calendar `date` in the configured tz from a `datetime`, or pass through `date` |
-| `to_datetime(d)` | function | Midnight on `d` as a timezone-aware `datetime` (via `ensure_aware`) |
-| `tz_aware` | decorator | Coerce all datetime args of the decorated callable |
+| `get_tz()` | function | Return the current business timezone (`tzinfo`) |
+| `set_tz(tz)` | function | Set the business timezone (string or `tzinfo`) |
+| `now()` | function | `datetime.now(get_tz())` — always aware, in business tz |
+| `ensure_aware(dt)` | function | Normalise to UTC: naive → stamp business tz → UTC; aware → UTC |
+| `to_date(dt)` | function | Calendar `date` in the business tz from a `datetime`, or pass through `date` |
+| `to_datetime(d)` | function | Midnight on `d` (business tz) as a UTC-aware `datetime` |
+| `tz_aware` | decorator | Coerce all datetime args to UTC via `ensure_aware` |
 | `default_time_source` | instance | `_DefaultTimeSource` whose `.now()` delegates to `now()` |
 
 ## Where `@tz_aware` Is Applied
 
-- `Loan.__init__`, `record_payment`, `days_since_last_payment`, `is_payment_late`, `calculate_late_fines`, `present_value`, `get_expected_payment_amount`
+- `Loan.__init__`, `record_payment`, `is_payment_late`, `present_value`
+- `BillingCycleLoan.__init__`, `record_payment`, `is_late`
 - `CashFlowItem.__init__`
 - All `date_utils` generator functions
 - `present_value()` in `present_value.py`
@@ -60,8 +91,10 @@ Uses `zoneinfo.ZoneInfo` from the standard library (Python 3.9+). The project re
 
 ## Key Learnings / Gotchas
 
-- Comparing an aware datetime with a naive datetime raises `TypeError` in Python. The decorator and boundary coercion guarantee this never happens inside the library, but external callers who compare library-returned datetimes with their own naive datetimes will hit this.
-- `CashFlowQuery._apply_datetime_filter` also calls `ensure_aware` on the filter value to protect against naive filter inputs.
-- For naive datetimes, `ensure_aware` uses `dt.replace(tzinfo=...)`, which stamps the timezone without converting. This is correct for the intended semantics: "treat this naive datetime as being in the configured timezone."
-- For aware datetimes, `ensure_aware` uses `dt.astimezone(...)`, which preserves the instant and adjusts wall-clock time. A datetime that is Jan 15 23:00 in Sao Paulo becomes Jan 16 02:00 in UTC — the `.date()` shifts accordingly.
-- `set_tz` should be called once at startup. Changing it mid-flight alters how `to_date` and `ensure_aware` interpret datetimes, which could produce inconsistent results if objects were created under a different timezone.
+- **`ensure_aware` always returns UTC.** Do not assume the result is in the business timezone. Use `to_date()` to extract business-day dates.
+- **Never call `.date()` on a datetime.** Always use `to_date()`. Direct `.date()` calls give UTC dates, which differ from business dates when `set_tz()` is non-UTC.
+- Comparing an aware datetime with a naive datetime raises `TypeError`. The decorator guarantees this never happens inside the library.
+- `CashFlowQuery._apply_datetime_filter` also calls `ensure_aware` on the filter value.
+- For naive datetimes, `ensure_aware` uses `dt.replace(tzinfo=...)` then `.astimezone(UTC)`. The wall-clock interpretation depends on the configured business timezone.
+- `set_tz` should be called once at startup. Changing it mid-flight alters how `to_date` interprets stored UTC datetimes, which could produce inconsistent calendar dates.
+- Mixed timezones in comparisons are safe: Python compares aware datetimes by instant regardless of timezone representation.
