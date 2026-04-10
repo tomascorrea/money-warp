@@ -273,19 +273,19 @@ def test_to_date_extracts_date_in_configured_tz():
     try:
         set_tz("America/Sao_Paulo")
         utc_dt = datetime(2024, 1, 16, 2, 0, 0, tzinfo=timezone.utc)
-        assert to_date(utc_dt) == date(2024, 1, 15)
+        assert to_date(utc_dt, ZoneInfo("America/Sao_Paulo")) == date(2024, 1, 15)
     finally:
         set_tz(original)
 
 
 def test_to_date_passes_plain_date_through():
     d = date(2024, 6, 15)
-    assert to_date(d) is d
+    assert to_date(d, timezone.utc) is d
 
 
 def test_to_date_utc_datetime_gives_utc_date():
     utc_dt = datetime(2024, 1, 16, 2, 0, 0, tzinfo=timezone.utc)
-    assert to_date(utc_dt) == date(2024, 1, 16)
+    assert to_date(utc_dt, timezone.utc) == date(2024, 1, 16)
 
 
 # --- Full round-trip: BRT input → UTC storage → BRT date extraction ---
@@ -306,7 +306,7 @@ def test_brt_input_stored_as_utc_extracted_as_brt_date():
         assert stored.tzinfo == timezone.utc
         assert stored == datetime(2024, 1, 16, 2, 0, 0, tzinfo=timezone.utc)
 
-        extracted_date = to_date(stored)
+        extracted_date = to_date(stored, ZoneInfo("America/Sao_Paulo"))
         assert extracted_date == date(2024, 1, 15)
     finally:
         set_tz(original)
@@ -327,6 +327,6 @@ def test_naive_input_stored_as_utc_extracted_as_brt_date():
         assert stored.hour == 1
         assert stored.day == 16
 
-        assert to_date(stored) == date(2024, 1, 15)
+        assert to_date(stored, ZoneInfo("America/Sao_Paulo")) == date(2024, 1, 15)
     finally:
         set_tz(original)

@@ -21,7 +21,7 @@ def test_price_scheduler_reference_values():
     disbursement_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
     due_dates = [date(2024, 1, i + 2) for i in range(10)]  # Jan 2, 3, 4, ..., 11
 
-    schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date)
+    schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date, timezone.utc)
 
     # Expected values from reference implementation
     expected_payments = [1000.00] * 10
@@ -77,7 +77,7 @@ def test_price_scheduler_zero_interest_validation():
     due_dates = [anchor + timedelta(days=30 * i) for i in range(1, 13)]
     disbursement_date = start_date
 
-    schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date)
+    schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date, timezone.utc)
 
     # With 0% interest, each payment should be exactly principal/12
     expected_payment = Money("1000.00")  # $12,000 / 12
@@ -101,7 +101,7 @@ def test_price_scheduler_single_payment_validation():
     disbursement_date = datetime(2024, 1, 1, tzinfo=timezone.utc)
     due_dates = [date(2024, 12, 31)]  # 365 days later
 
-    schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date)
+    schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date, timezone.utc)
 
     assert len(schedule) == 1
 
@@ -130,7 +130,7 @@ def test_price_scheduler_short_term_validation():
     due_dates = [anchor + timedelta(days=30 * i) for i in range(1, 7)]
     disbursement_date = start_date
 
-    schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date)
+    schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date, timezone.utc)
 
     assert len(schedule) == 6
 
@@ -163,7 +163,7 @@ def test_price_scheduler_irregular_schedule_validation():
         date(2024, 8, 15),  # 75 days later
     ]
 
-    schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date)
+    schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date, timezone.utc)
 
     assert len(schedule) == 4
 
@@ -196,7 +196,7 @@ def test_price_scheduler_high_precision_validation():
     due_dates = [anchor + timedelta(days=30 * i) for i in range(1, 25)]
     disbursement_date = start_date
 
-    schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date)
+    schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date, timezone.utc)
 
     # Validate precision is maintained
     total_principal_paid = sum(entry.principal_payment.raw_amount for entry in schedule)
@@ -228,7 +228,7 @@ def test_price_scheduler_parametrized_validation(principal_amount, annual_rate, 
     due_dates = [anchor + timedelta(days=30 * i) for i in range(1, num_payments + 1)]
     disbursement_date = start_date
 
-    schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date)
+    schedule = PriceScheduler.generate_schedule(principal, rate, due_dates, disbursement_date, timezone.utc)
 
     # Basic validations
     assert len(schedule) == num_payments

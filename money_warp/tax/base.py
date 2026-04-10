@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, tzinfo
 from typing import List
 
 from ..money import Money
@@ -40,6 +40,7 @@ class BaseTax(ABC):
         self,
         schedule: PaymentSchedule,
         disbursement_date: datetime,
+        tz: tzinfo,
     ) -> TaxResult:
         """
         Calculate tax based on the amortization schedule.
@@ -47,6 +48,7 @@ class BaseTax(ABC):
         Args:
             schedule: The loan's payment schedule with principal breakdown per installment.
             disbursement_date: When the loan was disbursed.
+            tz: Business timezone for extracting calendar dates from datetimes.
 
         Returns:
             TaxResult with total tax and per-installment breakdown.

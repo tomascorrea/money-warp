@@ -1,17 +1,18 @@
 """Time Machine (Warp) context manager for financial projections."""
 
 import copy
-from datetime import date, datetime
+from datetime import date, datetime, tzinfo
 from typing import Any, Optional, Type, Union
 
-from .tz import ensure_aware, to_date
+from .tz import ensure_aware, to_date, to_datetime
 
 
 class WarpedTime:
     """Warped time source that returns a fixed time for time travel scenarios."""
 
-    def __init__(self, fixed_datetime: datetime):
+    def __init__(self, fixed_datetime: datetime, tz: tzinfo):
         self.fixed_datetime = fixed_datetime
+        self._tz = tz
 
     def now(self) -> datetime:
         """Return the fixed datetime instead of current time."""
@@ -19,7 +20,7 @@ class WarpedTime:
 
     def date(self) -> date:
         """Return the fixed date instead of current date."""
-        return to_date(self.fixed_datetime)
+        return to_date(self.fixed_datetime, self._tz)
 
 
 class WarpError(Exception):
@@ -108,20 +109,24 @@ class Warp:
         """
         Parse various date formats into a datetime object.
 
+        Plain ``date`` inputs are interpreted as midnight in the
+        target's business timezone, then converted to UTC.
+
         Args:
             target_date: Date in string, date, or datetime format
 
         Returns:
-            datetime object
+            datetime object (UTC)
 
         Raises:
             InvalidDateError: If the date cannot be parsed
         """
+        tz = self._original._time_ctx.tz
         try:
             if isinstance(target_date, datetime):
                 return ensure_aware(target_date)
             elif isinstance(target_date, date):
-                return ensure_aware(datetime.combine(target_date, datetime.min.time()))
+                return to_datetime(target_date, tz)
             elif isinstance(target_date, str):
                 return ensure_aware(datetime.fromisoformat(target_date.replace("Z", "+00:00")))
             else:
@@ -156,7 +161,7 @@ class Warp:
         if self._warped is None:
             return
 
-        self._warped._time_ctx.override(WarpedTime(self.target_date))
+        self._warped._time_ctx.override(WarpedTime(self.target_date, self._warped._time_ctx.tz))
 
         if hasattr(self._warped, "_on_warp"):
             self._warped._on_warp(self.target_date)

@@ -22,7 +22,7 @@ from money_warp.ext.sa.compat import (
 from money_warp.ext.sa.types import _FREQUENCY_TOKEN
 from money_warp.loan import Loan, MoraStrategy
 from money_warp.rate import _ABBREV_MAP, CompoundingFrequency
-from money_warp.tz import ensure_aware, now, to_date
+from money_warp.tz import ensure_aware, get_tz, now, to_date
 from money_warp.warp import Warp, WarpedTime
 
 _BRIDGE_META_ATTR = "_money_warp_bridge_meta"
@@ -117,7 +117,7 @@ def _resolve_settlement_info(cls, settlements_attr):
     }
 
 
-def _parse_due_dates(raw: List[Union[str, date, datetime]]) -> List[date]:
+def _parse_due_dates(raw: List[Union[str, date, datetime]], tz) -> List[date]:
     """Convert a list of due dates to :class:`~datetime.date` objects.
 
     Accepts ISO strings (raw ``JSON`` column), :class:`~datetime.date`
@@ -127,7 +127,7 @@ def _parse_due_dates(raw: List[Union[str, date, datetime]]) -> List[date]:
     result: List[date] = []
     for d in raw:
         if isinstance(d, datetime):
-            result.append(to_date(d))
+            result.append(to_date(d, tz))
         elif isinstance(d, date):
             result.append(d)
         else:
@@ -175,7 +175,7 @@ def _replay_settlements(loan, items):
     s_meta = type(items[0])._money_warp_bridge_meta
     for item in items:
         pdate = ensure_aware(getattr(item, s_meta["date"]))
-        loan._time_ctx.override(WarpedTime(pdate))
+        loan._time_ctx.override(WarpedTime(pdate, loan._time_ctx.tz))
 
         amount = getattr(item, s_meta["amount"])
         raw_intention = getattr(item, s_meta["intention"], _DEFAULT_INTENTION)
@@ -227,7 +227,7 @@ def _load_money_warp_loan_impl(self):
     loan = Loan(
         getattr(self, meta["principal"]),
         getattr(self, meta["interest_rate"]),
-        _parse_due_dates(getattr(self, meta["due_dates"])),
+        _parse_due_dates(getattr(self, meta["due_dates"]), get_tz()),
         disbursement_date=getattr(self, meta["disbursement_date"]),
         **_collect_optional_loan_kwargs(self, meta),
     )

@@ -1,7 +1,7 @@
 """Base billing cycle abstraction for periodic statement generation."""
 
 from abc import ABC, abstractmethod
-from datetime import date, datetime
+from datetime import date, datetime, tzinfo
 from decimal import Decimal
 from typing import List, Optional
 
@@ -46,7 +46,7 @@ class BaseBillingCycle(ABC):
     def due_date_for(self, closing_date: datetime) -> datetime:
         """Payment due date for a given statement closing date."""
 
-    def due_dates_between(self, start: datetime, end: datetime) -> List[date]:
+    def due_dates_between(self, start: datetime, end: datetime, tz: tzinfo) -> List[date]:
         """Return payment due dates for all cycles in ``[start, end]``.
 
         When explicit *due_dates* were provided at construction, returns
@@ -55,12 +55,12 @@ class BaseBillingCycle(ABC):
         :meth:`due_date_for`.
         """
         if self._explicit_due_dates is not None:
-            start_d = to_date(start)
-            end_d = to_date(end)
+            start_d = to_date(start, tz)
+            end_d = to_date(end, tz)
             return [d for d in self._explicit_due_dates if start_d < d <= end_d]
 
         closing_dates = self.closing_dates_between(start, end)
-        return [to_date(self.due_date_for(cd)) for cd in closing_dates]
+        return [to_date(self.due_date_for(cd), tz) for cd in closing_dates]
 
     # ------------------------------------------------------------------
     # Statement building

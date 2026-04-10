@@ -51,21 +51,22 @@ def ensure_aware(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
-def to_date(dt: Union[date, datetime]) -> date:
-    """Extract the calendar date in the configured timezone.
+def to_date(dt: Union[date, datetime], tz: tzinfo) -> date:
+    """Extract the calendar date in the given timezone.
 
-    For ``datetime`` inputs the value is first converted to the
-    configured timezone so the extracted date reflects the correct
-    business day.  Plain ``date`` inputs pass through unchanged.
+    For ``datetime`` inputs the value is first converted to *tz* so
+    the extracted date reflects the correct business day.  Plain
+    ``date`` inputs pass through unchanged.
     """
     if isinstance(dt, datetime):
-        return dt.astimezone(_default_tz).date()
+        return dt.astimezone(tz).date()
     return dt
 
 
-def to_datetime(d: date) -> datetime:
-    """Convert a calendar date to a timezone-aware datetime at midnight."""
-    return ensure_aware(datetime.combine(d, datetime.min.time()))
+def to_datetime(d: date, tz: tzinfo) -> datetime:
+    """Convert a calendar date to a UTC datetime (midnight in *tz*)."""
+    naive = datetime.combine(d, datetime.min.time())
+    return naive.replace(tzinfo=tz).astimezone(timezone.utc)
 
 
 def tz_aware(func: F) -> F:

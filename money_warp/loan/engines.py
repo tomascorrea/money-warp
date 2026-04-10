@@ -12,7 +12,7 @@ and re-exported here for backward compatibility.
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, tzinfo
 from typing import Dict, List, Optional, Tuple
 
 from ..engines import (  # noqa: F401 - re-export
@@ -72,10 +72,10 @@ def covered_due_date_count(
 # ------------------------------------------------------------------
 
 
-def is_payment_late(due_date: date, grace_period_days: int, as_of: datetime) -> bool:
+def is_payment_late(due_date: date, grace_period_days: int, as_of: datetime, tz: tzinfo) -> bool:
     """Whether a payment is late considering the grace period."""
     effective_due = due_date + timedelta(days=grace_period_days)
-    return to_date(as_of) > effective_due
+    return to_date(as_of, tz) > effective_due
 
 
 _WINDOW_DAYS_BEFORE = 3
@@ -87,6 +87,7 @@ def _has_payment_near(
     as_of: datetime,
     schedule: PaymentSchedule,
     payment_entries: list,
+    tz: tzinfo,
 ) -> bool:
     """Check if sufficient payment has been made near a due date.
 
@@ -101,12 +102,12 @@ def _has_payment_near(
     if expected.is_zero():
         return False
 
-    exact = [p for p in payment_entries if to_date(p.datetime) == due_date and p.datetime <= as_of]
+    exact = [p for p in payment_entries if to_date(p.datetime, tz) == due_date and p.datetime <= as_of]
     if sum((p.amount for p in exact), Money.zero()) >= (expected - _COVERAGE_TOLERANCE):
         return True
 
-    window_start = to_datetime(due_date - timedelta(days=_WINDOW_DAYS_BEFORE))
-    window_end = min(as_of, to_datetime(due_date + timedelta(days=_WINDOW_DAYS_AFTER)))
+    window_start = to_datetime(due_date - timedelta(days=_WINDOW_DAYS_BEFORE), tz)
+    window_end = min(as_of, to_datetime(due_date + timedelta(days=_WINDOW_DAYS_AFTER), tz))
     window = [p for p in payment_entries if window_start <= p.datetime <= window_end and p.datetime <= as_of]
     return sum((p.amount for p in window), Money.zero()) >= (expected - _COVERAGE_TOLERANCE)
 
@@ -119,6 +120,7 @@ def compute_fines_at(
     grace_period_days: int,
     existing_fines: Dict[date, Money],
     payment_entries: list,
+    tz: tzinfo,
 ) -> Dict[date, Money]:
     """Compute fines for overdue due dates as of *as_of*.
 
@@ -130,9 +132,9 @@ def compute_fines_at(
     for dd in due_dates:
         if dd in fines:
             continue
-        if not is_payment_late(dd, grace_period_days, as_of):
+        if not is_payment_late(dd, grace_period_days, as_of, tz):
             continue
-        if _has_payment_near(dd, as_of, schedule, payment_entries):
+        if _has_payment_near(dd, as_of, schedule, payment_entries, tz):
             continue
         for entry in schedule:
             if entry.due_date == dd:
@@ -406,6 +408,7 @@ def _build_installments_snapshot(
     schedule: PaymentSchedule,
     fines_applied: Dict[date, Money],
     interest_calc: InterestCalculator,
+    tz: tzinfo,
     last_payment_date: Optional[datetime] = None,
 ) -> List[Installment]:
     """Build Installment objects from pre-computed allocation data."""
@@ -421,22 +424,24 @@ def _build_installments_snapshot(
 
         if i < covered:
             expected_mora = prior_mora
-        elif i == covered and entry.due_date < to_date(as_of_date):
+        elif i == covered and entry.due_date < to_date(as_of_date, tz):
             if last_payment_date is not None:
-                total_days = (to_date(as_of_date) - to_date(last_payment_date)).days
+                total_days = (to_date(as_of_date, tz) - to_date(last_payment_date, tz)).days
                 _, accrued_mora = interest_calc.compute_accrued_interest(
                     total_days,
                     principal_balance,
+                    tz,
                     entry.due_date,
                     last_payment_date,
                 )
             else:
-                days_overdue = (to_date(as_of_date) - entry.due_date).days
+                days_overdue = (to_date(as_of_date, tz) - entry.due_date).days
                 _, accrued_mora = interest_calc.compute_accrued_interest(
                     days_overdue,
                     principal_balance,
+                    tz,
                     entry.due_date,
-                    to_datetime(entry.due_date),
+                    to_datetime(entry.due_date, tz),
                 )
             expected_mora = prior_mora + accrued_mora
         else:
@@ -482,6 +487,7 @@ def compute_state(
     disbursement_date: datetime,
     payment_entries: list,
     as_of: datetime,
+    tz: tzinfo,
     fine_observation_dates: Optional[List[datetime]] = None,
     mora_rate_for_event: MoraRateCallback = None,
 ) -> LoanState:
@@ -529,13 +535,14 @@ def compute_state(
             grace_period_days,
             fines_applied,
             processed_payments,
+            tz,
         )
 
         if not is_payment:
             continue
 
         interest_date = payment.interest_date if payment.interest_date is not None else payment.datetime
-        days = max(0, (to_date(interest_date) - to_date(last_accrual_end)).days)
+        days = max(0, (to_date(interest_date, tz) - to_date(last_accrual_end, tz)).days)
 
         covered = covered_due_date_count(running_principal, schedule)
         next_due = due_dates[covered] if covered < len(due_dates) else None
@@ -545,6 +552,7 @@ def compute_state(
         regular, mora = interest_calc.compute_accrued_interest(
             days,
             running_principal,
+            tz,
             next_due,
             last_accrual_end,
             mora_rate_override=mora_override,
@@ -557,10 +565,11 @@ def compute_state(
             schedule,
             fines_applied,
             interest_calc,
+            tz,
             last_payment_date=last_accrual_end,
         )
 
-        skipped = _skipped_contractual_interest(installments, next_due, to_date(interest_date))
+        skipped = _skipped_contractual_interest(installments, next_due, to_date(interest_date, tz))
         interest_cap = Money(regular.raw_amount + skipped.raw_amount)
 
         total_fines_amount = Money(sum(f.raw_amount for f in fines_applied.values())) if fines_applied else Money.zero()
@@ -629,6 +638,7 @@ def build_installments(
     as_of: datetime,
     interest_calc: InterestCalculator,
     last_accrual_end: datetime,
+    tz: tzinfo,
 ) -> List[Installment]:
     """Build the installment view from settlements + schedule."""
     allocs_by_number: Dict[int, List[Allocation]] = {}
@@ -643,5 +653,6 @@ def build_installments(
         schedule,
         fines_applied,
         interest_calc,
+        tz,
         last_payment_date=last_accrual_end,
     )

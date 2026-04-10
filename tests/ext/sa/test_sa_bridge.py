@@ -453,7 +453,7 @@ def _pay_via_override(loan, pay_date, method, amount, **kwargs):
 
     Persists on the loan directly — unlike Warp which creates a clone.
     """
-    loan._time_ctx.override(WarpedTime(pay_date))
+    loan._time_ctx.override(WarpedTime(pay_date, timezone.utc))
     return getattr(loan, method)(amount, **kwargs)
 
 

@@ -53,6 +53,7 @@ def test_grossup_principal_greater_than_requested(standard_iof, interest_rate, t
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
     )
     assert result.principal > Money("10000")
 
@@ -65,6 +66,7 @@ def test_grossup_requested_amount_preserved(standard_iof, interest_rate, three_d
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
     )
     assert result.requested_amount == Money("10000")
 
@@ -77,6 +79,7 @@ def test_grossup_principal_minus_tax_equals_requested(standard_iof, interest_rat
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
     )
     net = result.principal - result.total_tax
     assert abs(net - result.requested_amount) <= Money("0.01")
@@ -90,6 +93,7 @@ def test_grossup_tax_is_positive(standard_iof, interest_rate, three_due_dates, d
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
     )
     assert result.total_tax.is_positive()
 
@@ -102,6 +106,7 @@ def test_grossup_with_inverted_price_scheduler(standard_iof, interest_rate, thre
         disbursement_date=disbursement_date,
         scheduler=InvertedPriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
     )
     net = result.principal - result.total_tax
     assert abs(net - result.requested_amount) <= Money("0.01")
@@ -115,6 +120,7 @@ def test_grossup_single_installment(standard_iof, interest_rate, disbursement_da
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
     )
     net = result.principal - result.total_tax
     assert abs(net - result.requested_amount) <= Money("0.01")
@@ -128,6 +134,7 @@ def test_grossup_small_amount(standard_iof, interest_rate, disbursement_date):
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
     )
     net = result.principal - result.total_tax
     assert abs(net - result.requested_amount) <= Money("0.01")
@@ -141,6 +148,7 @@ def test_grossup_large_amount(standard_iof, interest_rate, disbursement_date):
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
     )
     net = result.principal - result.total_tax
     assert abs(net - result.requested_amount) <= Money("0.01")
@@ -155,6 +163,7 @@ def test_grossup_raises_on_zero_requested_amount(standard_iof, interest_rate, di
             disbursement_date=disbursement_date,
             scheduler=PriceScheduler,
             taxes=[standard_iof],
+            tz=timezone.utc,
         )
 
 
@@ -167,6 +176,7 @@ def test_grossup_raises_on_negative_requested_amount(standard_iof, interest_rate
             disbursement_date=disbursement_date,
             scheduler=PriceScheduler,
             taxes=[standard_iof],
+            tz=timezone.utc,
         )
 
 
@@ -179,6 +189,7 @@ def test_grossup_raises_on_empty_taxes(interest_rate, disbursement_date):
             disbursement_date=disbursement_date,
             scheduler=PriceScheduler,
             taxes=[],
+            tz=timezone.utc,
         )
 
 
@@ -192,6 +203,7 @@ def test_grossup_with_multiple_taxes(interest_rate, three_due_dates, disbursemen
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[iof1, iof2],
+        tz=timezone.utc,
     )
     net = result.principal - result.total_tax
     assert abs(net - result.requested_amount) <= Money("0.01")
@@ -208,6 +220,7 @@ def test_grossup_loan_returns_loan_instance(standard_iof, interest_rate, three_d
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
     )
     assert isinstance(loan, Loan)
 
@@ -222,6 +235,7 @@ def test_grossup_loan_net_disbursement_matches_requested(
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
     )
     assert abs(loan.net_disbursement - Money("10000")) <= Money("0.01")
 
@@ -234,6 +248,7 @@ def test_grossup_loan_principal_is_grossed_up(standard_iof, interest_rate, three
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
     )
     assert loan.principal > Money("10000")
 
@@ -246,6 +261,7 @@ def test_grossup_loan_forwards_fine_rate(standard_iof, interest_rate, three_due_
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
         fine_rate=InterestRate("5% annual"),
     )
     assert loan.fine_rate == InterestRate("5% annual")
@@ -259,6 +275,7 @@ def test_grossup_loan_forwards_grace_period(standard_iof, interest_rate, three_d
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
         grace_period_days=7,
     )
     assert loan.grace_period_days == 7
@@ -277,6 +294,7 @@ def test_grossup_loan_converges_for_21_terms_with_iof():
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=taxes,
+        tz=timezone.utc,
     )
     assert loan.net_disbursement == Money("10000")
 
@@ -302,6 +320,7 @@ def test_grossup_principal_is_cent_aligned(amount, num_terms, monthly_rate, days
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=taxes,
+        tz=timezone.utc,
     )
 
     assert result.principal.raw_amount == result.principal.real_amount
@@ -329,6 +348,7 @@ def test_grossup_loan_net_at_least_requested(amount, num_terms, monthly_rate, da
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=taxes,
+        tz=timezone.utc,
     )
 
     assert loan.net_disbursement >= requested

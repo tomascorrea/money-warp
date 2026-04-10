@@ -6,7 +6,7 @@ The forward pass and all allocation logic come from
 :mod:`money_warp.engines`.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, tzinfo
 from typing import Dict, List, Optional
 
 from ..billing_cycle import BaseBillingCycle
@@ -32,6 +32,7 @@ def resolve_mora_rate(
     current_due: Optional[date],
     base_mora_rate: InterestRate,
     resolver: Optional[MoraRateResolver],
+    tz: tzinfo,
 ) -> InterestRate:
     """Return the mora rate for the cycle that owns *current_due*.
 
@@ -44,7 +45,7 @@ def resolve_mora_rate(
 
     for i, dd in enumerate(due_dates):
         if dd == current_due and i < len(closing_dates):
-            return resolver(to_date(closing_dates[i]), base_mora_rate)
+            return resolver(to_date(closing_dates[i], tz), base_mora_rate)
 
     return base_mora_rate
 
@@ -54,6 +55,7 @@ def make_mora_callback(
     closing_dates: List[datetime],
     base_mora_rate: InterestRate,
     resolver: Optional[MoraRateResolver],
+    tz: tzinfo,
 ) -> MoraRateCallback:
     """Build a :data:`~money_warp.engines.MoraRateCallback` for the forward pass.
 
@@ -64,7 +66,7 @@ def make_mora_callback(
         return None
 
     def _callback(next_due: Optional[date]) -> Optional[InterestRate]:
-        return resolve_mora_rate(due_dates, closing_dates, next_due, base_mora_rate, resolver)
+        return resolve_mora_rate(due_dates, closing_dates, next_due, base_mora_rate, resolver, tz)
 
     return _callback
 
@@ -85,6 +87,7 @@ def compute_state(
     disbursement_date: datetime,
     payment_entries: list,
     as_of: datetime,
+    tz: tzinfo,
     base_mora_rate: InterestRate,
     mora_rate_resolver: Optional[MoraRateResolver] = None,
     fine_observation_dates: Optional[List[datetime]] = None,
@@ -95,7 +98,7 @@ def compute_state(
     ``mora_rate_for_event`` callback that resolves the mora rate
     per billing cycle.
     """
-    callback = make_mora_callback(due_dates, closing_dates, base_mora_rate, mora_rate_resolver)
+    callback = make_mora_callback(due_dates, closing_dates, base_mora_rate, mora_rate_resolver, tz)
     return _compute_state(
         principal=principal,
         interest_calc=interest_calc,
@@ -106,6 +109,7 @@ def compute_state(
         disbursement_date=disbursement_date,
         payment_entries=payment_entries,
         as_of=as_of,
+        tz=tz,
         fine_observation_dates=fine_observation_dates,
         mora_rate_for_event=callback,
     )
@@ -125,6 +129,7 @@ def build_statements(
     fines_applied: Dict[date, Money],
     principal: Money,
     base_mora_rate: InterestRate,
+    tz: tzinfo,
     mora_rate_resolver: Optional[MoraRateResolver] = None,
 ) -> List[BillingCycleLoanStatement]:
     """Build one :class:`BillingCycleLoanStatement` per billing period.
@@ -142,7 +147,7 @@ def build_statements(
 
     settlement_by_date: Dict[date, List] = {}
     for s in settlements:
-        key = to_date(s.payment_date)
+        key = to_date(s.payment_date, tz)
         settlement_by_date.setdefault(key, []).append(s)
 
     for idx, closing_date in enumerate(closing_dates):
@@ -163,6 +168,7 @@ def build_statements(
             dd,
             base_mora_rate,
             mora_rate_resolver,
+            tz,
         )
 
         fine_charged = fines_applied.get(dd, Money.zero())

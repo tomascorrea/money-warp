@@ -179,26 +179,26 @@ IOF_ADDITIONAL_RATE = Decimal("0.0038")
 def external_iof_per_component():
     principal = Money("10000")
     rate = InterestRate("1% m")
-    schedule = PriceScheduler.generate_schedule(principal, rate, DUE_DATES, DISBURSEMENT_DATE)
+    schedule = PriceScheduler.generate_schedule(principal, rate, DUE_DATES, DISBURSEMENT_DATE, timezone.utc)
     iof = IOF(
         daily_rate=IOF_DAILY_RATE,
         additional_rate=IOF_ADDITIONAL_RATE,
         rounding=IOFRounding.PER_COMPONENT,
     )
-    return iof.calculate(schedule, DISBURSEMENT_DATE)
+    return iof.calculate(schedule, DISBURSEMENT_DATE, timezone.utc)
 
 
 @pytest.fixture(scope="module")
 def external_iof_precise():
     principal = Money("10000")
     rate = InterestRate("1% m")
-    schedule = PriceScheduler.generate_schedule(principal, rate, DUE_DATES, DISBURSEMENT_DATE)
+    schedule = PriceScheduler.generate_schedule(principal, rate, DUE_DATES, DISBURSEMENT_DATE, timezone.utc)
     iof = IOF(
         daily_rate=IOF_DAILY_RATE,
         additional_rate=IOF_ADDITIONAL_RATE,
         rounding=IOFRounding.PRECISE,
     )
-    return iof.calculate(schedule, DISBURSEMENT_DATE)
+    return iof.calculate(schedule, DISBURSEMENT_DATE, timezone.utc)
 
 
 # --- IOF: PER_COMPONENT rounding (matches external system) ---

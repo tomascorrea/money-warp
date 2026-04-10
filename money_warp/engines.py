@@ -6,7 +6,7 @@ imports.  The full forward-pass logic and allocation helpers stay
 in :mod:`money_warp.loan.engines` (which imports from here).
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, tzinfo
 from enum import Enum
 from typing import Callable, Optional, Tuple
 
@@ -56,6 +56,7 @@ class InterestCalculator:
         self,
         days: int,
         principal_balance: Money,
+        tz: tzinfo,
         due_date: Optional[date] = None,
         last_payment_date: Optional[datetime] = None,
         mora_rate_override: Optional[InterestRate] = None,
@@ -66,6 +67,7 @@ class InterestCalculator:
         due_date is not provided or the payment is not late.
 
         Args:
+            tz: Business timezone for date extraction from datetimes.
             mora_rate_override: When provided, used instead of
                 ``self.mora_interest_rate`` for this single computation.
                 Existing callers that omit it get the original behaviour.
@@ -75,7 +77,7 @@ class InterestCalculator:
         if due_date is None or last_payment_date is None:
             return self.interest_rate.accrue(principal_balance, days), Money.zero()
 
-        regular_days = (due_date - to_date(last_payment_date)).days
+        regular_days = (due_date - to_date(last_payment_date, tz)).days
 
         if regular_days <= 0:
             return Money.zero(), mora_rate.accrue(principal_balance, days)

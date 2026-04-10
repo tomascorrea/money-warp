@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, tzinfo
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -93,6 +93,7 @@ def _snap_to_cents(
     disbursement_date: datetime,
     scheduler: type[BaseScheduler],
     taxes: list[BaseTax],
+    tz: tzinfo,
 ) -> tuple[Money, Money]:
     """Round the solver result to cents and find the tightest valid principal.
 
@@ -105,7 +106,7 @@ def _snap_to_cents(
     """
     one_cent = Decimal("0.01")
     p_base = Decimal(str(round(solved_p, 2)))
-    tax_args = (interest_rate, due_dates, disbursement_date, scheduler, taxes)
+    tax_args = (interest_rate, due_dates, disbursement_date, scheduler, taxes, tz)
     smallest_overshoot: tuple[Money, Money] | None = None
 
     for offset in range(-2, 6):
@@ -135,12 +136,13 @@ def _compute_total_tax(
     disbursement_date: datetime,
     scheduler: type[BaseScheduler],
     taxes: list[BaseTax],
+    tz: tzinfo,
 ) -> Money:
     """Compute the total tax for a given principal."""
-    schedule = scheduler.generate_schedule(principal, interest_rate, due_dates, disbursement_date)
+    schedule = scheduler.generate_schedule(principal, interest_rate, due_dates, disbursement_date, tz)
     total = Money.zero()
     for tax in taxes:
-        total = total + tax.calculate(schedule, disbursement_date).total
+        total = total + tax.calculate(schedule, disbursement_date, tz).total
     return total
 
 
@@ -151,6 +153,7 @@ def grossup(
     disbursement_date: datetime,
     scheduler: type[BaseScheduler],
     taxes: list[BaseTax],
+    tz: tzinfo,
 ) -> GrossupResult:
     """
     Compute the grossed-up principal so that principal - total_tax = requested_amount.
@@ -171,6 +174,7 @@ def grossup(
         disbursement_date: When the loan is disbursed.
         scheduler: Scheduler class for generating the amortization schedule.
         taxes: List of taxes to finance into the principal.
+        tz: Time zone used when resolving calendar dates for tax calculation.
 
     Returns:
         GrossupResult with the grossed-up principal, tax breakdown, and a
@@ -189,7 +193,7 @@ def grossup(
 
     def objective(p: float) -> float:
         principal = Money(Decimal(str(p)))
-        tax = _compute_total_tax(principal, interest_rate, due_dates, disbursement_date, scheduler, taxes)
+        tax = _compute_total_tax(principal, interest_rate, due_dates, disbursement_date, scheduler, taxes, tz)
         return p - requested_raw - float(tax.raw_amount)
 
     lower = requested_raw
@@ -208,6 +212,7 @@ def grossup(
         disbursement_date,
         scheduler,
         taxes,
+        tz,
     )
 
     return GrossupResult(
@@ -229,6 +234,7 @@ def grossup_loan(
     disbursement_date: datetime,
     scheduler: type[BaseScheduler],
     taxes: list[BaseTax],
+    tz: tzinfo,
     **loan_kwargs: Any,
 ) -> Loan:
     """
@@ -246,6 +252,7 @@ def grossup_loan(
         disbursement_date: When the loan is disbursed.
         scheduler: Scheduler class for generating the amortization schedule.
         taxes: List of taxes to finance into the principal.
+        tz: Time zone used when resolving calendar dates for tax calculation.
         **loan_kwargs: Extra keyword arguments forwarded to the Loan constructor
             (e.g. fine_rate, grace_period_days, mora_interest_rate, mora_strategy).
 
@@ -259,5 +266,6 @@ def grossup_loan(
         disbursement_date=disbursement_date,
         scheduler=scheduler,
         taxes=taxes,
+        tz=tz,
     )
     return result.to_loan(**loan_kwargs)

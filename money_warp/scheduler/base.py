@@ -1,7 +1,7 @@
 """Base scheduler interface for loan payment calculations."""
 
 from abc import ABC, abstractmethod
-from datetime import date, datetime
+from datetime import date, datetime, tzinfo
 from typing import List
 
 from ..interest_rate import InterestRate
@@ -19,7 +19,12 @@ class BaseScheduler(ABC):
     @classmethod
     @abstractmethod
     def generate_schedule(
-        cls, principal: Money, interest_rate: InterestRate, due_dates: List[date], disbursement_date: datetime
+        cls,
+        principal: Money,
+        interest_rate: InterestRate,
+        due_dates: List[date],
+        disbursement_date: datetime,
+        tz: tzinfo,
     ) -> PaymentSchedule:
         """
         Generate the payment schedule.
@@ -31,6 +36,7 @@ class BaseScheduler(ABC):
             interest_rate: The annual interest rate
             due_dates: List of payment due dates
             disbursement_date: When the loan was disbursed
+            tz: Business timezone for extracting calendar dates from datetimes
 
         Returns:
             PaymentSchedule with all payment details

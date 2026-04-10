@@ -4,6 +4,9 @@ Verifies that a loan disbursed late at night in BRT (which is the next
 calendar day in UTC) stores the datetime as UTC internally but resolves
 all calendar dates — disbursement, schedule day counts, payment dates —
 in the configured business timezone (BRT).
+
+Also verifies the per-loan timezone: two loans in different timezones
+can coexist and each resolves dates in its own timezone.
 """
 
 from datetime import date, datetime, timezone
@@ -16,6 +19,7 @@ from money_warp.tz import get_tz, set_tz, to_date
 from money_warp.warp import Warp
 
 SP = ZoneInfo("America/Sao_Paulo")
+TOKYO = ZoneInfo("Asia/Tokyo")
 
 
 @pytest.fixture
@@ -43,7 +47,7 @@ def test_loan_disbursement_stored_as_utc_resolved_as_brt(brt_timezone):
 
     assert loan.disbursement_date.tzinfo == timezone.utc
     assert loan.disbursement_date == datetime(2024, 1, 16, 1, 0, 0, tzinfo=timezone.utc)
-    assert to_date(loan.disbursement_date) == date(2024, 1, 15)
+    assert to_date(loan.disbursement_date, SP) == date(2024, 1, 15)
 
 
 def test_loan_due_date_on_utc_next_day_accepted(brt_timezone):
@@ -106,7 +110,7 @@ def test_loan_payment_cross_midnight_brt_resolves_correctly(brt_timezone):
     settlement = loan.record_payment(Money("500"), payment_dt)
 
     assert settlement.payment_amount == Money("500")
-    assert to_date(settlement.payment_date) == date(2024, 2, 15)
+    assert to_date(settlement.payment_date, SP) == date(2024, 2, 15)
     assert settlement.payment_date.tzinfo == timezone.utc
 
 
@@ -177,7 +181,7 @@ def test_warp_next_brt_day_sees_cross_midnight_payment(loan_with_two_brt_payment
 
     with Warp(loan, date(2024, 2, 16)) as warped:
         assert len(warped.settlements) == 1
-        assert to_date(warped.settlements[0].payment_date) == date(2024, 2, 15)
+        assert to_date(warped.settlements[0].payment_date, SP) == date(2024, 2, 15)
         assert warped.principal_balance == Money("502.56")
         assert warped.days_since_last_payment() == 1
         assert warped.interest_balance == Money("0.16")
@@ -214,3 +218,145 @@ def test_warp_after_both_payments_loan_paid_off(loan_with_two_brt_payments):
     with Warp(loan, date(2024, 3, 16)) as warped:
         assert len(warped.settlements) == 2
         assert warped.is_paid_off is True
+
+
+# ===================================================================
+# Per-loan timezone: two loans in different timezones coexisting
+# ===================================================================
+
+
+def test_per_loan_tz_stored_on_time_context():
+    """Loan.tz parameter flows into TimeContext."""
+    loan = Loan(
+        Money("1000"),
+        InterestRate("12% annual"),
+        [date(2024, 2, 15)],
+        disbursement_date=datetime(2024, 1, 15, tzinfo=timezone.utc),
+        tz=SP,
+    )
+    assert loan._time_ctx.tz == SP
+
+
+def test_per_loan_tz_accepts_string():
+    """tz='America/Sao_Paulo' is resolved to ZoneInfo."""
+    loan = Loan(
+        Money("1000"),
+        InterestRate("12% annual"),
+        [date(2024, 2, 15)],
+        disbursement_date=datetime(2024, 1, 15, tzinfo=timezone.utc),
+        tz="America/Sao_Paulo",
+    )
+    assert loan._time_ctx.tz == SP
+
+
+def test_two_loans_different_tz_coexist():
+    """Two loans with different timezones resolve the same UTC instant
+    to different calendar dates without interfering.
+
+    10:30pm BRT Jan 15 = 1:30am UTC Jan 16 = 10:30am JST Jan 16.
+    BRT loan: disbursement date = Jan 15 (still Jan 15 in BRT).
+    Tokyo loan: disbursement date = Jan 16 (already Jan 16 in JST).
+    """
+    utc_instant = datetime(2024, 1, 16, 1, 30, 0, tzinfo=timezone.utc)
+
+    brt_loan = Loan(
+        Money("1000"),
+        InterestRate("12% annual"),
+        [date(2024, 2, 15)],
+        disbursement_date=utc_instant,
+        tz=SP,
+    )
+
+    tokyo_loan = Loan(
+        Money("1000"),
+        InterestRate("12% annual"),
+        [date(2024, 2, 15)],
+        disbursement_date=utc_instant,
+        tz=TOKYO,
+    )
+
+    brt_schedule = brt_loan.get_original_schedule()
+    tokyo_schedule = tokyo_loan.get_original_schedule()
+
+    assert brt_schedule[0].days_in_period == 31
+    assert tokyo_schedule[0].days_in_period == 30
+
+
+def test_two_loans_different_tz_independent_schedules():
+    """Changing global set_tz does not affect per-loan timezone."""
+    original_tz = get_tz()
+    try:
+        set_tz(timezone.utc)
+        brt_loan = Loan(
+            Money("1000"),
+            InterestRate("12% annual"),
+            [date(2024, 2, 15)],
+            disbursement_date=datetime(2024, 1, 16, 1, 30, 0, tzinfo=timezone.utc),
+            tz=SP,
+        )
+
+        set_tz("Asia/Tokyo")
+        brt_schedule = brt_loan.get_original_schedule()
+        assert brt_schedule[0].days_in_period == 31
+    finally:
+        set_tz(original_tz)
+
+
+def test_warp_uses_per_loan_tz_for_date_resolution():
+    """Warp(date) interprets the target date in the loan's timezone."""
+    utc_instant = datetime(2024, 1, 16, 1, 30, 0, tzinfo=timezone.utc)
+
+    loan = Loan(
+        Money("1000"),
+        InterestRate("12% annual"),
+        [date(2024, 2, 15), date(2024, 3, 15)],
+        disbursement_date=utc_instant,
+        tz=SP,
+    )
+
+    payment_dt = datetime(2024, 2, 15, 23, 0, 0, tzinfo=SP)
+    loan.record_payment(loan.get_original_schedule()[0].payment_amount, payment_dt)
+
+    with Warp(loan, date(2024, 2, 16)) as warped:
+        assert len(warped.settlements) == 1
+        assert warped.days_since_last_payment() == 1
+
+
+def test_warp_with_different_per_loan_tz_gives_different_views():
+    """Two loans in different timezones see different states at the same
+    warp target date.
+
+    Payment at 2am UTC Feb 16 = 11pm BRT Feb 15 = 11am JST Feb 16.
+    Warp to date(2024, 2, 16):
+      BRT: midnight BRT Feb 16 = 3am UTC Feb 16 -> after payment -> 1 settlement
+      JST: midnight JST Feb 16 = 3pm UTC Feb 15 -> before payment -> 0 settlements
+    """
+    utc_instant = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+    payment_utc = datetime(2024, 2, 16, 2, 0, 0, tzinfo=timezone.utc)
+
+    brt_loan = Loan(
+        Money("1000"),
+        InterestRate("12% annual"),
+        [date(2024, 2, 15), date(2024, 3, 15)],
+        disbursement_date=utc_instant,
+        tz=SP,
+    )
+    brt_loan.record_payment(Money("500"), payment_utc)
+
+    tokyo_loan = Loan(
+        Money("1000"),
+        InterestRate("12% annual"),
+        [date(2024, 2, 15), date(2024, 3, 15)],
+        disbursement_date=utc_instant,
+        tz=TOKYO,
+    )
+    tokyo_loan.record_payment(Money("500"), payment_utc)
+
+    with Warp(brt_loan, date(2024, 2, 16)) as brt_warped:
+        brt_settlements = len(brt_warped.settlements)
+
+    with Warp(tokyo_loan, date(2024, 2, 16)) as tokyo_warped:
+        tokyo_settlements = len(tokyo_warped.settlements)
+
+    assert brt_settlements == 1
+    assert tokyo_settlements == 0

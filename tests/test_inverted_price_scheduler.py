@@ -20,6 +20,7 @@ def basic_loan_params():
             date(2024, 3, 15),
         ],
         "disbursement_date": datetime(2023, 12, 16, tzinfo=timezone.utc),
+        "tz": timezone.utc,
     }
 
 
@@ -34,7 +35,11 @@ def test_inverted_price_scheduler_creation(basic_loan_params):
 def test_inverted_price_scheduler_empty_due_dates():
     with pytest.raises(ValueError, match="At least one due date is required"):
         InvertedPriceScheduler.generate_schedule(
-            Money("10000"), InterestRate("5% annual"), [], datetime(2024, 1, 1, tzinfo=timezone.utc)
+            Money("10000"),
+            InterestRate("5% annual"),
+            [],
+            datetime(2024, 1, 1, tzinfo=timezone.utc),
+            timezone.utc,
         )
 
 
@@ -130,6 +135,7 @@ def test_inverted_price_scheduler_zero_interest_rate():
         InterestRate("0% annual"),
         [date(2024, 1, 15), date(2024, 2, 15)],
         datetime(2023, 12, 16, tzinfo=timezone.utc),
+        timezone.utc,
     )
 
     # With zero interest, all payments should be principal only
@@ -149,6 +155,7 @@ def test_inverted_price_scheduler_irregular_payment_dates():
             date(2024, 4, 5),  # 45 days from previous
         ],
         datetime(2023, 12, 16, tzinfo=timezone.utc),
+        timezone.utc,
     )
 
     # Should handle irregular dates correctly
@@ -169,6 +176,7 @@ def test_inverted_price_scheduler_high_precision_calculations():
         InterestRate("4.321% annual"),
         [date(2024, i, 1) for i in range(1, 13)],  # 12 monthly payments
         datetime(2023, 12, 1, tzinfo=timezone.utc),
+        timezone.utc,
     )
 
     # Should handle high precision without errors

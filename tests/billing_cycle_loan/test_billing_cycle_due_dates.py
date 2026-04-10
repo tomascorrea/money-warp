@@ -10,6 +10,7 @@ def test_derived_due_dates_from_closing_dates():
     result = bc.due_dates_between(
         datetime(2025, 1, 1, tzinfo=timezone.utc),
         datetime(2025, 4, 30, tzinfo=timezone.utc),
+        timezone.utc,
     )
     assert result == [
         date(2025, 2, 12),
@@ -25,6 +26,7 @@ def test_explicit_due_dates_override():
     result = bc.due_dates_between(
         datetime(2025, 1, 1, tzinfo=timezone.utc),
         datetime(2025, 4, 30, tzinfo=timezone.utc),
+        timezone.utc,
     )
     assert result == [date(2025, 2, 10), date(2025, 3, 10), date(2025, 4, 10)]
 
@@ -35,6 +37,7 @@ def test_explicit_due_dates_filtered_by_range():
     result = bc.due_dates_between(
         datetime(2025, 2, 15, tzinfo=timezone.utc),
         datetime(2025, 3, 15, tzinfo=timezone.utc),
+        timezone.utc,
     )
     assert result == [date(2025, 3, 10)]
 
@@ -45,6 +48,7 @@ def test_explicit_due_dates_sorted():
     result = bc.due_dates_between(
         datetime(2025, 1, 1, tzinfo=timezone.utc),
         datetime(2025, 5, 1, tzinfo=timezone.utc),
+        timezone.utc,
     )
     assert result == [date(2025, 2, 10), date(2025, 3, 10), date(2025, 4, 10)]
 
