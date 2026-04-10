@@ -22,7 +22,7 @@ from money_warp.ext.sa.compat import (
 from money_warp.ext.sa.types import _FREQUENCY_TOKEN
 from money_warp.loan import Loan, MoraStrategy
 from money_warp.rate import _ABBREV_MAP, CompoundingFrequency
-from money_warp.tz import ensure_aware, now
+from money_warp.tz import ensure_aware, now, to_date
 from money_warp.warp import Warp, WarpedTime
 
 _BRIDGE_META_ATTR = "_money_warp_bridge_meta"
@@ -127,7 +127,7 @@ def _parse_due_dates(raw: List[Union[str, date, datetime]]) -> List[date]:
     result: List[date] = []
     for d in raw:
         if isinstance(d, datetime):
-            result.append(d.date())
+            result.append(to_date(d))
         elif isinstance(d, date):
             result.append(d)
         else:

@@ -11,7 +11,7 @@ from ..rate import Rate
 from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
 from ..tax.base import BaseTax, TaxResult
 from ..time_context import TimeContext
-from ..tz import to_datetime, tz_aware
+from ..tz import ensure_aware, to_date, to_datetime, tz_aware
 from .engines import (
     InterestCalculator,
     LoanState,
@@ -81,8 +81,8 @@ class Loan:
         self.mora_strategy = mora_strategy
         self._interest = InterestCalculator(interest_rate, self.mora_interest_rate, mora_strategy)
         self.due_dates = sorted(due_dates)
-        self.disbursement_date = disbursement_date if disbursement_date is not None else self._time_ctx.now()
-        if self.disbursement_date.date() >= self.due_dates[0]:
+        self.disbursement_date = disbursement_date if disbursement_date is not None else ensure_aware(self._time_ctx.now())
+        if to_date(self.disbursement_date) >= self.due_dates[0]:
             raise ValueError("disbursement_date must be before the first due date")
         self.scheduler = scheduler or PriceScheduler
         self.fine_rate = fine_rate if fine_rate is not None else InterestRate("2% annual")
@@ -211,7 +211,7 @@ class Loan:
             CashFlowItem(
                 amount,
                 payment_date,
-                description or f"Payment on {payment_date.date()}",
+                description or f"Payment on {to_date(payment_date)}",
                 "payment",
                 time_context=self._time_ctx,
                 interest_date=interest_date,
@@ -357,7 +357,7 @@ class Loan:
     def _accrued_interest_components(self) -> tuple:
         """Return (regular, mora) accrued interest since last payment."""
         state = self._compute_state()
-        days = (self.now().date() - state.last_accrual_end.date()).days
+        days = (to_date(self.now()) - to_date(state.last_accrual_end)).days
 
         if state.principal_balance.is_positive() and days > 0:
             covered = covered_due_date_count(state.principal_balance, self.get_original_schedule())
@@ -466,7 +466,7 @@ class Loan:
 
     def days_since_last_payment(self) -> int:
         """Days since the last payment (Warp-aware)."""
-        return (self.now().date() - self.last_payment_date.date()).days
+        return (to_date(self.now()) - to_date(self.last_payment_date)).days
 
     def _covered_due_date_count(self) -> int:
         """How many due dates have been covered by payments."""
@@ -548,11 +548,11 @@ class Loan:
         prev_date = self.disbursement_date
 
         for i, s in enumerate(state.settlements):
-            days = (s.payment_date.date() - prev_date.date()).days
+            days = (to_date(s.payment_date) - to_date(prev_date)).days
             actual_entries.append(
                 PaymentScheduleEntry(
                     payment_number=i + 1,
-                    due_date=s.payment_date.date(),
+                    due_date=to_date(s.payment_date),
                     days_in_period=days,
                     beginning_balance=prev_balance,
                     payment_amount=s.interest_paid + s.mora_paid + s.principal_paid,

@@ -6,6 +6,7 @@ from typing import List
 
 from ..interest_rate import InterestRate
 from ..money import Money
+from ..tz import to_date
 from .base import BaseScheduler
 from .schedule import PaymentSchedule, PaymentScheduleEntry
 
@@ -56,7 +57,7 @@ class InvertedPriceScheduler(BaseScheduler):
 
         for i, due_date in enumerate(due_dates):
             # Calculate days since last payment (or disbursement)
-            prev_date = disbursement_date.date() if i == 0 else due_dates[i - 1]
+            prev_date = to_date(disbursement_date) if i == 0 else due_dates[i - 1]
             days = (due_date - prev_date).days
 
             # Store beginning balance

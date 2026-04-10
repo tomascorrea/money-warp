@@ -4,7 +4,7 @@ import copy
 from datetime import date, datetime
 from typing import Any, Optional, Type, Union
 
-from .tz import ensure_aware
+from .tz import ensure_aware, to_date
 
 
 class WarpedTime:
@@ -19,7 +19,7 @@ class WarpedTime:
 
     def date(self) -> date:
         """Return the fixed date instead of current date."""
-        return self.fixed_datetime.date()
+        return to_date(self.fixed_datetime)
 
 
 class WarpError(Exception):

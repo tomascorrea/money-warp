@@ -17,6 +17,7 @@ from ..loan.engines import compute_state as _compute_state
 from ..loan.settlement import Settlement
 from ..money import Money
 from ..scheduler import PaymentSchedule
+from ..tz import to_date
 from .mora_rate_resolver import MoraRateResolver
 from .statement import BillingCycleLoanStatement
 
@@ -43,7 +44,7 @@ def resolve_mora_rate(
 
     for i, dd in enumerate(due_dates):
         if dd == current_due and i < len(closing_dates):
-            return resolver(closing_dates[i].date(), base_mora_rate)
+            return resolver(to_date(closing_dates[i]), base_mora_rate)
 
     return base_mora_rate
 
@@ -141,7 +142,7 @@ def build_statements(
 
     settlement_by_date: Dict[date, List] = {}
     for s in settlements:
-        key = s.payment_date.date()
+        key = to_date(s.payment_date)
         settlement_by_date.setdefault(key, []).append(s)
 
     for idx, closing_date in enumerate(closing_dates):

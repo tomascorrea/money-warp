@@ -6,6 +6,7 @@ from typing import List, Optional
 
 from ..interest_rate import InterestRate
 from ..money import Money
+from ..tz import to_date
 from .base import BaseScheduler
 from .schedule import PaymentSchedule, PaymentScheduleEntry
 
@@ -54,7 +55,7 @@ class PriceScheduler(BaseScheduler):
             raise ValueError("At least one due date is required")
 
         # Calculate return days (days from disbursement to each payment)
-        return_days = [(due_date - disbursement_date.date()).days for due_date in due_dates]
+        return_days = [(due_date - to_date(disbursement_date)).days for due_date in due_dates]
 
         # Calculate PMT using the reference formula
         daily_rate = interest_rate.to_daily().as_decimal()
@@ -72,7 +73,7 @@ class PriceScheduler(BaseScheduler):
         remaining_balance = principal.real_amount
 
         for i, due_date in enumerate(due_dates):
-            prev_date = disbursement_date.date() if i == 0 else due_dates[i - 1]
+            prev_date = to_date(disbursement_date) if i == 0 else due_dates[i - 1]
             days = (due_date - prev_date).days
 
             beginning_balance = remaining_balance

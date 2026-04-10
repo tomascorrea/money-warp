@@ -23,7 +23,7 @@ from ..engines import (  # noqa: F401 - re-export
 from ..interest_rate import InterestRate
 from ..money import Money
 from ..scheduler import PaymentSchedule
-from ..tz import to_datetime
+from ..tz import to_date, to_datetime
 from .allocation import Allocation
 from .installment import Installment
 from .settlement import Settlement
@@ -75,7 +75,7 @@ def covered_due_date_count(
 def is_payment_late(due_date: date, grace_period_days: int, as_of: datetime) -> bool:
     """Whether a payment is late considering the grace period."""
     effective_due = due_date + timedelta(days=grace_period_days)
-    return as_of.date() > effective_due
+    return to_date(as_of) > effective_due
 
 
 _WINDOW_DAYS_BEFORE = 3
@@ -101,7 +101,7 @@ def _has_payment_near(
     if expected.is_zero():
         return False
 
-    exact = [p for p in payment_entries if p.datetime.date() == due_date and p.datetime <= as_of]
+    exact = [p for p in payment_entries if to_date(p.datetime) == due_date and p.datetime <= as_of]
     if sum((p.amount for p in exact), Money.zero()) >= (expected - _COVERAGE_TOLERANCE):
         return True
 
@@ -421,9 +421,9 @@ def _build_installments_snapshot(
 
         if i < covered:
             expected_mora = prior_mora
-        elif i == covered and entry.due_date < as_of_date.date():
+        elif i == covered and entry.due_date < to_date(as_of_date):
             if last_payment_date is not None:
-                total_days = (as_of_date.date() - last_payment_date.date()).days
+                total_days = (to_date(as_of_date) - to_date(last_payment_date)).days
                 _, accrued_mora = interest_calc.compute_accrued_interest(
                     total_days,
                     principal_balance,
@@ -431,7 +431,7 @@ def _build_installments_snapshot(
                     last_payment_date,
                 )
             else:
-                days_overdue = (as_of_date.date() - entry.due_date).days
+                days_overdue = (to_date(as_of_date) - entry.due_date).days
                 _, accrued_mora = interest_calc.compute_accrued_interest(
                     days_overdue,
                     principal_balance,
@@ -535,7 +535,7 @@ def compute_state(
             continue
 
         interest_date = payment.interest_date if payment.interest_date is not None else payment.datetime
-        days = max(0, (interest_date.date() - last_accrual_end.date()).days)
+        days = max(0, (to_date(interest_date) - to_date(last_accrual_end)).days)
 
         covered = covered_due_date_count(running_principal, schedule)
         next_due = due_dates[covered] if covered < len(due_dates) else None
@@ -560,7 +560,7 @@ def compute_state(
             last_payment_date=last_accrual_end,
         )
 
-        skipped = _skipped_contractual_interest(installments, next_due, interest_date.date())
+        skipped = _skipped_contractual_interest(installments, next_due, to_date(interest_date))
         interest_cap = Money(regular.raw_amount + skipped.raw_amount)
 
         total_fines_amount = Money(sum(f.raw_amount for f in fines_applied.values())) if fines_applied else Money.zero()

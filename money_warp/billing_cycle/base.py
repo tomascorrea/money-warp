@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from ..cash_flow import CashFlow
 from ..money import Money
+from ..tz import to_date
 from .statement import Statement
 
 
@@ -54,12 +55,12 @@ class BaseBillingCycle(ABC):
         :meth:`due_date_for`.
         """
         if self._explicit_due_dates is not None:
-            start_d = start.date() if isinstance(start, datetime) else start
-            end_d = end.date() if isinstance(end, datetime) else end
+            start_d = to_date(start)
+            end_d = to_date(end)
             return [d for d in self._explicit_due_dates if start_d < d <= end_d]
 
         closing_dates = self.closing_dates_between(start, end)
-        return [self.due_date_for(cd).date() for cd in closing_dates]
+        return [to_date(self.due_date_for(cd)) for cd in closing_dates]
 
     # ------------------------------------------------------------------
     # Statement building

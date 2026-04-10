@@ -12,6 +12,7 @@ from typing import Callable, Optional, Tuple
 
 from .interest_rate import InterestRate
 from .money import Money
+from .tz import to_date
 
 # ===================================================================
 # Mora strategy
@@ -74,7 +75,7 @@ class InterestCalculator:
         if due_date is None or last_payment_date is None:
             return self.interest_rate.accrue(principal_balance, days), Money.zero()
 
-        regular_days = (due_date - last_payment_date.date()).days
+        regular_days = (due_date - to_date(last_payment_date)).days
 
         if regular_days <= 0:
             return Money.zero(), mora_rate.accrue(principal_balance, days)

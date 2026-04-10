@@ -36,17 +36,19 @@ def now() -> datetime:
 
 
 def ensure_aware(dt: datetime) -> datetime:
-    """Guarantee that *dt* is timezone-aware and in the configured timezone.
+    """Guarantee that *dt* is timezone-aware and normalised to UTC.
 
-    If *dt* is naive, the configured default timezone is stamped
-    (wall-clock time is preserved).
-    If *dt* is already aware, it is converted to the configured
-    timezone via ``astimezone`` (the instant is preserved, wall-clock
-    time adjusts).
+    If *dt* is naive, it is interpreted as being in the configured
+    business timezone (``_default_tz``) and then converted to UTC.
+    If *dt* is already aware, it is converted to UTC directly.
+
+    All datetimes stored inside the library are UTC.  Use
+    :func:`to_date` when extracting a calendar date — it converts
+    back to the business timezone first.
     """
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=_default_tz)
-    return dt.astimezone(_default_tz)
+        return dt.replace(tzinfo=_default_tz).astimezone(timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def to_date(dt: Union[date, datetime]) -> date:

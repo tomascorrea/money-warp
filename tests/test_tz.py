@@ -84,13 +84,15 @@ def test_ensure_aware_normalizes_already_aware_to_default_tz():
     assert result == aware
 
 
-def test_ensure_aware_uses_configured_tz_for_naive():
+def test_ensure_aware_interprets_naive_in_configured_tz_then_converts_to_utc():
     original = get_tz()
     try:
         set_tz("America/Sao_Paulo")
         naive = datetime(2024, 6, 15, 12, 0, 0)
         result = ensure_aware(naive)
-        assert result.tzinfo == ZoneInfo("America/Sao_Paulo")
+        assert result.tzinfo == timezone.utc
+        assert result.hour == 15
+        assert result == naive.replace(tzinfo=ZoneInfo("America/Sao_Paulo"))
     finally:
         set_tz(original)
 
@@ -204,7 +206,7 @@ def test_tz_aware_works_on_method_with_self():
     assert result.tzinfo == timezone.utc
 
 
-def test_tz_aware_uses_configured_timezone():
+def test_tz_aware_interprets_naive_in_configured_tz_returns_utc():
     original = get_tz()
     try:
         set_tz("America/Sao_Paulo")
@@ -214,7 +216,8 @@ def test_tz_aware_uses_configured_timezone():
             return dt
 
         result = func(datetime(2024, 1, 1))
-        assert result.tzinfo == ZoneInfo("America/Sao_Paulo")
+        assert result.tzinfo == timezone.utc
+        assert result == datetime(2024, 1, 1, tzinfo=ZoneInfo("America/Sao_Paulo"))
     finally:
         set_tz(original)
 
@@ -231,15 +234,15 @@ def test_ensure_aware_converts_sao_paulo_to_utc():
     assert result.day == 15
 
 
-def test_ensure_aware_converts_utc_to_configured_tz():
+def test_ensure_aware_always_returns_utc_regardless_of_configured_tz():
     original = get_tz()
     try:
         set_tz("America/Sao_Paulo")
         utc_dt = datetime(2024, 1, 16, 2, 0, 0, tzinfo=timezone.utc)
         result = ensure_aware(utc_dt)
-        assert result.tzinfo == ZoneInfo("America/Sao_Paulo")
-        assert result.hour == 23
-        assert result.day == 15
+        assert result.tzinfo == timezone.utc
+        assert result.hour == 2
+        assert result.day == 16
     finally:
         set_tz(original)
 
@@ -283,3 +286,47 @@ def test_to_date_passes_plain_date_through():
 def test_to_date_utc_datetime_gives_utc_date():
     utc_dt = datetime(2024, 1, 16, 2, 0, 0, tzinfo=timezone.utc)
     assert to_date(utc_dt) == date(2024, 1, 16)
+
+
+# --- Full round-trip: BRT input → UTC storage → BRT date extraction ---
+
+
+def test_brt_input_stored_as_utc_extracted_as_brt_date():
+    """The core scenario: a BRT datetime is normalised to UTC for storage,
+    but to_date extracts the calendar date in the business timezone (BRT).
+    """
+    original = get_tz()
+    try:
+        set_tz("America/Sao_Paulo")
+        sp = ZoneInfo("America/Sao_Paulo")
+
+        brt_dt = datetime(2024, 1, 15, 23, 0, 0, tzinfo=sp)
+
+        stored = ensure_aware(brt_dt)
+        assert stored.tzinfo == timezone.utc
+        assert stored == datetime(2024, 1, 16, 2, 0, 0, tzinfo=timezone.utc)
+
+        extracted_date = to_date(stored)
+        assert extracted_date == date(2024, 1, 15)
+    finally:
+        set_tz(original)
+
+
+def test_naive_input_stored_as_utc_extracted_as_brt_date():
+    """Naive datetimes are interpreted as business-tz, stored as UTC,
+    and to_date recovers the original calendar date.
+    """
+    original = get_tz()
+    try:
+        set_tz("America/Sao_Paulo")
+
+        naive = datetime(2024, 1, 15, 22, 0, 0)
+
+        stored = ensure_aware(naive)
+        assert stored.tzinfo == timezone.utc
+        assert stored.hour == 1
+        assert stored.day == 16
+
+        assert to_date(stored) == date(2024, 1, 15)
+    finally:
+        set_tz(original)
