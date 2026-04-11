@@ -71,6 +71,7 @@ class BillingCycleLoan:
         mora_interest_rate: Optional[InterestRate] = None,
         mora_rate_resolver: Optional[MoraRateResolver] = None,
         mora_strategy: MoraStrategy = MoraStrategy.COMPOUND,
+        payment_tolerance: Optional[Money] = None,
     ) -> None:
         if principal.is_negative() or principal.is_zero():
             raise ValueError("Principal must be positive")
@@ -92,6 +93,7 @@ class BillingCycleLoan:
         self.scheduler = scheduler or PriceScheduler
         self.fine_rate = fine_rate if fine_rate is not None else InterestRate("2% annual")
         self.grace_period_days = grace_period_days
+        self.payment_tolerance = payment_tolerance if payment_tolerance is not None else Money("0.01")
 
         self._interest = InterestCalculator(
             interest_rate,
@@ -285,6 +287,7 @@ class BillingCycleLoan:
             base_mora_rate=self.mora_interest_rate,
             mora_rate_resolver=self.mora_rate_resolver,
             fine_observation_dates=self._fine_observation_dates,
+            payment_tolerance=self.payment_tolerance,
         )
 
     def _payment_entries(self) -> list:
@@ -313,6 +316,7 @@ class BillingCycleLoan:
             self.now(),
             self._interest,
             state.last_accrual_end,
+            payment_tolerance=self.payment_tolerance,
         )
 
     @property
@@ -396,8 +400,12 @@ class BillingCycleLoan:
 
     @property
     def is_paid_off(self) -> bool:
-        """Whether the loan is fully paid off."""
-        return self.current_balance.is_zero() or self.current_balance.is_negative()
+        """Whether the loan is fully paid off.
+
+        Tolerance accumulates across all installments to account for
+        per-installment rounding errors from external origination systems.
+        """
+        return self.current_balance <= self.payment_tolerance * len(self.due_dates)
 
     @property
     def overpaid(self) -> Money:

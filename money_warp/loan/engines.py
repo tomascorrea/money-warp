@@ -25,14 +25,13 @@ from ..money import Money
 from ..scheduler import PaymentSchedule
 from ..tz import to_datetime
 from .allocation import Allocation
-from .installment import Installment, _DEFAULT_PAYMENT_TOLERANCE
+from .installment import Installment
 from .settlement import Settlement
 
-# ===================================================================
-# Settlement engine
-# ===================================================================
-
-_COVERAGE_TOLERANCE = Money("0.01")
+# Sub-cent tolerance for internal balance comparisons (rounding artifacts
+# from our own calculations).  Distinct from the loan-level
+# ``payment_tolerance`` that handles external origination rounding.
+_BALANCE_TOLERANCE = Money("0.01")
 
 
 @dataclass(frozen=True)
@@ -60,7 +59,7 @@ def covered_due_date_count(
     """How many due dates are covered given a remaining principal balance."""
     covered = 0
     for entry in schedule:
-        if remaining_balance <= entry.ending_balance + _COVERAGE_TOLERANCE:
+        if remaining_balance <= entry.ending_balance + _BALANCE_TOLERANCE:
             covered += 1
         else:
             break
@@ -102,13 +101,13 @@ def _has_payment_near(
         return False
 
     exact = [p for p in payment_entries if p.datetime.date() == due_date and p.datetime <= as_of]
-    if sum((p.amount for p in exact), Money.zero()) >= (expected - _COVERAGE_TOLERANCE):
+    if sum((p.amount for p in exact), Money.zero()) >= (expected - _BALANCE_TOLERANCE):
         return True
 
     window_start = to_datetime(due_date - timedelta(days=_WINDOW_DAYS_BEFORE))
     window_end = min(as_of, to_datetime(due_date + timedelta(days=_WINDOW_DAYS_AFTER)))
     window = [p for p in payment_entries if window_start <= p.datetime <= window_end and p.datetime <= as_of]
-    return sum((p.amount for p in window), Money.zero()) >= (expected - _COVERAGE_TOLERANCE)
+    return sum((p.amount for p in window), Money.zero()) >= (expected - _BALANCE_TOLERANCE)
 
 
 def compute_fines_at(
@@ -267,7 +266,7 @@ def distribute_into_installments(
             )
 
     _apply_residual(allocations, installments, fine_total, mora_total, interest_total, principal_total)
-    tolerance = installments[0].payment_tolerance if installments else _DEFAULT_PAYMENT_TOLERANCE
+    tolerance = installments[0].payment_tolerance if installments else Money("0.01")
     _apply_coverage_fixup(allocations, installments, ending_balance, principal_total, tolerance)
     return allocations
 
@@ -326,7 +325,7 @@ def _apply_coverage_fixup(
     installments: List[Installment],
     ending_balance: Money,
     principal_total: Money,
-    payment_tolerance: Money = _DEFAULT_PAYMENT_TOLERANCE,
+    payment_tolerance: Money,
 ) -> None:
     """Override coverage flags when the loan is paid off.
 
@@ -412,7 +411,8 @@ def _build_installments_snapshot(
     fines_applied: Dict[date, Money],
     interest_calc: InterestCalculator,
     last_payment_date: Optional[datetime] = None,
-    payment_tolerance: Money = _DEFAULT_PAYMENT_TOLERANCE,
+    *,
+    payment_tolerance: Money,
 ) -> List[Installment]:
     """Build Installment objects from pre-computed allocation data."""
     covered = covered_due_date_count(principal_balance, schedule)
@@ -492,7 +492,8 @@ def compute_state(
     as_of: datetime,
     fine_observation_dates: Optional[List[datetime]] = None,
     mora_rate_for_event: MoraRateCallback = None,
-    payment_tolerance: Money = _DEFAULT_PAYMENT_TOLERANCE,
+    *,
+    payment_tolerance: Money,
 ) -> LoanState:
     """Forward pass: compute all settlements and derived state from payments.
 
@@ -639,7 +640,8 @@ def build_installments(
     as_of: datetime,
     interest_calc: InterestCalculator,
     last_accrual_end: datetime,
-    payment_tolerance: Money = _DEFAULT_PAYMENT_TOLERANCE,
+    *,
+    payment_tolerance: Money,
 ) -> List[Installment]:
     """Build the installment view from settlements + schedule."""
     allocs_by_number: Dict[int, List[Allocation]] = {}
