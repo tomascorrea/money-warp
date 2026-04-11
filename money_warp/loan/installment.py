@@ -1,6 +1,6 @@
 """Installment data structure for loan repayment plans."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import List
 
@@ -8,7 +8,7 @@ from ..money import Money
 from ..scheduler import PaymentScheduleEntry
 from .allocation import Allocation
 
-_COVERAGE_TOLERANCE = Money("0.01")
+_DEFAULT_PAYMENT_TOLERANCE = Money("0.01")
 
 
 @dataclass(frozen=True)
@@ -35,6 +35,7 @@ class Installment:
     mora_paid: Money
     fine_paid: Money
     allocations: List[Allocation]
+    payment_tolerance: Money = field(default_factory=lambda: _DEFAULT_PAYMENT_TOLERANCE)
 
     @property
     def balance(self) -> Money:
@@ -46,8 +47,12 @@ class Installment:
 
     @property
     def is_fully_paid(self) -> bool:
-        """Whether this installment has been fully settled (within rounding tolerance)."""
-        return self.balance <= _COVERAGE_TOLERANCE
+        """Whether this installment has been fully settled.
+
+        Tolerance accumulates with the installment number to account for
+        per-installment rounding errors from external origination systems.
+        """
+        return self.balance <= self.payment_tolerance * self.number
 
     @classmethod
     def from_schedule_entry(
@@ -56,6 +61,7 @@ class Installment:
         allocations: List[Allocation],
         expected_mora: Money,
         expected_fine: Money,
+        payment_tolerance: Money = _DEFAULT_PAYMENT_TOLERANCE,
     ) -> "Installment":
         """Build an Installment from a scheduler's PaymentScheduleEntry."""
         principal_paid = Money(sum(a.principal_allocated.raw_amount for a in allocations))
@@ -77,4 +83,5 @@ class Installment:
             mora_paid=mora_paid,
             fine_paid=fine_paid,
             allocations=allocations,
+            payment_tolerance=payment_tolerance,
         )
