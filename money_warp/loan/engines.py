@@ -447,9 +447,7 @@ def _build_installments_snapshot(
         else:
             expected_mora = Money.zero()
 
-        result.append(
-            Installment.from_schedule_entry(entry, allocs, expected_mora, expected_fine, payment_tolerance)
-        )
+        result.append(Installment.from_schedule_entry(entry, allocs, expected_mora, expected_fine, payment_tolerance))
 
     return result
 

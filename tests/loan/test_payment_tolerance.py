@@ -6,13 +6,11 @@ number so that installment N tolerates N * payment_tolerance.
 """
 
 from datetime import date, datetime, timezone
-from decimal import Decimal
 
 import pytest
 
 from money_warp import Installment, InterestRate, Loan, Money, Warp
 from money_warp.scheduler import PaymentScheduleEntry
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -23,10 +21,18 @@ from money_warp.scheduler import PaymentScheduleEntry
 def twelve_installment_loan():
     """12-installment loan with default 1-cent tolerance."""
     due_dates = [
-        date(2026, 3, 22), date(2026, 4, 22), date(2026, 5, 22),
-        date(2026, 6, 22), date(2026, 7, 22), date(2026, 8, 22),
-        date(2026, 9, 22), date(2026, 10, 22), date(2026, 11, 22),
-        date(2026, 12, 22), date(2027, 1, 22), date(2027, 2, 22),
+        date(2026, 3, 22),
+        date(2026, 4, 22),
+        date(2026, 5, 22),
+        date(2026, 6, 22),
+        date(2026, 7, 22),
+        date(2026, 8, 22),
+        date(2026, 9, 22),
+        date(2026, 10, 22),
+        date(2026, 11, 22),
+        date(2026, 12, 22),
+        date(2027, 1, 22),
+        date(2027, 2, 22),
     ]
     return Loan(
         Money("10000"),
