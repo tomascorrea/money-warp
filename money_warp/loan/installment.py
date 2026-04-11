@@ -1,14 +1,12 @@
 """Installment data structure for loan repayment plans."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from typing import List
 
 from ..money import Money
 from ..scheduler import PaymentScheduleEntry
 from .allocation import Allocation
-
-_DEFAULT_PAYMENT_TOLERANCE = Money("0.01")
 
 
 @dataclass(frozen=True)
@@ -34,8 +32,8 @@ class Installment:
     interest_paid: Money
     mora_paid: Money
     fine_paid: Money
+    payment_tolerance: Money
     allocations: List[Allocation]
-    payment_tolerance: Money = field(default_factory=lambda: _DEFAULT_PAYMENT_TOLERANCE)
 
     @property
     def balance(self) -> Money:
@@ -61,7 +59,7 @@ class Installment:
         allocations: List[Allocation],
         expected_mora: Money,
         expected_fine: Money,
-        payment_tolerance: Money = _DEFAULT_PAYMENT_TOLERANCE,
+        payment_tolerance: Money,
     ) -> "Installment":
         """Build an Installment from a scheduler's PaymentScheduleEntry."""
         principal_paid = Money(sum(a.principal_allocated.raw_amount for a in allocations))
