@@ -8,8 +8,6 @@ from ..money import Money
 from ..scheduler import PaymentScheduleEntry
 from .allocation import Allocation
 
-_COVERAGE_TOLERANCE = Money("0.01")
-
 
 @dataclass(frozen=True)
 class Installment:
@@ -34,6 +32,7 @@ class Installment:
     interest_paid: Money
     mora_paid: Money
     fine_paid: Money
+    payment_tolerance: Money
     allocations: List[Allocation]
 
     @property
@@ -46,8 +45,12 @@ class Installment:
 
     @property
     def is_fully_paid(self) -> bool:
-        """Whether this installment has been fully settled (within rounding tolerance)."""
-        return self.balance <= _COVERAGE_TOLERANCE
+        """Whether this installment has been fully settled.
+
+        Tolerance accumulates with the installment number to account for
+        per-installment rounding errors from external origination systems.
+        """
+        return self.balance <= self.payment_tolerance * self.number
 
     @classmethod
     def from_schedule_entry(
@@ -56,6 +59,7 @@ class Installment:
         allocations: List[Allocation],
         expected_mora: Money,
         expected_fine: Money,
+        payment_tolerance: Money,
     ) -> "Installment":
         """Build an Installment from a scheduler's PaymentScheduleEntry."""
         principal_paid = Money(sum(a.principal_allocated.raw_amount for a in allocations))
@@ -77,4 +81,5 @@ class Installment:
             mora_paid=mora_paid,
             fine_paid=fine_paid,
             allocations=allocations,
+            payment_tolerance=payment_tolerance,
         )

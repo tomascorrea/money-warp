@@ -28,11 +28,10 @@ from .allocation import Allocation
 from .installment import Installment
 from .settlement import Settlement
 
-# ===================================================================
-# Settlement engine
-# ===================================================================
-
-_COVERAGE_TOLERANCE = Money("0.01")
+# Sub-cent tolerance for internal balance comparisons (rounding artifacts
+# from our own calculations).  Distinct from the loan-level
+# ``payment_tolerance`` that handles external origination rounding.
+_BALANCE_TOLERANCE = Money("0.01")
 
 
 @dataclass(frozen=True)
@@ -60,7 +59,7 @@ def covered_due_date_count(
     """How many due dates are covered given a remaining principal balance."""
     covered = 0
     for entry in schedule:
-        if remaining_balance <= entry.ending_balance + _COVERAGE_TOLERANCE:
+        if remaining_balance <= entry.ending_balance + _BALANCE_TOLERANCE:
             covered += 1
         else:
             break
@@ -102,13 +101,13 @@ def _has_payment_near(
         return False
 
     exact = [p for p in payment_entries if p.datetime.date() == due_date and p.datetime <= as_of]
-    if sum((p.amount for p in exact), Money.zero()) >= (expected - _COVERAGE_TOLERANCE):
+    if sum((p.amount for p in exact), Money.zero()) >= (expected - _BALANCE_TOLERANCE):
         return True
 
     window_start = to_datetime(due_date - timedelta(days=_WINDOW_DAYS_BEFORE))
     window_end = min(as_of, to_datetime(due_date + timedelta(days=_WINDOW_DAYS_AFTER)))
     window = [p for p in payment_entries if window_start <= p.datetime <= window_end and p.datetime <= as_of]
-    return sum((p.amount for p in window), Money.zero()) >= (expected - _COVERAGE_TOLERANCE)
+    return sum((p.amount for p in window), Money.zero()) >= (expected - _BALANCE_TOLERANCE)
 
 
 def compute_fines_at(
@@ -254,7 +253,7 @@ def distribute_into_installments(
 
         total = fine_alloc + mora_alloc + interest_alloc + principal_alloc
         if total.is_positive():
-            is_covered = total >= (inst.balance - _COVERAGE_TOLERANCE)
+            is_covered = total >= (inst.balance - inst.payment_tolerance * inst.number)
             allocations.append(
                 Allocation(
                     installment_number=inst.number,
@@ -267,7 +266,8 @@ def distribute_into_installments(
             )
 
     _apply_residual(allocations, installments, fine_total, mora_total, interest_total, principal_total)
-    _apply_coverage_fixup(allocations, installments, ending_balance, principal_total)
+    tolerance = installments[0].payment_tolerance if installments else Money("0.01")
+    _apply_coverage_fixup(allocations, installments, ending_balance, principal_total, tolerance)
     return allocations
 
 
@@ -325,6 +325,7 @@ def _apply_coverage_fixup(
     installments: List[Installment],
     ending_balance: Money,
     principal_total: Money,
+    payment_tolerance: Money,
 ) -> None:
     """Override coverage flags when the loan is paid off.
 
@@ -332,8 +333,10 @@ def _apply_coverage_fixup(
     any allocation whose principal was fully allocated is
     marked as fully covered.
     """
+    num_installments = len(installments)
+    loan_tolerance = payment_tolerance * num_installments
     post_balance = ending_balance - principal_total
-    if post_balance > _COVERAGE_TOLERANCE:
+    if post_balance > loan_tolerance:
         return
 
     inst_by_number = {inst.number: inst for inst in installments}
@@ -343,8 +346,9 @@ def _apply_coverage_fixup(
         inst = inst_by_number.get(alloc.installment_number)
         if inst is None:
             continue
+        inst_tolerance = payment_tolerance * inst.number
         principal_owed = inst.expected_principal - inst.principal_paid
-        if alloc.principal_allocated >= (principal_owed - _COVERAGE_TOLERANCE):
+        if alloc.principal_allocated >= (principal_owed - inst_tolerance):
             allocations[i] = Allocation(
                 installment_number=alloc.installment_number,
                 principal_allocated=alloc.principal_allocated,
@@ -406,6 +410,7 @@ def _build_installments_snapshot(
     schedule: PaymentSchedule,
     fines_applied: Dict[date, Money],
     interest_calc: InterestCalculator,
+    payment_tolerance: Money,
     last_payment_date: Optional[datetime] = None,
 ) -> List[Installment]:
     """Build Installment objects from pre-computed allocation data."""
@@ -442,7 +447,7 @@ def _build_installments_snapshot(
         else:
             expected_mora = Money.zero()
 
-        result.append(Installment.from_schedule_entry(entry, allocs, expected_mora, expected_fine))
+        result.append(Installment.from_schedule_entry(entry, allocs, expected_mora, expected_fine, payment_tolerance))
 
     return result
 
@@ -482,6 +487,7 @@ def compute_state(
     disbursement_date: datetime,
     payment_entries: list,
     as_of: datetime,
+    payment_tolerance: Money,
     fine_observation_dates: Optional[List[datetime]] = None,
     mora_rate_for_event: MoraRateCallback = None,
 ) -> LoanState:
@@ -558,6 +564,7 @@ def compute_state(
             fines_applied,
             interest_calc,
             last_payment_date=last_accrual_end,
+            payment_tolerance=payment_tolerance,
         )
 
         skipped = _skipped_contractual_interest(installments, next_due, interest_date.date())
@@ -582,7 +589,7 @@ def compute_state(
         if running_principal.is_negative():
             overpaid = overpaid + Money(-running_principal.raw_amount)
             running_principal = Money.zero()
-        elif running_principal.is_positive() and running_principal <= _COVERAGE_TOLERANCE:
+        elif running_principal.is_positive() and running_principal <= payment_tolerance * len(due_dates):
             running_principal = Money.zero()
 
         for a in allocations:
@@ -629,6 +636,7 @@ def build_installments(
     as_of: datetime,
     interest_calc: InterestCalculator,
     last_accrual_end: datetime,
+    payment_tolerance: Money,
 ) -> List[Installment]:
     """Build the installment view from settlements + schedule."""
     allocs_by_number: Dict[int, List[Allocation]] = {}
@@ -644,4 +652,5 @@ def build_installments(
         fines_applied,
         interest_calc,
         last_payment_date=last_accrual_end,
+        payment_tolerance=payment_tolerance,
     )

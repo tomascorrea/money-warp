@@ -138,6 +138,7 @@ def test_from_schedule_entry_creates_correct_installment():
         allocations=[],
         expected_mora=Money.zero(),
         expected_fine=Money.zero(),
+        payment_tolerance=Money("0.01"),
     )
 
     assert inst.number == 1
