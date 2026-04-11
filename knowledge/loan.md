@@ -48,6 +48,22 @@ The forward pass merges payment events with fine observation dates into a sorted
 | `grace_period_days` | `int` | `0` | Days after due date before fines apply |
 | `mora_interest_rate` | `Optional[InterestRate]` | `interest_rate` | Rate used for mora (late) interest; defaults to the base rate |
 | `mora_strategy` | `MoraStrategy` | `COMPOUND` | How mora interest is computed (see Mora Strategy below) |
+| `payment_tolerance` | `Optional[Money]` | `Money("0.01")` | Per-installment rounding error tolerance (see Payment Tolerance below) |
+
+## Payment Tolerance
+
+External loan origination systems may introduce a small rounding error per installment (typically 1 cent in the PMT calculation). This error **accumulates** across installments -- installment N can be off by up to N times the per-installment error.
+
+The `payment_tolerance` parameter controls the per-installment error unit. The effective tolerance scales with the installment number:
+
+- **`Installment.is_fully_paid`**: `self.balance <= payment_tolerance * self.number`
+- **`Loan.is_paid_off`**: `current_balance <= payment_tolerance * len(due_dates)`
+
+This means installment 1 on a 24-installment loan tolerates 1 cent, while installment 24 tolerates 24 cents (at the default tolerance).
+
+The tolerance is threaded through the settlement engine (`compute_state`), where it also controls the principal snap-to-zero threshold and coverage fixup checks.
+
+Pass `payment_tolerance=Money("0")` for exact-match behavior. Pass a larger value (e.g., `Money("0.02")`) if the external system has a larger rounding error.
 
 ## Three-Date Payment Model
 
