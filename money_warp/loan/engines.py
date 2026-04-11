@@ -410,9 +410,8 @@ def _build_installments_snapshot(
     schedule: PaymentSchedule,
     fines_applied: Dict[date, Money],
     interest_calc: InterestCalculator,
-    last_payment_date: Optional[datetime] = None,
-    *,
     payment_tolerance: Money,
+    last_payment_date: Optional[datetime] = None,
 ) -> List[Installment]:
     """Build Installment objects from pre-computed allocation data."""
     covered = covered_due_date_count(principal_balance, schedule)
@@ -490,10 +489,9 @@ def compute_state(
     disbursement_date: datetime,
     payment_entries: list,
     as_of: datetime,
+    payment_tolerance: Money,
     fine_observation_dates: Optional[List[datetime]] = None,
     mora_rate_for_event: MoraRateCallback = None,
-    *,
-    payment_tolerance: Money,
 ) -> LoanState:
     """Forward pass: compute all settlements and derived state from payments.
 
@@ -640,7 +638,6 @@ def build_installments(
     as_of: datetime,
     interest_calc: InterestCalculator,
     last_accrual_end: datetime,
-    *,
     payment_tolerance: Money,
 ) -> List[Installment]:
     """Build the installment view from settlements + schedule."""

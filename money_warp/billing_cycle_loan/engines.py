@@ -85,9 +85,9 @@ def compute_state(
     payment_entries: list,
     as_of: datetime,
     base_mora_rate: InterestRate,
+    payment_tolerance: Money,
     mora_rate_resolver: Optional[MoraRateResolver] = None,
     fine_observation_dates: Optional[List[datetime]] = None,
-    payment_tolerance: Money = Money("0.01"),
 ) -> LoanState:
     """Forward pass for billing-cycle loans.
 
