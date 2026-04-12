@@ -20,7 +20,8 @@ from ..scheduler import PaymentSchedule, PaymentScheduleEntry
 from ..time_context import TimeContext
 from ..tz import to_datetime
 from .allocation import allocate_payment_into_installments
-from .fines import _BALANCE_TOLERANCE, compute_fines_at
+from .constants import BALANCE_TOLERANCE
+from .fines import compute_fines_at
 from .interest import InterestCalculator, MoraRateCallback
 
 
@@ -49,7 +50,7 @@ def covered_due_date_count(
     """How many due dates are covered given a remaining principal balance."""
     covered = 0
     for entry in schedule:
-        if remaining_balance <= entry.ending_balance + _BALANCE_TOLERANCE:
+        if remaining_balance <= entry.ending_balance + BALANCE_TOLERANCE:
             covered += 1
         else:
             break

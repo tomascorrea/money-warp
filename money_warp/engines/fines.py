@@ -7,13 +7,10 @@ from ..interest_rate import InterestRate
 from ..money import Money
 from ..scheduler import PaymentSchedule
 from ..tz import to_datetime
+from .constants import BALANCE_TOLERANCE
 
 _WINDOW_DAYS_BEFORE = 3
 _WINDOW_DAYS_AFTER = 1
-
-# Sub-cent tolerance for internal balance comparisons (rounding artifacts
-# from our own calculations).
-_BALANCE_TOLERANCE = Money("0.01")
 
 
 def is_payment_late(due_date: date, grace_period_days: int, as_of: datetime) -> bool:
@@ -42,13 +39,13 @@ def _has_payment_near(
         return False
 
     exact = [p for p in payment_entries if p.datetime.date() == due_date and p.datetime <= as_of]
-    if sum((p.amount for p in exact), Money.zero()) >= (expected - _BALANCE_TOLERANCE):
+    if sum((p.amount for p in exact), Money.zero()) >= (expected - BALANCE_TOLERANCE):
         return True
 
     window_start = to_datetime(due_date - timedelta(days=_WINDOW_DAYS_BEFORE))
     window_end = min(as_of, to_datetime(due_date + timedelta(days=_WINDOW_DAYS_AFTER)))
     window = [p for p in payment_entries if window_start <= p.datetime <= window_end and p.datetime <= as_of]
-    return sum((p.amount for p in window), Money.zero()) >= (expected - _BALANCE_TOLERANCE)
+    return sum((p.amount for p in window), Money.zero()) >= (expected - BALANCE_TOLERANCE)
 
 
 def compute_fines_at(

@@ -24,5 +24,6 @@ def __getattr__(name: str):  # type: ignore[misc]
     if name == "Loan":
         from .loan import Loan
 
+        globals()["Loan"] = Loan
         return Loan
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
