@@ -10,16 +10,14 @@ from datetime import date, datetime, tzinfo
 from typing import Dict, List, Optional
 
 from ..billing_cycle import BaseBillingCycle
-from ..engines import InterestCalculator, MoraRateCallback
+from ..engines import InterestCalculator, LoanState, MoraRateCallback
+from ..engines import compute_state as _compute_state
 from ..interest_rate import InterestRate
-from ..loan.engines import LoanState
-from ..loan.engines import compute_state as _compute_state
-from ..loan.settlement import Settlement
+from ..models import BillingCycleLoanStatement, Settlement
 from ..money import Money
 from ..scheduler import PaymentSchedule
 from ..tz import to_date
 from .mora_rate_resolver import MoraRateResolver
-from .statement import BillingCycleLoanStatement
 
 # ------------------------------------------------------------------
 # Mora rate resolution

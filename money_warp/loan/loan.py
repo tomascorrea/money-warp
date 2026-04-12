@@ -6,24 +6,24 @@ from typing import Dict, List, Optional, Type, Union
 from zoneinfo import ZoneInfo
 
 from ..cash_flow import CashFlow, CashFlowItem, CashFlowType
+from ..engines import (
+    InterestCalculator,
+    LoanState,
+    MoraStrategy,
+    apply_tolerance_adjustment,
+    build_installments,
+    compute_state,
+    covered_due_date_count,
+    is_payment_late,
+)
 from ..interest_rate import InterestRate
+from ..models import AnticipationResult, Installment, Settlement
 from ..money import Money
 from ..rate import Rate
 from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
 from ..tax.base import BaseTax, TaxResult
 from ..time_context import TimeContext
 from ..tz import ensure_aware, get_tz, tz_aware
-from .engines import (
-    InterestCalculator,
-    LoanState,
-    MoraStrategy,
-    build_installments,
-    compute_state,
-    covered_due_date_count,
-    is_payment_late,
-)
-from .installment import Installment
-from .settlement import AnticipationResult, Settlement
 from .tvm import loan_calculate_anticipation, loan_irr, loan_present_value
 
 
@@ -66,6 +66,7 @@ class Loan:
         mora_strategy: MoraStrategy = MoraStrategy.COMPOUND,
         taxes: Optional[List[BaseTax]] = None,
         is_grossed_up: bool = False,
+        payment_tolerance: Optional[Money] = None,
         tz: Optional[Union[str, tzinfo]] = None,
     ) -> None:
         if not due_dates:
@@ -92,6 +93,7 @@ class Loan:
         self.scheduler = scheduler or PriceScheduler
         self.fine_rate = fine_rate if fine_rate is not None else InterestRate("2% annual")
         self.grace_period_days = grace_period_days
+        self.payment_tolerance = payment_tolerance if payment_tolerance is not None else Money("0.01")
         self.taxes: List[BaseTax] = taxes or []
         self.is_grossed_up = is_grossed_up
         self._tax_cache: Optional[Dict[str, TaxResult]] = None
@@ -234,6 +236,11 @@ class Loan:
 
         When all installments are already paid the payment is recorded
         as an overpayment (no interest accrual) and a warning is issued.
+
+        After recording the payment, if the principal balance drifts from
+        the schedule's expected ending balance by a small amount (within
+        ``payment_tolerance``), a tolerance adjustment CashFlowItem is
+        added to the cashflow to prevent rounding drift from compounding.
         """
         payment_date = self.now()
 
@@ -251,12 +258,29 @@ class Loan:
 
         next_due = self._next_unpaid_due_date()
         interest_date = max(payment_date, self._time_ctx.to_datetime(next_due))
-        return self.record_payment(
+        settlement = self.record_payment(
             amount,
             payment_date=payment_date,
             interest_date=interest_date,
             description=description,
         )
+
+        schedule = self.get_original_schedule()
+        for entry in schedule:
+            if entry.due_date == next_due:
+                apply_tolerance_adjustment(
+                    self.cashflow,
+                    entry,
+                    settlement,
+                    payment_date,
+                    interest_date,
+                    self.payment_tolerance,
+                    len(self.due_dates),
+                    self._time_ctx,
+                )
+                break
+
+        return settlement
 
     def anticipate_payment(
         self,

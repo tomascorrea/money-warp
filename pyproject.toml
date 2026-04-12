@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "money_warp"
-version = "0.20.2"
+version = "0.21.1"
 description = "MoneyWarp – Bend time. Model cash."
 license = "MIT"
 authors = ["Tomas Correa <tomas.correa@gmail.com>"]
@@ -47,6 +47,7 @@ sqlalchemy = "^2.0"
 factory-boy = "^3.3.3"
 pytest-postgresql = "^8.0.0"
 psycopg = {extras = ["binary"], version = "^3.3.3"}
+pytest-xdist = "^3.8.0"
 
 [tool.poetry.group.docs.dependencies]
 mkdocs = "^1.6.1"
@@ -119,6 +120,10 @@ ignore = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+addopts = "-m 'not slow'"
 
 [tool.coverage.report]
 skip_empty = true

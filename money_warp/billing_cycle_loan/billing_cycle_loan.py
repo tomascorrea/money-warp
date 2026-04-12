@@ -7,18 +7,23 @@ from zoneinfo import ZoneInfo
 
 from ..billing_cycle import BaseBillingCycle
 from ..cash_flow import CashFlow, CashFlowItem, CashFlowType
-from ..engines import InterestCalculator, MoraStrategy
+from ..engines import (
+    InterestCalculator,
+    LoanState,
+    MoraStrategy,
+    apply_tolerance_adjustment,
+    build_installments,
+    covered_due_date_count,
+    is_payment_late,
+)
 from ..interest_rate import InterestRate
-from ..loan.engines import LoanState, build_installments, covered_due_date_count, is_payment_late
-from ..loan.installment import Installment
-from ..loan.settlement import Settlement
+from ..models import BillingCycleLoanStatement, Installment, Settlement
 from ..money import Money
 from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
 from ..time_context import TimeContext
 from ..tz import ensure_aware, get_tz, tz_aware
 from .engines import build_statements, compute_state, resolve_mora_rate
 from .mora_rate_resolver import MoraRateResolver
-from .statement import BillingCycleLoanStatement
 
 
 class BillingCycleLoan:
@@ -72,6 +77,7 @@ class BillingCycleLoan:
         mora_interest_rate: Optional[InterestRate] = None,
         mora_rate_resolver: Optional[MoraRateResolver] = None,
         mora_strategy: MoraStrategy = MoraStrategy.COMPOUND,
+        payment_tolerance: Optional[Money] = None,
         tz: Optional[Union[str, tzinfo]] = None,
     ) -> None:
         if principal.is_negative() or principal.is_zero():
@@ -95,6 +101,7 @@ class BillingCycleLoan:
         self.scheduler = scheduler or PriceScheduler
         self.fine_rate = fine_rate if fine_rate is not None else InterestRate("2% annual")
         self.grace_period_days = grace_period_days
+        self.payment_tolerance = payment_tolerance if payment_tolerance is not None else Money("0.01")
 
         self._interest = InterestCalculator(
             interest_rate,
@@ -131,7 +138,7 @@ class BillingCycleLoan:
 
         When the billing cycle has explicit due dates, use a wide
         enough end boundary so that due dates falling after the last
-        closing date (the normal case — due = close + offset) are
+        closing date (the normal case -- due = close + offset) are
         not accidentally excluded.
         """
         from dateutil.relativedelta import relativedelta
@@ -246,6 +253,11 @@ class BillingCycleLoan:
 
         When all installments are already paid the payment is recorded
         as an overpayment.
+
+        After recording the payment, if the principal balance drifts from
+        the schedule's expected ending balance by a small amount (within
+        ``payment_tolerance``), a tolerance adjustment CashFlowItem is
+        added to the cashflow to prevent rounding drift from compounding.
         """
         payment_date = self.now()
 
@@ -263,12 +275,29 @@ class BillingCycleLoan:
 
         next_due = self._next_unpaid_due_date()
         interest_date = max(payment_date, self._time_ctx.to_datetime(next_due))
-        return self.record_payment(
+        settlement = self.record_payment(
             amount,
             payment_date=payment_date,
             interest_date=interest_date,
             description=description,
         )
+
+        schedule = self.get_original_schedule()
+        for entry in schedule:
+            if entry.due_date == next_due:
+                apply_tolerance_adjustment(
+                    self.cashflow,
+                    entry,
+                    settlement,
+                    payment_date,
+                    interest_date,
+                    self.payment_tolerance,
+                    len(self.due_dates),
+                    self._time_ctx,
+                )
+                break
+
+        return settlement
 
     # ------------------------------------------------------------------
     # Derived state

@@ -1,0 +1,109 @@
+[
+  {
+    "financed_amount": 1018.91,
+    "rate": "1.0% m",
+    "payment": 89.94,
+    "disbursement_date": "2026-04-10",
+    "due_dates": [
+      "2026-04-20",
+      "2026-05-20",
+      "2026-06-20",
+      "2026-07-20",
+      "2026-08-20",
+      "2026-09-20",
+      "2026-10-20",
+      "2026-11-20",
+      "2026-12-20",
+      "2027-01-20",
+      "2027-02-20",
+      "2027-03-20"
+    ],
+    "annual_interest_rate": 0.126825,
+    "schedule": [
+      {
+        "period": 1,
+        "interest": 3.34,
+        "principal": 86.6,
+        "balance": 932.33,
+        "running_day": 10
+      },
+      {
+        "period": 2,
+        "interest": 9.19,
+        "principal": 80.75,
+        "balance": 851.58,
+        "running_day": 30
+      },
+      {
+        "period": 3,
+        "interest": 8.68,
+        "principal": 81.26,
+        "balance": 770.32,
+        "running_day": 31
+      },
+      {
+        "period": 4,
+        "interest": 7.6,
+        "principal": 82.34,
+        "balance": 687.98,
+        "running_day": 30
+      },
+      {
+        "period": 5,
+        "interest": 7.01,
+        "principal": 82.93,
+        "balance": 605.05,
+        "running_day": 31
+      },
+      {
+        "period": 6,
+        "interest": 6.17,
+        "principal": 83.77,
+        "balance": 521.28,
+        "running_day": 31
+      },
+      {
+        "period": 7,
+        "interest": 5.14,
+        "principal": 84.8,
+        "balance": 436.48,
+        "running_day": 30
+      },
+      {
+        "period": 8,
+        "interest": 4.45,
+        "principal": 85.49,
+        "balance": 350.99,
+        "running_day": 31
+      },
+      {
+        "period": 9,
+        "interest": 3.46,
+        "principal": 86.48,
+        "balance": 264.51,
+        "running_day": 30
+      },
+      {
+        "period": 10,
+        "interest": 2.7,
+        "principal": 87.24,
+        "balance": 177.27,
+        "running_day": 31
+      },
+      {
+        "period": 11,
+        "interest": 1.81,
+        "principal": 88.13,
+        "balance": 89.14,
+        "running_day": 31
+      },
+      {
+        "period": 12,
+        "interest": 0.8,
+        "principal": 89.14,
+        "balance": 0.0,
+        "running_day": 28
+      }
+    ]
+  }
+]
