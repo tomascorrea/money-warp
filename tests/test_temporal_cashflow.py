@@ -38,10 +38,10 @@ def test_cashflow_item_delete_returns_none_after_effective_date():
     delete_date = datetime(2024, 3, 1, tzinfo=timezone.utc)
     item.delete(delete_date)
 
-    ctx.override(WarpedTime(datetime(2024, 2, 28, tzinfo=timezone.utc)))
+    ctx.override(WarpedTime(datetime(2024, 2, 28, tzinfo=timezone.utc), timezone.utc))
     assert item.resolve() == entry
 
-    ctx.override(WarpedTime(datetime(2024, 3, 2, tzinfo=timezone.utc)))
+    ctx.override(WarpedTime(datetime(2024, 3, 2, tzinfo=timezone.utc), timezone.utc))
     assert item.resolve() is None
 
 
@@ -62,10 +62,10 @@ def test_cashflow_item_update_changes_entry_after_effective_date():
     update_date = datetime(2024, 3, 1, tzinfo=timezone.utc)
     item.update(update_date, new_entry)
 
-    ctx.override(WarpedTime(datetime(2024, 2, 28, tzinfo=timezone.utc)))
+    ctx.override(WarpedTime(datetime(2024, 2, 28, tzinfo=timezone.utc), timezone.utc))
     assert item.resolve() == old_entry
 
-    ctx.override(WarpedTime(datetime(2024, 3, 2, tzinfo=timezone.utc)))
+    ctx.override(WarpedTime(datetime(2024, 3, 2, tzinfo=timezone.utc), timezone.utc))
     assert item.resolve() == new_entry
 
 
@@ -78,10 +78,10 @@ def test_cashflow_item_resolve_reflects_time_context_override():
     item = CashFlowItem(entry=entry, time_context=ctx)
     item.delete(datetime(2024, 4, 1, tzinfo=timezone.utc))
 
-    ctx.override(WarpedTime(datetime(2024, 3, 15, tzinfo=timezone.utc)))
+    ctx.override(WarpedTime(datetime(2024, 3, 15, tzinfo=timezone.utc), timezone.utc))
     assert item.resolve() == entry
 
-    ctx.override(WarpedTime(datetime(2024, 5, 1, tzinfo=timezone.utc)))
+    ctx.override(WarpedTime(datetime(2024, 5, 1, tzinfo=timezone.utc), timezone.utc))
     assert item.resolve() is None
 
 

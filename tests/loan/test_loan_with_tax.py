@@ -121,6 +121,7 @@ def test_loan_with_grossup_to_loan_net_disbursement(standard_iof, interest_rate,
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
     )
     loan = result.to_loan()
     assert abs(loan.net_disbursement - Money("10000")) <= Money("0.01")
@@ -134,6 +135,7 @@ def test_loan_with_grossup_to_loan_principal_is_grossed_up(standard_iof, interes
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
     )
     loan = result.to_loan()
     assert loan.principal > Money("10000")
@@ -147,6 +149,7 @@ def test_loan_with_grossup_to_loan_forwards_extra_kwargs(standard_iof, interest_
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
     )
     loan = result.to_loan(fine_rate=InterestRate("5% annual"), grace_period_days=7)
     assert loan.fine_rate == InterestRate("5% annual")
@@ -160,6 +163,7 @@ def test_loan_with_grossup_to_loan_grace_period(standard_iof, interest_rate, due
         disbursement_date=disbursement_date,
         scheduler=PriceScheduler,
         taxes=[standard_iof],
+        tz=timezone.utc,
     )
     loan = result.to_loan(grace_period_days=5)
     assert loan.grace_period_days == 5
@@ -193,6 +197,7 @@ def test_grossup_loan_is_grossed_up_flag():
         disbursement_date=datetime(2024, 8, 28, tzinfo=timezone.utc),
         scheduler=PriceScheduler,
         taxes=[IOF(daily_rate="0.0082%", additional_rate="0.38%")],
+        tz=timezone.utc,
     )
     assert loan.is_grossed_up is True
 
@@ -205,6 +210,7 @@ def test_grossup_loan_cash_flow_has_no_tax_item():
         disbursement_date=datetime(2024, 8, 28, tzinfo=timezone.utc),
         scheduler=PriceScheduler,
         taxes=[IOF(daily_rate="0.0082%", additional_rate="0.38%")],
+        tz=timezone.utc,
     )
     cf = loan.generate_expected_cash_flow()
     tax_items = [item for item in cf if "tax" in item.category]
@@ -219,6 +225,7 @@ def test_grossup_loan_cash_flow_disbursement_equals_net_disbursement():
         disbursement_date=datetime(2024, 8, 28, tzinfo=timezone.utc),
         scheduler=PriceScheduler,
         taxes=[IOF(daily_rate="0.0082%", additional_rate="0.38%")],
+        tz=timezone.utc,
     )
     cf = loan.generate_expected_cash_flow()
     disbursement_items = [item for item in cf if "disbursement" in item.category]
@@ -233,6 +240,7 @@ def test_grossup_loan_irr_not_inflated_by_double_counted_tax():
         disbursement_date=datetime(2024, 8, 28, tzinfo=timezone.utc),
         scheduler=PriceScheduler,
         taxes=[IOF(daily_rate="0.0082%", additional_rate="0.38%")],
+        tz=timezone.utc,
     )
     irr = loan.irr()
     assert abs(irr.as_decimal() - Decimal("0.710526")) < Decimal("0.01")

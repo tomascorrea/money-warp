@@ -1,12 +1,13 @@
 """IOF (Imposto sobre Operações Financeiras) - Brazilian financial operations tax."""
 
-from datetime import datetime
+from datetime import datetime, tzinfo
 from decimal import Decimal
 from enum import Enum
 from typing import List, Union
 
 from ..money import Money
 from ..scheduler.schedule import PaymentSchedule
+from ..tz import to_date
 from .base import BaseTax, TaxInstallmentDetail, TaxResult
 
 
@@ -85,6 +86,7 @@ class IOF(BaseTax):
         self,
         schedule: PaymentSchedule,
         disbursement_date: datetime,
+        tz: tzinfo,
     ) -> TaxResult:
         """
         Calculate IOF for each installment in the schedule.
@@ -100,7 +102,7 @@ class IOF(BaseTax):
 
         for entry in schedule:
             days = min(
-                (entry.due_date - disbursement_date.date()).days,
+                (entry.due_date - to_date(disbursement_date, tz)).days,
                 self._max_daily_days,
             )
             principal_raw = entry.principal_payment.raw_amount

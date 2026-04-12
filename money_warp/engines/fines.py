@@ -1,22 +1,22 @@
 """Fine computation and late-payment detection."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, tzinfo
 from typing import Dict, List
 
 from ..interest_rate import InterestRate
 from ..money import Money
 from ..scheduler import PaymentSchedule
-from ..tz import to_datetime
+from ..tz import to_date, to_datetime
 from .constants import BALANCE_TOLERANCE
 
 _WINDOW_DAYS_BEFORE = 3
 _WINDOW_DAYS_AFTER = 1
 
 
-def is_payment_late(due_date: date, grace_period_days: int, as_of: datetime) -> bool:
+def is_payment_late(due_date: date, grace_period_days: int, as_of: datetime, tz: tzinfo) -> bool:
     """Whether a payment is late considering the grace period."""
     effective_due = due_date + timedelta(days=grace_period_days)
-    return as_of.date() > effective_due
+    return to_date(as_of, tz) > effective_due
 
 
 def _has_payment_near(
@@ -24,6 +24,7 @@ def _has_payment_near(
     as_of: datetime,
     schedule: PaymentSchedule,
     payment_entries: list,
+    tz: tzinfo,
 ) -> bool:
     """Check if sufficient payment has been made near a due date.
 
@@ -38,12 +39,12 @@ def _has_payment_near(
     if expected.is_zero():
         return False
 
-    exact = [p for p in payment_entries if p.datetime.date() == due_date and p.datetime <= as_of]
+    exact = [p for p in payment_entries if to_date(p.datetime, tz) == due_date and p.datetime <= as_of]
     if sum((p.amount for p in exact), Money.zero()) >= (expected - BALANCE_TOLERANCE):
         return True
 
-    window_start = to_datetime(due_date - timedelta(days=_WINDOW_DAYS_BEFORE))
-    window_end = min(as_of, to_datetime(due_date + timedelta(days=_WINDOW_DAYS_AFTER)))
+    window_start = to_datetime(due_date - timedelta(days=_WINDOW_DAYS_BEFORE), tz)
+    window_end = min(as_of, to_datetime(due_date + timedelta(days=_WINDOW_DAYS_AFTER), tz))
     window = [p for p in payment_entries if window_start <= p.datetime <= window_end and p.datetime <= as_of]
     return sum((p.amount for p in window), Money.zero()) >= (expected - BALANCE_TOLERANCE)
 
@@ -56,6 +57,7 @@ def compute_fines_at(
     grace_period_days: int,
     existing_fines: Dict[date, Money],
     payment_entries: list,
+    tz: tzinfo,
 ) -> Dict[date, Money]:
     """Compute fines for overdue due dates as of *as_of*.
 
@@ -67,9 +69,9 @@ def compute_fines_at(
     for dd in due_dates:
         if dd in fines:
             continue
-        if not is_payment_late(dd, grace_period_days, as_of):
+        if not is_payment_late(dd, grace_period_days, as_of, tz):
             continue
-        if _has_payment_near(dd, as_of, schedule, payment_entries):
+        if _has_payment_near(dd, as_of, schedule, payment_entries, tz):
             continue
         for entry in schedule:
             if entry.due_date == dd:

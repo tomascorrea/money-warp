@@ -34,6 +34,7 @@ from decimal import Decimal
 import pytest
 
 from money_warp import IOF, InterestRate, IOFRounding, Loan, Money, PriceScheduler
+from money_warp.tz import get_tz
 
 EXTERNAL_SCHEDULE = [
     {"period": 1, "days": 28, "payment": "888.08", "interest": "92.02", "principal": "796.06", "balance": "9203.94"},
@@ -179,26 +180,28 @@ IOF_ADDITIONAL_RATE = Decimal("0.0038")
 def external_iof_per_component():
     principal = Money("10000")
     rate = InterestRate("1% m")
-    schedule = PriceScheduler.generate_schedule(principal, rate, DUE_DATES, DISBURSEMENT_DATE)
+    tz = get_tz()
+    schedule = PriceScheduler.generate_schedule(principal, rate, DUE_DATES, DISBURSEMENT_DATE, tz)
     iof = IOF(
         daily_rate=IOF_DAILY_RATE,
         additional_rate=IOF_ADDITIONAL_RATE,
         rounding=IOFRounding.PER_COMPONENT,
     )
-    return iof.calculate(schedule, DISBURSEMENT_DATE)
+    return iof.calculate(schedule, DISBURSEMENT_DATE, tz)
 
 
 @pytest.fixture(scope="module")
 def external_iof_precise():
     principal = Money("10000")
     rate = InterestRate("1% m")
-    schedule = PriceScheduler.generate_schedule(principal, rate, DUE_DATES, DISBURSEMENT_DATE)
+    tz = get_tz()
+    schedule = PriceScheduler.generate_schedule(principal, rate, DUE_DATES, DISBURSEMENT_DATE, tz)
     iof = IOF(
         daily_rate=IOF_DAILY_RATE,
         additional_rate=IOF_ADDITIONAL_RATE,
         rounding=IOFRounding.PRECISE,
     )
-    return iof.calculate(schedule, DISBURSEMENT_DATE)
+    return iof.calculate(schedule, DISBURSEMENT_DATE, tz)
 
 
 # --- IOF: PER_COMPONENT rounding (matches external system) ---

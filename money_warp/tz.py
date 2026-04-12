@@ -36,26 +36,37 @@ def now() -> datetime:
 
 
 def ensure_aware(dt: datetime) -> datetime:
-    """Guarantee that *dt* is timezone-aware.
+    """Guarantee that *dt* is timezone-aware and normalised to UTC.
 
-    If *dt* is naive, the configured default timezone is attached.
-    If *dt* is already aware, it is returned unchanged.
+    If *dt* is naive, it is interpreted as being in the configured
+    business timezone (``_default_tz``) and then converted to UTC.
+    If *dt* is already aware, it is converted to UTC directly.
+
+    All datetimes stored inside the library are UTC.  Use
+    :func:`to_date` when extracting a calendar date — it converts
+    back to the business timezone first.
     """
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=_default_tz)
-    return dt
+        return dt.replace(tzinfo=_default_tz).astimezone(timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
-def to_date(dt: Union[date, datetime]) -> date:
-    """Extract the calendar date from a datetime, or return a date as-is."""
+def to_date(dt: Union[date, datetime], tz: tzinfo) -> date:
+    """Extract the calendar date in the given timezone.
+
+    For ``datetime`` inputs the value is first converted to *tz* so
+    the extracted date reflects the correct business day.  Plain
+    ``date`` inputs pass through unchanged.
+    """
     if isinstance(dt, datetime):
-        return dt.date()
+        return dt.astimezone(tz).date()
     return dt
 
 
-def to_datetime(d: date) -> datetime:
-    """Convert a calendar date to a timezone-aware datetime at midnight."""
-    return ensure_aware(datetime.combine(d, datetime.min.time()))
+def to_datetime(d: date, tz: tzinfo) -> datetime:
+    """Convert a calendar date to a UTC datetime (midnight in *tz*)."""
+    naive = datetime.combine(d, datetime.min.time())
+    return naive.replace(tzinfo=tz).astimezone(timezone.utc)
 
 
 def tz_aware(func: F) -> F:

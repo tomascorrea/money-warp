@@ -33,6 +33,7 @@ def single_installment_schedule(disbursement_date):
         InterestRate("2% monthly"),
         [date(2024, 2, 1)],
         disbursement_date,
+        timezone.utc,
     )
 
 
@@ -47,6 +48,7 @@ def three_installment_schedule(disbursement_date):
             date(2024, 4, 1),
         ],
         disbursement_date,
+        timezone.utc,
     )
 
 
@@ -76,17 +78,17 @@ def test_iof_max_daily_days_custom():
 
 
 def test_iof_single_installment_total_is_positive(standard_iof, single_installment_schedule, disbursement_date):
-    result = standard_iof.calculate(single_installment_schedule, disbursement_date)
+    result = standard_iof.calculate(single_installment_schedule, disbursement_date, timezone.utc)
     assert result.total.is_positive()
 
 
 def test_iof_single_installment_has_one_detail(standard_iof, single_installment_schedule, disbursement_date):
-    result = standard_iof.calculate(single_installment_schedule, disbursement_date)
+    result = standard_iof.calculate(single_installment_schedule, disbursement_date, timezone.utc)
     assert len(result.per_installment) == 1
 
 
 def test_iof_single_installment_detail_payment_number(standard_iof, single_installment_schedule, disbursement_date):
-    result = standard_iof.calculate(single_installment_schedule, disbursement_date)
+    result = standard_iof.calculate(single_installment_schedule, disbursement_date, timezone.utc)
     assert result.per_installment[0].payment_number == 1
 
 
@@ -105,20 +107,21 @@ def test_iof_single_installment_manual_calculation(disbursement_date):
         InterestRate("2% monthly"),
         [date(2024, 2, 1)],
         disbursement_date,
+        timezone.utc,
     )
-    result = iof.calculate(schedule, disbursement_date)
+    result = iof.calculate(schedule, disbursement_date, timezone.utc)
     assert result.total == Money("63.42")
 
 
 def test_iof_three_installments_has_three_details(standard_iof, three_installment_schedule, disbursement_date):
-    result = standard_iof.calculate(three_installment_schedule, disbursement_date)
+    result = standard_iof.calculate(three_installment_schedule, disbursement_date, timezone.utc)
     assert len(result.per_installment) == 3
 
 
 def test_iof_three_installments_total_equals_sum_of_details(
     standard_iof, three_installment_schedule, disbursement_date
 ):
-    result = standard_iof.calculate(three_installment_schedule, disbursement_date)
+    result = standard_iof.calculate(three_installment_schedule, disbursement_date, timezone.utc)
     sum_details = Money(sum(d.tax_amount.raw_amount for d in result.per_installment))
     assert result.total == sum_details
 
@@ -135,8 +138,9 @@ def test_iof_later_installments_have_higher_daily_component(disbursement_date):
             date(2024, 4, 1),
         ],
         disbursement_date,
+        timezone.utc,
     )
-    result = iof.calculate(schedule, disbursement_date)
+    result = iof.calculate(schedule, disbursement_date, timezone.utc)
     assert result.per_installment[2].tax_amount > result.per_installment[0].tax_amount
 
 
@@ -149,9 +153,10 @@ def test_iof_max_daily_days_caps_days(disbursement_date):
         InterestRate("2% monthly"),
         [date(2024, 2, 1)],
         disbursement_date,
+        timezone.utc,
     )
-    result_capped = iof_capped.calculate(schedule, disbursement_date)
-    result_uncapped = iof_uncapped.calculate(schedule, disbursement_date)
+    result_capped = iof_capped.calculate(schedule, disbursement_date, timezone.utc)
+    result_uncapped = iof_uncapped.calculate(schedule, disbursement_date, timezone.utc)
     assert result_capped.total < result_uncapped.total
 
 
@@ -165,8 +170,9 @@ def test_iof_with_inverted_price_scheduler(standard_iof, disbursement_date):
             date(2024, 4, 1),
         ],
         disbursement_date,
+        timezone.utc,
     )
-    result = standard_iof.calculate(schedule, disbursement_date)
+    result = standard_iof.calculate(schedule, disbursement_date, timezone.utc)
     assert result.total.is_positive()
 
 
@@ -182,19 +188,20 @@ def test_iof_with_inverted_price_has_equal_principal_payments(disbursement_date)
             date(2024, 4, 1),
         ],
         disbursement_date,
+        timezone.utc,
     )
-    result = iof.calculate(schedule, disbursement_date)
+    result = iof.calculate(schedule, disbursement_date, timezone.utc)
     assert result.per_installment[0].tax_amount == result.per_installment[1].tax_amount
 
 
 def test_iof_detail_preserves_principal_payment(standard_iof, three_installment_schedule, disbursement_date):
-    result = standard_iof.calculate(three_installment_schedule, disbursement_date)
+    result = standard_iof.calculate(three_installment_schedule, disbursement_date, timezone.utc)
     for detail, entry in zip(result.per_installment, three_installment_schedule):
         assert detail.principal_payment == entry.principal_payment
 
 
 def test_iof_detail_preserves_due_date(standard_iof, three_installment_schedule, disbursement_date):
-    result = standard_iof.calculate(three_installment_schedule, disbursement_date)
+    result = standard_iof.calculate(three_installment_schedule, disbursement_date, timezone.utc)
     for detail, entry in zip(result.per_installment, three_installment_schedule):
         assert detail.due_date == entry.due_date
 
@@ -219,8 +226,9 @@ def test_iof_zero_rates_produce_zero_tax(daily_rate, additional_rate, disburseme
         InterestRate("2% monthly"),
         [date(2024, 2, 1)],
         disbursement_date,
+        timezone.utc,
     )
-    result = iof.calculate(schedule, disbursement_date)
+    result = iof.calculate(schedule, disbursement_date, timezone.utc)
     assert result.total.is_zero()
 
 
@@ -258,8 +266,9 @@ def test_individual_iof_calculate_produces_positive_result(disbursement_date):
         InterestRate("2% monthly"),
         [date(2024, 2, 1)],
         disbursement_date,
+        timezone.utc,
     )
-    result = iof.calculate(schedule, disbursement_date)
+    result = iof.calculate(schedule, disbursement_date, timezone.utc)
     assert result.total.is_positive()
 
 
@@ -297,8 +306,9 @@ def test_corporate_iof_calculate_produces_positive_result(disbursement_date):
         InterestRate("2% monthly"),
         [date(2024, 2, 1)],
         disbursement_date,
+        timezone.utc,
     )
-    result = iof.calculate(schedule, disbursement_date)
+    result = iof.calculate(schedule, disbursement_date, timezone.utc)
     assert result.total.is_positive()
 
 
@@ -308,7 +318,8 @@ def test_corporate_iof_lower_daily_than_individual(disbursement_date):
         InterestRate("2% monthly"),
         [date(2024, 2, 1)],
         disbursement_date,
+        timezone.utc,
     )
-    individual_result = IndividualIOF().calculate(schedule, disbursement_date)
-    corporate_result = CorporateIOF().calculate(schedule, disbursement_date)
+    individual_result = IndividualIOF().calculate(schedule, disbursement_date, timezone.utc)
+    corporate_result = CorporateIOF().calculate(schedule, disbursement_date, timezone.utc)
     assert corporate_result.total < individual_result.total

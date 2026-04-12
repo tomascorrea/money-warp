@@ -77,6 +77,7 @@ def test_loan_bridge_stores_metadata():
         "grace_period_days": "grace_period_days",
         "mora_interest_rate": "mora_interest_rate",
         "mora_strategy": "mora_strategy",
+        "tz": None,
     }
 
 
@@ -453,7 +454,7 @@ def _pay_via_override(loan, pay_date, method, amount, **kwargs):
 
     Persists on the loan directly — unlike Warp which creates a clone.
     """
-    loan._time_ctx.override(WarpedTime(pay_date))
+    loan._time_ctx.override(WarpedTime(pay_date, timezone.utc))
     return getattr(loan, method)(amount, **kwargs)
 
 

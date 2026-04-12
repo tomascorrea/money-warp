@@ -5,8 +5,8 @@
 properties that delegate to a reconstructed :class:`~money_warp.loan.Loan`.
 """
 
-from datetime import date, datetime
-from typing import List, Union
+from datetime import date, datetime, tzinfo
+from typing import List, Optional, Union
 
 from sqlalchemy import Float, String, case, cast, column, func, literal, select
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
@@ -23,7 +23,7 @@ from money_warp.ext.sa.compat import (
 from money_warp.ext.sa.types import _FREQUENCY_TOKEN
 from money_warp.loan import Loan
 from money_warp.rate import _ABBREV_MAP, CompoundingFrequency
-from money_warp.tz import ensure_aware, now
+from money_warp.tz import ensure_aware, get_tz, now, to_date
 from money_warp.warp import Warp, WarpedTime
 
 _BRIDGE_META_ATTR = "_money_warp_bridge_meta"
@@ -118,7 +118,7 @@ def _resolve_settlement_info(cls, settlements_attr):
     }
 
 
-def _parse_due_dates(raw: List[Union[str, date, datetime]]) -> List[date]:
+def _parse_due_dates(raw: List[Union[str, date, datetime]], tz: tzinfo) -> List[date]:
     """Convert a list of due dates to :class:`~datetime.date` objects.
 
     Accepts ISO strings (raw ``JSON`` column), :class:`~datetime.date`
@@ -128,7 +128,7 @@ def _parse_due_dates(raw: List[Union[str, date, datetime]]) -> List[date]:
     result: List[date] = []
     for d in raw:
         if isinstance(d, datetime):
-            result.append(d.date())
+            result.append(to_date(d, tz))
         elif isinstance(d, date):
             result.append(d)
         else:
@@ -176,7 +176,7 @@ def _replay_settlements(loan, items):
     s_meta = type(items[0])._money_warp_bridge_meta
     for item in items:
         pdate = ensure_aware(getattr(item, s_meta["date"]))
-        loan._time_ctx.override(WarpedTime(pdate))
+        loan._time_ctx.override(WarpedTime(pdate, loan._time_ctx.tz))
 
         amount = getattr(item, s_meta["amount"])
         raw_intention = getattr(item, s_meta["intention"], _DEFAULT_INTENTION)
@@ -225,11 +225,16 @@ def _load_money_warp_loan_impl(self):
                 "are required."
             )
 
+    tz_attr = meta.get("tz")
+    tz_value = getattr(self, tz_attr, None) if tz_attr else None
+    resolved_tz = tz_value or get_tz()
+
     loan = Loan(
         getattr(self, meta["principal"]),
         getattr(self, meta["interest_rate"]),
-        _parse_due_dates(getattr(self, meta["due_dates"])),
+        _parse_due_dates(getattr(self, meta["due_dates"]), resolved_tz),
         disbursement_date=getattr(self, meta["disbursement_date"]),
+        tz=resolved_tz,
         **_collect_optional_loan_kwargs(self, meta),
     )
 
@@ -631,6 +636,7 @@ def loan_bridge(
     grace_period_days: str = "grace_period_days",
     mora_interest_rate: str = "mora_interest_rate",
     mora_strategy: str = "mora_strategy",
+    tz: Optional[str] = None,
 ):
     """Add balance hybrid methods/properties to a loan model.
 
@@ -669,6 +675,10 @@ def loan_bridge(
         grace_period_days: Attribute name for the grace period in days.
         mora_interest_rate: Attribute name for the mora interest rate.
         mora_strategy: Attribute name for the mora strategy.
+        tz: Attribute name for the per-loan business timezone. When
+            the model has this attribute, its value is forwarded to
+            the ``Loan(tz=...)`` constructor. When ``None`` (default),
+            the loan uses ``get_tz()``.
     """
 
     def decorator(cls):
@@ -682,6 +692,7 @@ def loan_bridge(
             "grace_period_days": grace_period_days,
             "mora_interest_rate": mora_interest_rate,
             "mora_strategy": mora_strategy,
+            "tz": tz,
         }
 
         # -- total balance (special: reads current_balance) ----------------

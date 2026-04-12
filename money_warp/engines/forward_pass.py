@@ -7,7 +7,7 @@ that the forward pass depends on.
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, tzinfo
 from typing import Dict, List, Optional, Tuple
 
 from ..cash_flow import CashFlow, CashFlowItem
@@ -16,7 +16,7 @@ from ..models import Allocation, Installment, Settlement
 from ..money import Money
 from ..scheduler import PaymentSchedule, PaymentScheduleEntry
 from ..time_context import TimeContext
-from ..tz import to_datetime
+from ..tz import to_date, to_datetime
 from .allocation import allocate_payment_into_installments
 from .constants import BALANCE_TOLERANCE
 from .fines import compute_fines_at
@@ -95,6 +95,7 @@ def _build_installments_snapshot(
     schedule: PaymentSchedule,
     fines_applied: Dict[date, Money],
     interest_calc: InterestCalculator,
+    tz: tzinfo,
     last_payment_date: Optional[datetime] = None,
 ) -> List[Installment]:
     """Build Installment objects from pre-computed allocation data."""
@@ -110,22 +111,24 @@ def _build_installments_snapshot(
 
         if i < covered:
             expected_mora = prior_mora
-        elif i == covered and entry.due_date < as_of_date.date():
+        elif i == covered and entry.due_date < to_date(as_of_date, tz):
             if last_payment_date is not None:
-                total_days = (as_of_date.date() - last_payment_date.date()).days
+                total_days = (to_date(as_of_date, tz) - to_date(last_payment_date, tz)).days
                 _, accrued_mora = interest_calc.compute_accrued_interest(
                     total_days,
                     principal_balance,
+                    tz,
                     entry.due_date,
                     last_payment_date,
                 )
             else:
-                days_overdue = (as_of_date.date() - entry.due_date).days
+                days_overdue = (to_date(as_of_date, tz) - entry.due_date).days
                 _, accrued_mora = interest_calc.compute_accrued_interest(
                     days_overdue,
                     principal_balance,
+                    tz,
                     entry.due_date,
-                    to_datetime(entry.due_date),
+                    to_datetime(entry.due_date, tz),
                 )
             expected_mora = prior_mora + accrued_mora
         else:
@@ -171,6 +174,7 @@ def compute_state(
     disbursement_date: datetime,
     payment_entries: list,
     as_of: datetime,
+    tz: tzinfo,
     fine_observation_dates: Optional[List[datetime]] = None,
     mora_rate_for_event: MoraRateCallback = None,
 ) -> LoanState:
@@ -186,6 +190,7 @@ def compute_state(
     are processed.
 
     Args:
+        tz: Business timezone for date extraction from datetimes.
         mora_rate_for_event: Optional callback ``(next_due) -> InterestRate``
             called before each interest computation.  When it returns a
             non-``None`` value, that rate is passed as
@@ -218,13 +223,14 @@ def compute_state(
             grace_period_days,
             fines_applied,
             processed_payments,
+            tz,
         )
 
         if not is_payment:
             continue
 
         interest_date = payment.interest_date if payment.interest_date is not None else payment.datetime
-        days = max(0, (interest_date.date() - last_accrual_end.date()).days)
+        days = max(0, (to_date(interest_date, tz) - to_date(last_accrual_end, tz)).days)
 
         covered = covered_due_date_count(running_principal, schedule)
         next_due = due_dates[covered] if covered < len(due_dates) else None
@@ -234,6 +240,7 @@ def compute_state(
         regular, mora = interest_calc.compute_accrued_interest(
             days,
             running_principal,
+            tz,
             next_due,
             last_accrual_end,
             mora_rate_override=mora_override,
@@ -246,10 +253,11 @@ def compute_state(
             schedule,
             fines_applied,
             interest_calc,
+            tz,
             last_payment_date=last_accrual_end,
         )
 
-        skipped = _skipped_contractual_interest(installments, next_due, interest_date.date())
+        skipped = _skipped_contractual_interest(installments, next_due, to_date(interest_date, tz))
         interest_cap = Money(regular.raw_amount + skipped.raw_amount)
 
         total_fines_amount = Money(sum(f.raw_amount for f in fines_applied.values())) if fines_applied else Money.zero()
@@ -316,6 +324,7 @@ def build_installments(
     as_of: datetime,
     interest_calc: InterestCalculator,
     last_accrual_end: datetime,
+    tz: tzinfo,
 ) -> List[Installment]:
     """Build the installment view from settlements + schedule."""
     allocs_by_number: Dict[int, List[Allocation]] = {}
@@ -330,6 +339,7 @@ def build_installments(
         schedule,
         fines_applied,
         interest_calc,
+        tz,
         last_payment_date=last_accrual_end,
     )
 

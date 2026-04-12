@@ -1,11 +1,12 @@
 """Price scheduler implementing Progressive Price Schedule (French amortization system)."""
 
-from datetime import date, datetime
+from datetime import date, datetime, tzinfo
 from decimal import Decimal
 from typing import List, Optional
 
 from ..interest_rate import InterestRate
 from ..money import Money
+from ..tz import to_date
 from .base import BaseScheduler
 from .schedule import PaymentSchedule, PaymentScheduleEntry
 
@@ -36,7 +37,12 @@ class PriceScheduler(BaseScheduler):
 
     @classmethod
     def generate_schedule(
-        cls, principal: Money, interest_rate: InterestRate, due_dates: List[date], disbursement_date: datetime
+        cls,
+        principal: Money,
+        interest_rate: InterestRate,
+        due_dates: List[date],
+        disbursement_date: datetime,
+        tz: tzinfo,
     ) -> PaymentSchedule:
         """
         Generate Progressive Price Schedule with fixed payment amounts.
@@ -46,6 +52,7 @@ class PriceScheduler(BaseScheduler):
             interest_rate: The annual interest rate
             due_dates: List of payment due dates
             disbursement_date: When the loan was disbursed
+            tz: Business timezone for extracting calendar dates from datetimes
 
         Returns:
             PaymentSchedule with fixed payment amounts and interest/principal allocation
@@ -53,8 +60,7 @@ class PriceScheduler(BaseScheduler):
         if not due_dates:
             raise ValueError("At least one due date is required")
 
-        # Calculate return days (days from disbursement to each payment)
-        return_days = [(due_date - disbursement_date.date()).days for due_date in due_dates]
+        return_days = [(due_date - to_date(disbursement_date, tz)).days for due_date in due_dates]
 
         # Calculate PMT using the reference formula
         daily_rate = interest_rate.to_daily().as_decimal()
@@ -72,7 +78,7 @@ class PriceScheduler(BaseScheduler):
         remaining_balance = principal.real_amount
 
         for i, due_date in enumerate(due_dates):
-            prev_date = disbursement_date.date() if i == 0 else due_dates[i - 1]
+            prev_date = to_date(disbursement_date, tz) if i == 0 else due_dates[i - 1]
             days = (due_date - prev_date).days
 
             beginning_balance = remaining_balance

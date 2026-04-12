@@ -1,8 +1,9 @@
 """BillingCycleLoan -- fixed amortization with billing-cycle payment timing."""
 
 import warnings
-from datetime import date, datetime
-from typing import Dict, List, Optional, Type
+from datetime import date, datetime, tzinfo
+from typing import Dict, List, Optional, Type, Union
+from zoneinfo import ZoneInfo
 
 from ..billing_cycle import BaseBillingCycle
 from ..cash_flow import CashFlow, CashFlowItem, CashFlowType
@@ -20,7 +21,7 @@ from ..models import BillingCycleLoanStatement, Installment, Settlement
 from ..money import Money
 from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
 from ..time_context import TimeContext
-from ..tz import to_datetime, tz_aware
+from ..tz import ensure_aware, get_tz, tz_aware
 from .engines import build_statements, compute_state, resolve_mora_rate
 from .mora_rate_resolver import MoraRateResolver
 
@@ -77,6 +78,7 @@ class BillingCycleLoan:
         mora_rate_resolver: Optional[MoraRateResolver] = None,
         mora_strategy: MoraStrategy = MoraStrategy.COMPOUND,
         payment_tolerance: Optional[Money] = None,
+        tz: Optional[Union[str, tzinfo]] = None,
     ) -> None:
         if principal.is_negative() or principal.is_zero():
             raise ValueError("Principal must be positive")
@@ -85,7 +87,8 @@ class BillingCycleLoan:
         if grace_period_days < 0:
             raise ValueError("Grace period days must be non-negative")
 
-        self._time_ctx = TimeContext()
+        resolved_tz = ZoneInfo(tz) if isinstance(tz, str) else (tz or get_tz())
+        self._time_ctx = TimeContext(tz=resolved_tz)
 
         self.principal = principal
         self.interest_rate = interest_rate
@@ -110,8 +113,10 @@ class BillingCycleLoan:
         self._closing_dates = self._derive_closing_dates()
         self.due_dates = self._derive_due_dates()
 
-        self.disbursement_date = disbursement_date if disbursement_date is not None else self._time_ctx.now()
-        if self.disbursement_date.date() >= self.due_dates[0]:
+        self.disbursement_date = (
+            disbursement_date if disbursement_date is not None else ensure_aware(self._time_ctx.now())
+        )
+        if self._time_ctx.to_date(self.disbursement_date) >= self.due_dates[0]:
             raise ValueError("disbursement_date must be before the first due date")
 
         self.cashflow = self._build_initial_cashflow()
@@ -133,18 +138,18 @@ class BillingCycleLoan:
 
         When the billing cycle has explicit due dates, use a wide
         enough end boundary so that due dates falling after the last
-        closing date (the normal case — due = close + offset) are
+        closing date (the normal case -- due = close + offset) are
         not accidentally excluded.
         """
         from dateutil.relativedelta import relativedelta
 
         last_closing = self._closing_dates[-1] if self._closing_dates else self.start_date
         search_end = last_closing + relativedelta(months=1)
-        explicit = self.billing_cycle.due_dates_between(self.start_date, search_end)
+        explicit = self.billing_cycle.due_dates_between(self.start_date, search_end, self._time_ctx.tz)
         if explicit:
             return explicit[: self.num_installments]
 
-        return [self.billing_cycle.due_date_for(cd).date() for cd in self._closing_dates]
+        return [self._time_ctx.to_date(self.billing_cycle.due_date_for(cd)) for cd in self._closing_dates]
 
     @property
     def closing_dates(self) -> List[datetime]:
@@ -174,7 +179,7 @@ class BillingCycleLoan:
 
         schedule = self.get_original_schedule()
         for entry in schedule:
-            due_dt = to_datetime(entry.due_date)
+            due_dt = self._time_ctx.to_datetime(entry.due_date)
             items.append(
                 CashFlowItem(
                     Money(-entry.interest_payment.raw_amount),
@@ -229,7 +234,7 @@ class BillingCycleLoan:
             CashFlowItem(
                 amount,
                 payment_date,
-                description or f"Payment on {payment_date.date()}",
+                description or f"Payment on {self._time_ctx.to_date(payment_date)}",
                 "payment",
                 time_context=self._time_ctx,
                 interest_date=interest_date,
@@ -269,7 +274,7 @@ class BillingCycleLoan:
             )
 
         next_due = self._next_unpaid_due_date()
-        interest_date = max(payment_date, to_datetime(next_due))
+        interest_date = max(payment_date, self._time_ctx.to_datetime(next_due))
         settlement = self.record_payment(
             amount,
             payment_date=payment_date,
@@ -311,6 +316,7 @@ class BillingCycleLoan:
             self.disbursement_date,
             self._payment_entries(),
             self.now(),
+            tz=self._time_ctx.tz,
             base_mora_rate=self.mora_interest_rate,
             mora_rate_resolver=self.mora_rate_resolver,
             fine_observation_dates=self._fine_observation_dates,
@@ -342,6 +348,7 @@ class BillingCycleLoan:
             self.now(),
             self._interest,
             state.last_accrual_end,
+            tz=self._time_ctx.tz,
         )
 
     @property
@@ -357,7 +364,8 @@ class BillingCycleLoan:
             state.fines_applied,
             self.principal,
             self.mora_interest_rate,
-            self.mora_rate_resolver,
+            tz=self._time_ctx.tz,
+            mora_rate_resolver=self.mora_rate_resolver,
         )
 
     # ------------------------------------------------------------------
@@ -372,7 +380,7 @@ class BillingCycleLoan:
     def _accrued_interest_components(self) -> tuple:
         """Return (regular, mora) accrued since last payment."""
         state = self._compute_state()
-        days = (self.now().date() - state.last_accrual_end.date()).days
+        days = (self._time_ctx.to_date(self.now()) - self._time_ctx.to_date(state.last_accrual_end)).days
 
         if state.principal_balance.is_positive() and days > 0:
             covered = covered_due_date_count(
@@ -387,10 +395,12 @@ class BillingCycleLoan:
                 next_due,
                 self.mora_interest_rate,
                 self.mora_rate_resolver,
+                self._time_ctx.tz,
             )
             return self._interest.compute_accrued_interest(
                 days,
                 state.principal_balance,
+                self._time_ctx.tz,
                 next_due,
                 state.last_accrual_end,
                 mora_rate_override=mora_rate,
@@ -454,7 +464,7 @@ class BillingCycleLoan:
     def is_late(self, due_date: date, as_of_date: Optional[datetime] = None) -> bool:
         """Check if a payment is late considering the grace period."""
         check = as_of_date if as_of_date is not None else self.now()
-        return is_payment_late(due_date, self.grace_period_days, check)
+        return is_payment_late(due_date, self.grace_period_days, check, self._time_ctx.tz)
 
     def _on_warp(self, target_date: datetime) -> None:
         """Hook called by Warp after overriding TimeContext."""
@@ -486,7 +496,7 @@ class BillingCycleLoan:
 
     def days_since_last_payment(self) -> int:
         """Days since the last payment."""
-        return (self.now().date() - self.last_payment_date.date()).days
+        return (self._time_ctx.to_date(self.now()) - self._time_ctx.to_date(self.last_payment_date)).days
 
     def _covered_due_date_count(self) -> int:
         return covered_due_date_count(self.principal_balance, self.get_original_schedule())
@@ -508,6 +518,7 @@ class BillingCycleLoan:
             self.interest_rate,
             self.due_dates,
             self.disbursement_date,
+            self._time_ctx.tz,
         )
 
     def get_amortization_schedule(self) -> PaymentSchedule:
@@ -521,11 +532,11 @@ class BillingCycleLoan:
         prev_date = self.disbursement_date
 
         for i, s in enumerate(state.settlements):
-            days = (s.payment_date.date() - prev_date.date()).days
+            days = (self._time_ctx.to_date(s.payment_date) - self._time_ctx.to_date(prev_date)).days
             actual_entries.append(
                 PaymentScheduleEntry(
                     payment_number=i + 1,
-                    due_date=s.payment_date.date(),
+                    due_date=self._time_ctx.to_date(s.payment_date),
                     days_in_period=days,
                     beginning_balance=prev_balance,
                     payment_amount=s.interest_paid + s.mora_paid + s.principal_paid,
@@ -550,6 +561,7 @@ class BillingCycleLoan:
             self.interest_rate,
             remaining_due_dates,
             state.last_payment_date,
+            self._time_ctx.tz,
         )
 
         projected_entries: List[PaymentScheduleEntry] = []

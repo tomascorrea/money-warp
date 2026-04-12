@@ -13,7 +13,7 @@ from ..models import AnticipationResult
 from ..money import Money
 from ..present_value import internal_rate_of_return, present_value
 from ..rate import Rate
-from ..tz import to_datetime, tz_aware
+from ..tz import tz_aware
 
 if TYPE_CHECKING:
     from .loan import Loan
@@ -102,7 +102,7 @@ def loan_calculate_anticipation(
         kept_items.append(
             CashFlowItem(
                 Money(-entry.payment_amount.raw_amount),
-                to_datetime(entry.due_date),
+                loan._time_ctx.to_datetime(entry.due_date),
                 f"Kept payment {entry.payment_number}",
                 "kept_payment",
             )
