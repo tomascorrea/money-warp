@@ -243,6 +243,11 @@ class BillingCycleLoan:
 
         When all installments are already paid the payment is recorded
         as an overpayment.
+
+        After recording the payment, if the principal balance drifts from
+        the schedule's expected ending balance by a small amount (within
+        ``payment_tolerance``), a tolerance adjustment CashFlowItem is
+        added to the cashflow to prevent rounding drift from compounding.
         """
         payment_date = self.now()
 
@@ -260,12 +265,58 @@ class BillingCycleLoan:
 
         next_due = self._next_unpaid_due_date()
         interest_date = max(payment_date, to_datetime(next_due))
-        return self.record_payment(
+        settlement = self.record_payment(
             amount,
             payment_date=payment_date,
             interest_date=interest_date,
             description=description,
         )
+
+        schedule = self.get_original_schedule()
+        for entry in schedule:
+            if entry.due_date == next_due:
+                self._apply_tolerance_adjustment(entry, settlement, payment_date, interest_date)
+                break
+
+        return settlement
+
+    def _apply_tolerance_adjustment(
+        self,
+        entry: PaymentScheduleEntry,
+        settlement: Settlement,
+        payment_date: datetime,
+        interest_date: datetime,
+    ) -> None:
+        """Add a small CashFlowItem if the balance drifted from the schedule."""
+        balance = settlement.remaining_balance
+        gap = balance - entry.ending_balance
+        if gap.is_positive() and gap <= self.payment_tolerance:
+            self.cashflow.add_item(
+                CashFlowItem(
+                    gap,
+                    payment_date,
+                    f"Tolerance adjustment for installment {entry.payment_number}",
+                    "payment",
+                    time_context=self._time_ctx,
+                    interest_date=interest_date,
+                )
+            )
+            return
+
+        is_last_installment = entry.payment_number == len(self.due_dates)
+        if balance.is_positive() and is_last_installment:
+            max_tolerance = self.payment_tolerance * len(self.due_dates) * 3
+            if balance <= max_tolerance:
+                self.cashflow.add_item(
+                    CashFlowItem(
+                        balance,
+                        payment_date,
+                        f"Tolerance adjustment closing residual after installment {entry.payment_number}",
+                        "payment",
+                        time_context=self._time_ctx,
+                        interest_date=interest_date,
+                    )
+                )
 
     # ------------------------------------------------------------------
     # Derived state
@@ -287,7 +338,6 @@ class BillingCycleLoan:
             base_mora_rate=self.mora_interest_rate,
             mora_rate_resolver=self.mora_rate_resolver,
             fine_observation_dates=self._fine_observation_dates,
-            payment_tolerance=self.payment_tolerance,
         )
 
     def _payment_entries(self) -> list:
@@ -316,7 +366,6 @@ class BillingCycleLoan:
             self.now(),
             self._interest,
             state.last_accrual_end,
-            payment_tolerance=self.payment_tolerance,
         )
 
     @property
@@ -400,12 +449,8 @@ class BillingCycleLoan:
 
     @property
     def is_paid_off(self) -> bool:
-        """Whether the loan is fully paid off.
-
-        Tolerance accumulates across all installments to account for
-        per-installment rounding errors from external origination systems.
-        """
-        return self.current_balance <= self.payment_tolerance * len(self.due_dates)
+        """Whether the loan is fully paid off."""
+        return self.current_balance.is_zero() or self.current_balance.is_negative()
 
     @property
     def overpaid(self) -> Money:
