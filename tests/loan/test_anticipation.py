@@ -7,7 +7,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from money_warp import InterestRate, Loan, Money, Warp
-from money_warp.loan.settlement import AnticipationResult
+from money_warp.models import AnticipationResult
 from money_warp.scheduler import InvertedPriceScheduler
 
 

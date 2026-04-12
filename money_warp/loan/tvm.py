@@ -15,8 +15,8 @@ from ..rate import Rate
 from ..tz import to_datetime, tz_aware
 
 if TYPE_CHECKING:
+    from ..models import AnticipationResult
     from .loan import Loan
-    from .settlement import AnticipationResult
 
 
 @tz_aware
@@ -78,7 +78,7 @@ def loan_calculate_anticipation(
     Raises:
         ValueError: If any number is invalid or already paid.
     """
-    from .settlement import AnticipationResult
+    from ..models import AnticipationResult
 
     original = loan.get_original_schedule()
     covered = loan._covered_due_date_count()

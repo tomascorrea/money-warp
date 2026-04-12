@@ -1,7 +1,7 @@
 """MoneyWarp - Bend time. Model cash."""
 
 from money_warp.billing_cycle import BaseBillingCycle, MonthlyBillingCycle
-from money_warp.billing_cycle_loan import BillingCycleLoan, BillingCycleLoanStatement, MoraRateResolver
+from money_warp.billing_cycle_loan import BillingCycleLoan, MoraRateResolver
 from money_warp.cash_flow import (
     CashFlow,
     CashFlowEntry,
@@ -22,7 +22,8 @@ from money_warp.date_utils import (
 )
 from money_warp.engines import MoraStrategy
 from money_warp.interest_rate import CompoundingFrequency, InterestRate, YearSize
-from money_warp.loan import Allocation, AnticipationResult, Installment, Loan, Settlement
+from money_warp.loan import Loan
+from money_warp.models import Allocation, AnticipationResult, BillingCycleLoanStatement, Installment, Settlement
 from money_warp.money import Money
 from money_warp.present_value import (
     discount_factor,

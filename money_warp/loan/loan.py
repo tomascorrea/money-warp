@@ -22,8 +22,7 @@ from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, Pr
 from ..tax.base import BaseTax, TaxResult
 from ..time_context import TimeContext
 from ..tz import to_datetime, tz_aware
-from .installment import Installment
-from .settlement import AnticipationResult, Settlement
+from ..models import AnticipationResult, Installment, Settlement
 from .tvm import loan_calculate_anticipation, loan_irr, loan_present_value
 
 
