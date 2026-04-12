@@ -16,15 +16,13 @@ from ..engines import (
     is_payment_late,
 )
 from ..interest_rate import InterestRate
-from ..loan.installment import Installment
-from ..loan.settlement import Settlement
+from ..models import BillingCycleLoanStatement, Installment, Settlement
 from ..money import Money
 from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
 from ..time_context import TimeContext
 from ..tz import to_datetime, tz_aware
 from .engines import build_statements, compute_state, resolve_mora_rate
 from .mora_rate_resolver import MoraRateResolver
-from .statement import BillingCycleLoanStatement
 
 
 class BillingCycleLoan:
