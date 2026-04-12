@@ -1,0 +1,68 @@
+---
+description: Enforce pytest testing patterns for Pyramid applications
+globs: **/tests/**/*.py, **/test_*.py
+alwaysApply: false
+---
+
+# Pytest Testing Patterns
+
+These rules apply whenever you create or modify test files.
+
+## Strict Rules
+
+- **No conditional logic in tests**: no `if/else`, `try/except`, `for`, `while`, ternary operators
+- **No class-based tests**: always use plain pytest functions
+- **No imports inside functions**: all imports at module level
+- **No standalone helper functions for test setup**: use `@pytest.fixture` in `conftest.py`
+- **No mocking unless absolutely necessary**: prefer `responses` for HTTP, real code for everything else. `unittest.mock.patch` is a last resort (gRPC clients only)
+- **No test files over ~200 lines**: split by concern (`_api`, `_service`, `_integration`, `_security`)
+
+## Testing Priority
+
+1. Real integrations and real code paths
+2. `responses` library for external HTTP calls (`@responses.activate`)
+3. `factory-boy` for test data generation (`SQLAlchemyModelFactory`)
+4. Pytest fixtures for reusable setup
+5. `unittest.mock.patch` only as absolute last resort
+
+## Test Structure
+
+- Mirror source structure in `tests/` directory
+- One test file per module: `test_<module_name>.py`
+- Descriptive function names: `test_<action>_<scenario>`
+- One test, one purpose
+- Brief docstring on each test function
+
+## Mandatory Security Tests
+
+If the endpoint under test is protected (has `factory=`, `permission=`, `__acl__`, JWT logic), you MUST include:
+
+- **Wrong/invalid token** test (expect 401 or 403)
+- **Wrong permission scope** test (expect 403)
+- **Missing authentication** test (expect 403)
+- **Wrong credentials** test where applicable (expect 401)
+
+Never ask whether to include these. If the endpoint is protected, they are required.
+
+## Avoid Duplication
+
+- Use `@pytest.mark.parametrize` with clear `ids` when tests share the same logic but differ in input/output
+- Use `@pytest.fixture` for repeated setup logic (never standalone helper functions)
+- Use `hypothesis` (`@given()`) for property-based testing of validators and numeric logic
+
+## Factory-Boy
+
+- Use `SQLAlchemyModelFactory` with `sqlalchemy_session_persistence = "flush"`
+- Use `factory.Faker` for realistic data
+- Use `factory.SubFactory` for relationships
+- Use `factory.LazyFunction` for computed fields
+
+## Forbidden
+
+- Never use FastAPI or pydantic
+- Never use mocks when `responses` or real integrations work
+- Never write conditional logic inside test functions
+
+## Full Workflow
+
+For writing complete test suites from scratch, use the **write-pytest** skill which provides a guided research-discuss-write flow.
