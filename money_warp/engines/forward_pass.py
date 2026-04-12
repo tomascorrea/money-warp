@@ -253,9 +253,7 @@ def compute_state(
         skipped = _skipped_contractual_interest(installments, next_due, interest_date.date())
         interest_cap = Money(regular.raw_amount + skipped.raw_amount)
 
-        total_fines_amount = (
-            Money(sum(f.raw_amount for f in fines_applied.values())) if fines_applied else Money.zero()
-        )
+        total_fines_amount = Money(sum(f.raw_amount for f in fines_applied.values())) if fines_applied else Money.zero()
         fine_balance = total_fines_amount - fines_paid_total
         if fine_balance.is_negative():
             fine_balance = Money.zero()
