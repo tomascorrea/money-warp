@@ -12,9 +12,7 @@ from typing import Dict, List, Optional, Tuple
 
 from ..cash_flow import CashFlow, CashFlowItem
 from ..interest_rate import InterestRate
-from ..models.allocation import Allocation
-from ..models.installment import Installment
-from ..models.settlement import Settlement
+from ..models import Allocation, Installment, Settlement
 from ..money import Money
 from ..scheduler import PaymentSchedule, PaymentScheduleEntry
 from ..time_context import TimeContext

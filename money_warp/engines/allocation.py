@@ -2,8 +2,7 @@
 
 from typing import List, Tuple
 
-from ..models.allocation import Allocation
-from ..models.installment import Installment
+from ..models import Allocation, Installment
 from ..money import Money
 
 
