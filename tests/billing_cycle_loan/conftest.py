@@ -6,7 +6,7 @@ import pytest
 
 from money_warp import BillingCycleLoan, InterestRate, Money
 from money_warp.billing_cycle import MonthlyBillingCycle
-from money_warp.loan.engines import MoraStrategy
+from money_warp.engines import MoraStrategy
 
 
 @pytest.fixture
