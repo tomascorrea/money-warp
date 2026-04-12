@@ -35,7 +35,8 @@ poetry run pytest               # all tests pass
 ## Daily Workflow
 
 ```bash
-poetry run pytest                         # run tests
+poetry run pytest                         # run tests (fast suite)
+poetry run pytest -m slow -n auto         # run slow tests in parallel (pytest-xdist)
 poetry run black .                        # format
 poetry run isort .                        # sort imports
 poetry run ruff check .                   # lint
