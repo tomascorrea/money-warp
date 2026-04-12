@@ -47,6 +47,7 @@ sqlalchemy = "^2.0"
 factory-boy = "^3.3.3"
 pytest-postgresql = "^8.0.0"
 psycopg = {extras = ["binary"], version = "^3.3.3"}
+pytest-xdist = "^3.8.0"
 
 [tool.poetry.group.docs.dependencies]
 mkdocs = "^1.6.1"
