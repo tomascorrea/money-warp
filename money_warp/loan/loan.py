@@ -16,13 +16,13 @@ from ..engines import (
     is_payment_late,
 )
 from ..interest_rate import InterestRate
+from ..models import AnticipationResult, Installment, Settlement
 from ..money import Money
 from ..rate import Rate
 from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
 from ..tax.base import BaseTax, TaxResult
 from ..time_context import TimeContext
 from ..tz import to_datetime, tz_aware
-from ..models import AnticipationResult, Installment, Settlement
 from .tvm import loan_calculate_anticipation, loan_irr, loan_present_value
 
 

@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING, List, Optional
 
 from ..cash_flow import CashFlow, CashFlowItem
 from ..interest_rate import InterestRate
+from ..models import AnticipationResult
 from ..money import Money
 from ..present_value import internal_rate_of_return, present_value
 from ..rate import Rate
 from ..tz import to_datetime, tz_aware
 
 if TYPE_CHECKING:
-    from ..models import AnticipationResult
     from .loan import Loan
 
 
@@ -78,8 +78,6 @@ def loan_calculate_anticipation(
     Raises:
         ValueError: If any number is invalid or already paid.
     """
-    from ..models import AnticipationResult
-
     original = loan.get_original_schedule()
     covered = loan._covered_due_date_count()
     total_installments = len(original)
