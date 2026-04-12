@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
+from ..cash_flow import CashFlow, CashFlowItem
 from ..engines import (  # noqa: F401 - re-export
     InterestCalculator,
     MoraRateCallback,
@@ -22,15 +23,15 @@ from ..engines import (  # noqa: F401 - re-export
 )
 from ..interest_rate import InterestRate
 from ..money import Money
-from ..scheduler import PaymentSchedule
+from ..scheduler import PaymentSchedule, PaymentScheduleEntry
+from ..time_context import TimeContext
 from ..tz import to_datetime
 from .allocation import Allocation
 from .installment import Installment
 from .settlement import Settlement
 
 # Sub-cent tolerance for internal balance comparisons (rounding artifacts
-# from our own calculations).  Distinct from the loan-level
-# ``payment_tolerance`` that handles external origination rounding.
+# from our own calculations).
 _BALANCE_TOLERANCE = Money("0.01")
 
 
@@ -253,7 +254,7 @@ def distribute_into_installments(
 
         total = fine_alloc + mora_alloc + interest_alloc + principal_alloc
         if total.is_positive():
-            is_covered = total >= (inst.balance - inst.payment_tolerance * inst.number)
+            is_covered = total >= inst.balance
             allocations.append(
                 Allocation(
                     installment_number=inst.number,
@@ -266,8 +267,7 @@ def distribute_into_installments(
             )
 
     _apply_residual(allocations, installments, fine_total, mora_total, interest_total, principal_total)
-    tolerance = installments[0].payment_tolerance if installments else Money("0.01")
-    _apply_coverage_fixup(allocations, installments, ending_balance, principal_total, tolerance)
+    _apply_coverage_fixup(allocations, installments, ending_balance, principal_total)
     return allocations
 
 
@@ -325,18 +325,14 @@ def _apply_coverage_fixup(
     installments: List[Installment],
     ending_balance: Money,
     principal_total: Money,
-    payment_tolerance: Money,
 ) -> None:
     """Override coverage flags when the loan is paid off.
 
-    If the post-payment balance is within tolerance of zero,
-    any allocation whose principal was fully allocated is
-    marked as fully covered.
+    If the post-payment balance is zero (or negative), any allocation
+    whose principal was fully allocated is marked as fully covered.
     """
-    num_installments = len(installments)
-    loan_tolerance = payment_tolerance * num_installments
     post_balance = ending_balance - principal_total
-    if post_balance > loan_tolerance:
+    if post_balance.is_positive():
         return
 
     inst_by_number = {inst.number: inst for inst in installments}
@@ -346,9 +342,8 @@ def _apply_coverage_fixup(
         inst = inst_by_number.get(alloc.installment_number)
         if inst is None:
             continue
-        inst_tolerance = payment_tolerance * inst.number
         principal_owed = inst.expected_principal - inst.principal_paid
-        if alloc.principal_allocated >= (principal_owed - inst_tolerance):
+        if alloc.principal_allocated >= principal_owed:
             allocations[i] = Allocation(
                 installment_number=alloc.installment_number,
                 principal_allocated=alloc.principal_allocated,
@@ -410,7 +405,6 @@ def _build_installments_snapshot(
     schedule: PaymentSchedule,
     fines_applied: Dict[date, Money],
     interest_calc: InterestCalculator,
-    payment_tolerance: Money,
     last_payment_date: Optional[datetime] = None,
 ) -> List[Installment]:
     """Build Installment objects from pre-computed allocation data."""
@@ -447,7 +441,7 @@ def _build_installments_snapshot(
         else:
             expected_mora = Money.zero()
 
-        result.append(Installment.from_schedule_entry(entry, allocs, expected_mora, expected_fine, payment_tolerance))
+        result.append(Installment.from_schedule_entry(entry, allocs, expected_mora, expected_fine))
 
     return result
 
@@ -487,7 +481,6 @@ def compute_state(
     disbursement_date: datetime,
     payment_entries: list,
     as_of: datetime,
-    payment_tolerance: Money,
     fine_observation_dates: Optional[List[datetime]] = None,
     mora_rate_for_event: MoraRateCallback = None,
 ) -> LoanState:
@@ -564,7 +557,6 @@ def compute_state(
             fines_applied,
             interest_calc,
             last_payment_date=last_accrual_end,
-            payment_tolerance=payment_tolerance,
         )
 
         skipped = _skipped_contractual_interest(installments, next_due, interest_date.date())
@@ -588,8 +580,6 @@ def compute_state(
         running_principal = running_principal - principal_paid
         if running_principal.is_negative():
             overpaid = overpaid + Money(-running_principal.raw_amount)
-            running_principal = Money.zero()
-        elif running_principal.is_positive() and running_principal <= payment_tolerance * len(due_dates):
             running_principal = Money.zero()
 
         for a in allocations:
@@ -636,7 +626,6 @@ def build_installments(
     as_of: datetime,
     interest_calc: InterestCalculator,
     last_accrual_end: datetime,
-    payment_tolerance: Money,
 ) -> List[Installment]:
     """Build the installment view from settlements + schedule."""
     allocs_by_number: Dict[int, List[Allocation]] = {}
@@ -652,5 +641,62 @@ def build_installments(
         fines_applied,
         interest_calc,
         last_payment_date=last_accrual_end,
-        payment_tolerance=payment_tolerance,
     )
+
+
+# ------------------------------------------------------------------
+# Tolerance adjustment
+# ------------------------------------------------------------------
+
+
+def apply_tolerance_adjustment(
+    cashflow: CashFlow,
+    entry: PaymentScheduleEntry,
+    settlement: Settlement,
+    payment_date: datetime,
+    interest_date: datetime,
+    payment_tolerance: Money,
+    num_installments: int,
+    time_ctx: TimeContext,
+) -> None:
+    """Add a small CashFlowItem if the balance drifted from the schedule.
+
+    Compares the settlement's remaining balance against the schedule
+    entry's expected ending balance.  When the gap is positive and
+    within *payment_tolerance*, a tolerance adjustment is recorded as
+    a real, auditable cashflow entry.
+
+    After the last installment, any remaining balance within the
+    accumulated tolerance is also absorbed.  The multiplier of 3
+    accounts for compounding -- per-period rounding errors grow
+    faster than linearly at high interest rates.
+    """
+    balance = settlement.remaining_balance
+    gap = balance - entry.ending_balance
+    if gap.is_positive() and gap <= payment_tolerance:
+        cashflow.add_item(
+            CashFlowItem(
+                gap,
+                payment_date,
+                f"Tolerance adjustment for installment {entry.payment_number}",
+                "payment",
+                time_context=time_ctx,
+                interest_date=interest_date,
+            )
+        )
+        return
+
+    is_last_installment = entry.payment_number == num_installments
+    if balance.is_positive() and is_last_installment:
+        max_tolerance = payment_tolerance * num_installments * 3
+        if balance <= max_tolerance:
+            cashflow.add_item(
+                CashFlowItem(
+                    balance,
+                    payment_date,
+                    f"Tolerance adjustment closing residual after installment {entry.payment_number}",
+                    "payment",
+                    time_context=time_ctx,
+                    interest_date=interest_date,
+                )
+            )

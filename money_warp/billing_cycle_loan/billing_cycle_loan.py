@@ -8,7 +8,13 @@ from ..billing_cycle import BaseBillingCycle
 from ..cash_flow import CashFlow, CashFlowItem, CashFlowType
 from ..engines import InterestCalculator, MoraStrategy
 from ..interest_rate import InterestRate
-from ..loan.engines import LoanState, build_installments, covered_due_date_count, is_payment_late
+from ..loan.engines import (
+    LoanState,
+    apply_tolerance_adjustment,
+    build_installments,
+    covered_due_date_count,
+    is_payment_late,
+)
 from ..loan.installment import Installment
 from ..loan.settlement import Settlement
 from ..money import Money
@@ -243,6 +249,11 @@ class BillingCycleLoan:
 
         When all installments are already paid the payment is recorded
         as an overpayment.
+
+        After recording the payment, if the principal balance drifts from
+        the schedule's expected ending balance by a small amount (within
+        ``payment_tolerance``), a tolerance adjustment CashFlowItem is
+        added to the cashflow to prevent rounding drift from compounding.
         """
         payment_date = self.now()
 
@@ -260,12 +271,29 @@ class BillingCycleLoan:
 
         next_due = self._next_unpaid_due_date()
         interest_date = max(payment_date, to_datetime(next_due))
-        return self.record_payment(
+        settlement = self.record_payment(
             amount,
             payment_date=payment_date,
             interest_date=interest_date,
             description=description,
         )
+
+        schedule = self.get_original_schedule()
+        for entry in schedule:
+            if entry.due_date == next_due:
+                apply_tolerance_adjustment(
+                    self.cashflow,
+                    entry,
+                    settlement,
+                    payment_date,
+                    interest_date,
+                    self.payment_tolerance,
+                    len(self.due_dates),
+                    self._time_ctx,
+                )
+                break
+
+        return settlement
 
     # ------------------------------------------------------------------
     # Derived state
@@ -287,7 +315,6 @@ class BillingCycleLoan:
             base_mora_rate=self.mora_interest_rate,
             mora_rate_resolver=self.mora_rate_resolver,
             fine_observation_dates=self._fine_observation_dates,
-            payment_tolerance=self.payment_tolerance,
         )
 
     def _payment_entries(self) -> list:
@@ -316,7 +343,6 @@ class BillingCycleLoan:
             self.now(),
             self._interest,
             state.last_accrual_end,
-            payment_tolerance=self.payment_tolerance,
         )
 
     @property
@@ -400,12 +426,8 @@ class BillingCycleLoan:
 
     @property
     def is_paid_off(self) -> bool:
-        """Whether the loan is fully paid off.
-
-        Tolerance accumulates across all installments to account for
-        per-installment rounding errors from external origination systems.
-        """
-        return self.current_balance <= self.payment_tolerance * len(self.due_dates)
+        """Whether the loan is fully paid off."""
+        return self.current_balance.is_zero() or self.current_balance.is_negative()
 
     @property
     def overpaid(self) -> Money:

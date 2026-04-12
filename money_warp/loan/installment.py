@@ -32,7 +32,6 @@ class Installment:
     interest_paid: Money
     mora_paid: Money
     fine_paid: Money
-    payment_tolerance: Money
     allocations: List[Allocation]
 
     @property
@@ -45,12 +44,8 @@ class Installment:
 
     @property
     def is_fully_paid(self) -> bool:
-        """Whether this installment has been fully settled.
-
-        Tolerance accumulates with the installment number to account for
-        per-installment rounding errors from external origination systems.
-        """
-        return self.balance <= self.payment_tolerance * self.number
+        """Whether this installment has been fully settled."""
+        return self.balance.is_zero()
 
     @classmethod
     def from_schedule_entry(
@@ -59,7 +54,6 @@ class Installment:
         allocations: List[Allocation],
         expected_mora: Money,
         expected_fine: Money,
-        payment_tolerance: Money,
     ) -> "Installment":
         """Build an Installment from a scheduler's PaymentScheduleEntry."""
         principal_paid = Money(sum(a.principal_allocated.raw_amount for a in allocations))
@@ -81,5 +75,4 @@ class Installment:
             mora_paid=mora_paid,
             fine_paid=fine_paid,
             allocations=allocations,
-            payment_tolerance=payment_tolerance,
         )

@@ -1,16 +1,16 @@
-"""Tests for the accumulated payment_tolerance feature.
+"""Tests for the tolerance adjustment CashFlowItem approach.
 
-The external loan origination system can introduce a 1-cent rounding
-error per installment.  The tolerance accumulates with the installment
-number so that installment N tolerates N * payment_tolerance.
+When an external origination system introduces a small per-installment
+rounding error, ``pay_installment`` detects the balance drift and adds
+a tolerance adjustment entry to the cashflow.  This prevents rounding
+drift from compounding across installments.
 """
 
 from datetime import date, datetime, timezone
 
 import pytest
 
-from money_warp import Installment, InterestRate, Loan, Money, Warp
-from money_warp.scheduler import PaymentScheduleEntry
+from money_warp import InterestRate, Loan, Money, Warp
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -44,7 +44,7 @@ def twelve_installment_loan():
 
 @pytest.fixture
 def three_installment_loan():
-    """3-installment loan for testing tolerance accumulation."""
+    """3-installment loan for testing tolerance adjustment."""
     return Loan(
         Money("10000"),
         InterestRate("6% a"),
@@ -85,181 +85,87 @@ def test_zero_tolerance_gives_exact_matching():
 
 
 # ---------------------------------------------------------------------------
-# Installment.is_fully_paid -- accumulated tolerance
+# Tolerance adjustment CashFlowItem
 # ---------------------------------------------------------------------------
 
 
-def test_installment_carries_loan_payment_tolerance(twelve_installment_loan):
-    inst = twelve_installment_loan.installments[0]
-    assert inst.payment_tolerance == Money("0.01")
+def test_tolerance_adjustment_added_when_balance_drifts(three_installment_loan):
+    """When pay_installment underpays by <= tolerance, an adjustment entry appears."""
+    schedule = three_installment_loan.get_original_schedule()
+    pmt = schedule[0].payment_amount
+
+    with Warp(three_installment_loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as warped:
+        warped.pay_installment(pmt - Money("0.01"))
+    loan = warped
+
+    cf_items = [e for e in loan.cashflow.items() if "Tolerance adjustment" in (e.description or "")]
+    assert len(cf_items) == 1
+    assert cf_items[0].amount == Money("0.01")
+    assert "installment 1" in cf_items[0].description
 
 
-def test_installment_tolerance_scales_with_number():
-    entry = PaymentScheduleEntry(
-        payment_number=5,
-        due_date=date(2025, 6, 1),
-        days_in_period=30,
-        beginning_balance=Money("5000"),
-        payment_amount=Money("1100"),
-        principal_payment=Money("1000"),
-        interest_payment=Money("100"),
-        ending_balance=Money("4000"),
-    )
-    inst = Installment.from_schedule_entry(
-        entry,
-        allocations=[],
-        expected_mora=Money.zero(),
-        expected_fine=Money.zero(),
-        payment_tolerance=Money("0.01"),
-    )
-    assert inst.is_fully_paid is False
-    assert inst.balance == Money("1100")
+def test_no_tolerance_adjustment_when_exact_payment(three_installment_loan):
+    """No adjustment when the payment exactly matches the schedule."""
+    schedule = three_installment_loan.get_original_schedule()
+    pmt = schedule[0].payment_amount
+
+    with Warp(three_installment_loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as warped:
+        warped.pay_installment(pmt)
+    loan = warped
+
+    cf_items = [e for e in loan.cashflow.items() if "Tolerance adjustment" in (e.description or "")]
+    assert len(cf_items) == 0
 
 
-def test_installment_1_tolerates_one_cent():
-    entry = PaymentScheduleEntry(
-        payment_number=1,
-        due_date=date(2025, 2, 1),
-        days_in_period=31,
-        beginning_balance=Money("10000"),
-        payment_amount=Money("100.01"),
-        principal_payment=Money("90.01"),
-        interest_payment=Money("10.00"),
-        ending_balance=Money("9909.99"),
-    )
-    from money_warp.loan.allocation import Allocation
+def test_no_tolerance_adjustment_when_gap_exceeds_tolerance(three_installment_loan):
+    """No adjustment when the gap is larger than payment_tolerance."""
+    schedule = three_installment_loan.get_original_schedule()
+    pmt = schedule[0].payment_amount
 
-    alloc = Allocation(
-        installment_number=1,
-        principal_allocated=Money("90.01"),
-        interest_allocated=Money("10.00"),
-        mora_allocated=Money.zero(),
-        fine_allocated=Money.zero(),
-        is_fully_covered=True,
-    )
-    inst = Installment.from_schedule_entry(
-        entry,
-        allocations=[alloc],
-        expected_mora=Money.zero(),
-        expected_fine=Money("0.01"),
-        payment_tolerance=Money("0.01"),
-    )
-    assert inst.balance == Money("0.01")
-    assert inst.is_fully_paid is True
+    with Warp(three_installment_loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as warped:
+        warped.pay_installment(pmt - Money("0.02"))
+    loan = warped
+
+    cf_items = [e for e in loan.cashflow.items() if "Tolerance adjustment" in (e.description or "")]
+    assert len(cf_items) == 0
 
 
-def test_installment_1_rejects_two_cent_gap():
-    entry = PaymentScheduleEntry(
-        payment_number=1,
-        due_date=date(2025, 2, 1),
-        days_in_period=31,
-        beginning_balance=Money("10000"),
-        payment_amount=Money("100.02"),
-        principal_payment=Money("90.02"),
-        interest_payment=Money("10.00"),
-        ending_balance=Money("9909.98"),
-    )
-    from money_warp.loan.allocation import Allocation
+def test_tolerance_adjustment_prevents_balance_drift(twelve_installment_loan):
+    """After paying each installment with a 1-cent shortfall, balance stays aligned."""
+    schedule = twelve_installment_loan.get_original_schedule()
 
-    alloc = Allocation(
-        installment_number=1,
-        principal_allocated=Money("90.02"),
-        interest_allocated=Money("10.00"),
-        mora_allocated=Money.zero(),
-        fine_allocated=Money.zero(),
-        is_fully_covered=True,
-    )
-    inst = Installment.from_schedule_entry(
-        entry,
-        allocations=[alloc],
-        expected_mora=Money.zero(),
-        expected_fine=Money("0.02"),
-        payment_tolerance=Money("0.01"),
-    )
-    assert inst.balance == Money("0.02")
-    assert inst.is_fully_paid is False
+    loan = twelve_installment_loan
+    for _i, entry in enumerate(schedule):
+        due_dt = datetime(entry.due_date.year, entry.due_date.month, entry.due_date.day, tzinfo=timezone.utc)
+        with Warp(loan, due_dt) as warped:
+            warped.pay_installment(entry.payment_amount - Money("0.01"))
+        loan = warped
 
+    cf_items = [e for e in loan.cashflow.items() if "Tolerance adjustment" in (e.description or "")]
+    assert len(cf_items) == 12
 
-def test_installment_12_tolerates_twelve_cents():
-    entry = PaymentScheduleEntry(
-        payment_number=12,
-        due_date=date(2026, 1, 22),
-        days_in_period=31,
-        beginning_balance=Money("900"),
-        payment_amount=Money("900.12"),
-        principal_payment=Money("890.12"),
-        interest_payment=Money("10.00"),
-        ending_balance=Money("0.00"),
-    )
-    from money_warp.loan.allocation import Allocation
-
-    alloc = Allocation(
-        installment_number=12,
-        principal_allocated=Money("890.12"),
-        interest_allocated=Money("10.00"),
-        mora_allocated=Money.zero(),
-        fine_allocated=Money.zero(),
-        is_fully_covered=True,
-    )
-    inst = Installment.from_schedule_entry(
-        entry,
-        allocations=[alloc],
-        expected_mora=Money.zero(),
-        expected_fine=Money("0.12"),
-        payment_tolerance=Money("0.01"),
-    )
-    assert inst.balance == Money("0.12")
-    assert inst.is_fully_paid is True
-
-
-def test_installment_12_rejects_thirteen_cents():
-    entry = PaymentScheduleEntry(
-        payment_number=12,
-        due_date=date(2026, 1, 22),
-        days_in_period=31,
-        beginning_balance=Money("900"),
-        payment_amount=Money("900.13"),
-        principal_payment=Money("890.13"),
-        interest_payment=Money("10.00"),
-        ending_balance=Money("0.00"),
-    )
-    from money_warp.loan.allocation import Allocation
-
-    alloc = Allocation(
-        installment_number=12,
-        principal_allocated=Money("890.13"),
-        interest_allocated=Money("10.00"),
-        mora_allocated=Money.zero(),
-        fine_allocated=Money.zero(),
-        is_fully_covered=True,
-    )
-    inst = Installment.from_schedule_entry(
-        entry,
-        allocations=[alloc],
-        expected_mora=Money.zero(),
-        expected_fine=Money("0.13"),
-        payment_tolerance=Money("0.01"),
-    )
-    assert inst.balance == Money("0.13")
-    assert inst.is_fully_paid is False
+    last_due = schedule[-1].due_date
+    with Warp(loan, datetime(last_due.year, last_due.month, last_due.day, tzinfo=timezone.utc)) as warped:
+        assert warped.is_paid_off is True
 
 
 # ---------------------------------------------------------------------------
-# Loan.is_paid_off -- loan-level tolerance
+# is_paid_off -- exact matching
 # ---------------------------------------------------------------------------
 
 
 def test_is_paid_off_after_full_repayment(three_installment_loan):
     schedule = three_installment_loan.get_original_schedule()
+    loan = three_installment_loan
     for entry in schedule:
-        three_installment_loan.record_payment(
-            entry.payment_amount,
-            datetime(entry.due_date.year, entry.due_date.month, entry.due_date.day, tzinfo=timezone.utc),
-        )
-    assert three_installment_loan.is_paid_off is True
+        due_dt = datetime(entry.due_date.year, entry.due_date.month, entry.due_date.day, tzinfo=timezone.utc)
+        with Warp(loan, due_dt) as warped:
+            warped.pay_installment(entry.payment_amount)
+        loan = warped
+    assert loan.is_paid_off is True
 
 
-def test_is_paid_off_tolerates_accumulated_error(twelve_installment_loan):
+def test_is_paid_off_after_full_repayment_with_warp(twelve_installment_loan):
     schedule = twelve_installment_loan.get_original_schedule()
     with Warp(twelve_installment_loan, datetime(2027, 3, 1, tzinfo=timezone.utc)) as warped:
         for entry in schedule:
@@ -271,72 +177,52 @@ def test_is_paid_off_tolerates_accumulated_error(twelve_installment_loan):
 
 
 # ---------------------------------------------------------------------------
-# Custom tolerance -- larger than default
+# is_fully_paid -- exact matching
 # ---------------------------------------------------------------------------
 
 
-def test_custom_tolerance_propagates_to_installments():
+def test_installment_is_fully_paid_after_exact_payment(three_installment_loan):
+    schedule = three_installment_loan.get_original_schedule()
+    pmt = schedule[0].payment_amount
+
+    with Warp(three_installment_loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as warped:
+        warped.pay_installment(pmt)
+    loan = warped
+
+    assert loan.installments[0].is_fully_paid is True
+
+
+def test_installment_is_fully_paid_after_tolerance_adjustment(three_installment_loan):
+    """Installment is fully paid when a tolerance adjustment closes the gap."""
+    schedule = three_installment_loan.get_original_schedule()
+    pmt = schedule[0].payment_amount
+
+    with Warp(three_installment_loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as warped:
+        warped.pay_installment(pmt - Money("0.01"))
+    loan = warped
+
+    cf_items = [e for e in loan.cashflow.items() if "Tolerance adjustment" in (e.description or "")]
+    assert len(cf_items) == 1
+
+
+# ---------------------------------------------------------------------------
+# Zero tolerance -- no adjustments
+# ---------------------------------------------------------------------------
+
+
+def test_zero_tolerance_never_adds_adjustment():
     loan = Loan(
         Money("10000"),
         InterestRate("6% a"),
         [date(2025, 2, 1), date(2025, 3, 1)],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        payment_tolerance=Money("0.05"),
-    )
-    for inst in loan.installments:
-        assert inst.payment_tolerance == Money("0.05")
-
-
-# ---------------------------------------------------------------------------
-# Zero tolerance -- exact matching
-# ---------------------------------------------------------------------------
-
-
-def test_zero_tolerance_installment_requires_exact_payment():
-    entry = PaymentScheduleEntry(
-        payment_number=1,
-        due_date=date(2025, 2, 1),
-        days_in_period=31,
-        beginning_balance=Money("10000"),
-        payment_amount=Money("100.00"),
-        principal_payment=Money("90.00"),
-        interest_payment=Money("10.00"),
-        ending_balance=Money("9900"),
-    )
-    from money_warp.loan.allocation import Allocation
-
-    alloc = Allocation(
-        installment_number=1,
-        principal_allocated=Money("90.00"),
-        interest_allocated=Money("10.00"),
-        mora_allocated=Money.zero(),
-        fine_allocated=Money.zero(),
-        is_fully_covered=True,
-    )
-    inst_exact = Installment.from_schedule_entry(
-        entry,
-        allocations=[alloc],
-        expected_mora=Money.zero(),
-        expected_fine=Money.zero(),
         payment_tolerance=Money("0"),
     )
-    assert inst_exact.balance.is_zero()
-    assert inst_exact.is_fully_paid is True
+    schedule = loan.get_original_schedule()
 
-    alloc_short = Allocation(
-        installment_number=1,
-        principal_allocated=Money("89.99"),
-        interest_allocated=Money("10.00"),
-        mora_allocated=Money.zero(),
-        fine_allocated=Money.zero(),
-        is_fully_covered=False,
-    )
-    inst_short = Installment.from_schedule_entry(
-        entry,
-        allocations=[alloc_short],
-        expected_mora=Money.zero(),
-        expected_fine=Money.zero(),
-        payment_tolerance=Money("0"),
-    )
-    assert inst_short.balance == Money("0.01")
-    assert inst_short.is_fully_paid is False
+    with Warp(loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as warped:
+        warped.pay_installment(schedule[0].payment_amount - Money("0.01"))
+    loan = warped
+
+    cf_items = [e for e in loan.cashflow.items() if "Tolerance adjustment" in (e.description or "")]
+    assert len(cf_items) == 0

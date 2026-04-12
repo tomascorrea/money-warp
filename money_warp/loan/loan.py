@@ -16,6 +16,7 @@ from .engines import (
     InterestCalculator,
     LoanState,
     MoraStrategy,
+    apply_tolerance_adjustment,
     build_installments,
     compute_state,
     covered_due_date_count,
@@ -231,6 +232,11 @@ class Loan:
 
         When all installments are already paid the payment is recorded
         as an overpayment (no interest accrual) and a warning is issued.
+
+        After recording the payment, if the principal balance drifts from
+        the schedule's expected ending balance by a small amount (within
+        ``payment_tolerance``), a tolerance adjustment CashFlowItem is
+        added to the cashflow to prevent rounding drift from compounding.
         """
         payment_date = self.now()
 
@@ -248,12 +254,29 @@ class Loan:
 
         next_due = self._next_unpaid_due_date()
         interest_date = max(payment_date, to_datetime(next_due))
-        return self.record_payment(
+        settlement = self.record_payment(
             amount,
             payment_date=payment_date,
             interest_date=interest_date,
             description=description,
         )
+
+        schedule = self.get_original_schedule()
+        for entry in schedule:
+            if entry.due_date == next_due:
+                apply_tolerance_adjustment(
+                    self.cashflow,
+                    entry,
+                    settlement,
+                    payment_date,
+                    interest_date,
+                    self.payment_tolerance,
+                    len(self.due_dates),
+                    self._time_ctx,
+                )
+                break
+
+        return settlement
 
     def anticipate_payment(
         self,
@@ -317,7 +340,6 @@ class Loan:
             self._payment_entries(),
             self.now(),
             fine_observation_dates=self._fine_observation_dates,
-            payment_tolerance=self.payment_tolerance,
         )
 
     def _payment_entries(self) -> list:
@@ -346,7 +368,6 @@ class Loan:
             self.now(),
             self._interest,
             state.last_accrual_end,
-            payment_tolerance=self.payment_tolerance,
         )
 
     # ------------------------------------------------------------------
@@ -402,12 +423,8 @@ class Loan:
 
     @property
     def is_paid_off(self) -> bool:
-        """Whether the loan is fully paid off.
-
-        Tolerance accumulates across all installments to account for
-        per-installment rounding errors from external origination systems.
-        """
-        return self.current_balance <= self.payment_tolerance * len(self.due_dates)
+        """Whether the loan is fully paid off."""
+        return self.current_balance.is_zero() or self.current_balance.is_negative()
 
     @property
     def overpaid(self) -> Money:
