@@ -40,6 +40,7 @@ class GrossupResult:
         disbursement_date: datetime,
         scheduler: type[BaseScheduler],
         taxes: list[BaseTax],
+        tz: tzinfo,
     ) -> None:
         self.principal = principal
         self.requested_amount = requested_amount
@@ -49,6 +50,7 @@ class GrossupResult:
         self._disbursement_date = disbursement_date
         self._scheduler = scheduler
         self._taxes = taxes
+        self._tz = tz
 
     def to_loan(self, **loan_kwargs: Any) -> Loan:
         """Create a Loan from this grossup result.
@@ -74,6 +76,7 @@ class GrossupResult:
             scheduler=self._scheduler,
             taxes=self._taxes,
             is_grossed_up=True,
+            tz=self._tz,
             **loan_kwargs,
         )
 
@@ -224,6 +227,7 @@ def grossup(
         disbursement_date=disbursement_date,
         scheduler=scheduler,
         taxes=taxes,
+        tz=tz,
     )
 
 

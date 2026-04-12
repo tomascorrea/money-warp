@@ -77,6 +77,7 @@ def test_loan_bridge_stores_metadata():
         "grace_period_days": "grace_period_days",
         "mora_interest_rate": "mora_interest_rate",
         "mora_strategy": "mora_strategy",
+        "tz": None,
     }
 
 

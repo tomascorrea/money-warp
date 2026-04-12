@@ -9,8 +9,8 @@ when converting UTC datetimes to calendar dates.  This is the
 per-loan timezone — different loans can have different values.
 """
 
-from datetime import date, datetime
-from datetime import tzinfo as _tzinfo
+from datetime import date, datetime, tzinfo
+from typing import Optional, Union
 
 from .tz import default_time_source, get_tz, to_date, to_datetime
 
@@ -27,14 +27,14 @@ class TimeContext:
     and :meth:`to_datetime`).  It defaults to :func:`get_tz`.
     """
 
-    def __init__(self, source=None, tz: _tzinfo | None = None) -> None:
+    def __init__(self, source=None, tz: Optional[tzinfo] = None) -> None:
         self._source = source or default_time_source
-        self.tz: _tzinfo = tz or get_tz()
+        self.tz: tzinfo = tz or get_tz()
 
     def now(self) -> datetime:
         return self._source.now()
 
-    def to_date(self, dt: date | datetime) -> date:
+    def to_date(self, dt: Union[date, datetime]) -> date:
         """Extract calendar date in this context's business timezone."""
         return to_date(dt, self.tz)
 
