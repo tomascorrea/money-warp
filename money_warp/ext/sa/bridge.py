@@ -11,6 +11,7 @@ from typing import List, Union
 from sqlalchemy import Float, String, case, cast, column, func, literal, select
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 
+from money_warp.engines import MoraStrategy
 from money_warp.ext.sa.compat import (
     mw_greatest,
     mw_instr,
@@ -20,7 +21,7 @@ from money_warp.ext.sa.compat import (
     mw_julianday,
 )
 from money_warp.ext.sa.types import _FREQUENCY_TOKEN
-from money_warp.loan import Loan, MoraStrategy
+from money_warp.loan import Loan
 from money_warp.rate import _ABBREV_MAP, CompoundingFrequency
 from money_warp.tz import ensure_aware, now
 from money_warp.warp import Warp, WarpedTime

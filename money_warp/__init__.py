@@ -20,8 +20,9 @@ from money_warp.date_utils import (
     generate_quarterly_dates,
     generate_weekly_dates,
 )
+from money_warp.engines import MoraStrategy
 from money_warp.interest_rate import CompoundingFrequency, InterestRate, YearSize
-from money_warp.loan import Allocation, AnticipationResult, Installment, Loan, MoraStrategy, Settlement
+from money_warp.loan import Allocation, AnticipationResult, Installment, Loan, Settlement
 from money_warp.money import Money
 from money_warp.present_value import (
     discount_factor,

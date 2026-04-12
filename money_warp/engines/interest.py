@@ -1,21 +1,16 @@
-"""Shared engine building blocks for loan products.
+"""Interest calculation primitives shared across loan products.
 
-Types and classes that are used by multiple product modules
-(``loan``, ``billing_cycle_loan``) live here to avoid circular
-imports.  The full forward-pass logic and allocation helpers stay
-in :mod:`money_warp.loan.engines` (which imports from here).
+Types and classes used by multiple product modules (``loan``,
+``billing_cycle_loan``) live here.  The forward-pass logic and
+allocation helpers are in sibling submodules of this package.
 """
 
 from datetime import date, datetime
 from enum import Enum
 from typing import Callable, Optional, Tuple
 
-from .interest_rate import InterestRate
-from .money import Money
-
-# ===================================================================
-# Mora strategy
-# ===================================================================
+from ..interest_rate import InterestRate
+from ..money import Money
 
 
 class MoraStrategy(Enum):
@@ -27,11 +22,6 @@ class MoraStrategy(Enum):
 
     SIMPLE = "simple"
     COMPOUND = "compound"
-
-
-# ===================================================================
-# Interest calculator
-# ===================================================================
 
 
 class InterestCalculator:
@@ -92,10 +82,6 @@ class InterestCalculator:
 
         return regular_accrued, mora_accrued
 
-
-# ===================================================================
-# Mora rate callback type
-# ===================================================================
 
 #: Optional callback that resolves a mora rate override for a given
 #: payment event.  Receives the *next_due* date (or ``None`` when all

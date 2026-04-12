@@ -7,7 +7,12 @@ MoneyWarp is a Time Value of Money library built around the metaphor of "time-wa
 ```
 money_warp/
 ├── __init__.py            # Public API exports
-├── engines.py             # Shared building blocks (InterestCalculator, MoraStrategy, MoraRateCallback)
+├── engines/
+│   ├── __init__.py        # Re-exports public API (single import path)
+│   ├── interest.py        # InterestCalculator, MoraStrategy, MoraRateCallback
+│   ├── allocation.py      # allocate_payment, distribute_into_installments
+│   ├── fines.py           # is_payment_late, compute_fines_at
+│   └── forward_pass.py    # LoanState, compute_state, build_installments, tolerance
 ├── money.py               # Money (high-precision currency)
 ├── rate.py                # Rate (signed base) + CompoundingFrequency + YearSize
 ├── interest_rate.py       # InterestRate (non-negative refinement of Rate)
@@ -30,7 +35,7 @@ money_warp/
 │   └── statement.py       # Statement (frozen derived view)
 ├── loan/
 │   ├── loan.py            # Loan facade
-│   ├── engines.py         # Unified forward pass, fines, allocation (imports from root engines)
+│   ├── engines.py         # Backward-compatible re-exports from money_warp.engines
 │   ├── tvm.py             # TVM standalone functions (PV, IRR, anticipation)
 │   ├── allocation.py      # Allocation dataclass (per-installment payment breakdown)
 │   ├── installment.py     # Installment dataclass
@@ -96,8 +101,8 @@ Equality between `CashFlowItem` and `CashFlowEntry` uses Python's reflected-equa
 
 `Loan` is a facade that orchestrates three focused components:
 
-- **`engines.py`** (root) — shared building blocks: `InterestCalculator` (stateless interest math), `MoraStrategy`, `MoraRateCallback`. No `loan/` dependency — avoids circular imports.
-- **`loan/engines.py`** — unified forward pass (`compute_state` with optional `mora_rate_for_event` callback), fine detection (`compute_fines_at`), per-installment allocation, and installment building. Imports shared types from root.
+- **`engines/`** (package) — all shared computation: `InterestCalculator`, `MoraStrategy`, `MoraRateCallback` (interest primitives), `compute_state` (unified forward pass with optional `mora_rate_for_event` callback), `allocate_payment` (fine -> mora -> interest -> principal priority), `compute_fines_at`, `apply_tolerance_adjustment`, `build_installments`. Split into submodules (`interest.py`, `allocation.py`, `fines.py`, `forward_pass.py`) with a single import path via `__init__.py`.
+- **`loan/engines.py`** — backward-compatible re-export shim for existing code importing from `money_warp.loan.engines`.
 - **`tvm.py`** — standalone functions for PV, IRR, and anticipation (eliminates circular imports).
 
 `Loan.cashflow` is the single source of truth — expected schedule items and actual payment items live in one `CashFlow`. All derived state (settlements, installments, balances, fines) is computed on demand via a forward pass. Schedule generation (`generate_expected_cash_flow`, `get_original_schedule`, `get_amortization_schedule`) stays in `Loan`.

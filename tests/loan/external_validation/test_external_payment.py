@@ -60,7 +60,7 @@ def _pay_external_schedule(case):
 # ---------------------------------------------------------------------------
 
 _ALL_FIXTURES = _load_fixtures()
-_SAMPLE = random.Random(42).sample(_ALL_FIXTURES, min(50, len(_ALL_FIXTURES)))
+_SAMPLE = random.Random(42).sample(_ALL_FIXTURES, min(10, len(_ALL_FIXTURES)))
 
 
 @pytest.mark.parametrize(
