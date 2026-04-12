@@ -16,6 +16,7 @@ from .engines import (
     InterestCalculator,
     LoanState,
     MoraStrategy,
+    apply_tolerance_adjustment,
     build_installments,
     compute_state,
     covered_due_date_count,
@@ -263,59 +264,19 @@ class Loan:
         schedule = self.get_original_schedule()
         for entry in schedule:
             if entry.due_date == next_due:
-                self._apply_tolerance_adjustment(entry, settlement, payment_date, interest_date)
+                apply_tolerance_adjustment(
+                    self.cashflow,
+                    entry,
+                    settlement,
+                    payment_date,
+                    interest_date,
+                    self.payment_tolerance,
+                    len(self.due_dates),
+                    self._time_ctx,
+                )
                 break
 
         return settlement
-
-    def _apply_tolerance_adjustment(
-        self,
-        entry: PaymentScheduleEntry,
-        settlement: Settlement,
-        payment_date: datetime,
-        interest_date: datetime,
-    ) -> None:
-        """Add a small CashFlowItem if the balance drifted from the schedule.
-
-        Compares the settlement's remaining balance against the schedule
-        entry's expected ending balance.  When the gap is positive and
-        within ``payment_tolerance``, a tolerance adjustment is recorded
-        as a real, auditable cashflow entry.
-
-        After the last installment, any remaining balance within the
-        accumulated tolerance is also absorbed. The multiplier of 3
-        accounts for compounding — per-period rounding errors grow
-        faster than linearly at high interest rates.
-        """
-        balance = settlement.remaining_balance
-        gap = balance - entry.ending_balance
-        if gap.is_positive() and gap <= self.payment_tolerance:
-            self.cashflow.add_item(
-                CashFlowItem(
-                    gap,
-                    payment_date,
-                    f"Tolerance adjustment for installment {entry.payment_number}",
-                    "payment",
-                    time_context=self._time_ctx,
-                    interest_date=interest_date,
-                )
-            )
-            return
-
-        is_last_installment = entry.payment_number == len(self.due_dates)
-        if balance.is_positive() and is_last_installment:
-            max_tolerance = self.payment_tolerance * len(self.due_dates) * 3
-            if balance <= max_tolerance:
-                self.cashflow.add_item(
-                    CashFlowItem(
-                        balance,
-                        payment_date,
-                        f"Tolerance adjustment closing residual after installment {entry.payment_number}",
-                        "payment",
-                        time_context=self._time_ctx,
-                        interest_date=interest_date,
-                    )
-                )
 
     def anticipate_payment(
         self,

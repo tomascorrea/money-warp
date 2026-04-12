@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
+from ..cash_flow import CashFlow, CashFlowItem
 from ..engines import (  # noqa: F401 - re-export
     InterestCalculator,
     MoraRateCallback,
@@ -22,7 +23,8 @@ from ..engines import (  # noqa: F401 - re-export
 )
 from ..interest_rate import InterestRate
 from ..money import Money
-from ..scheduler import PaymentSchedule
+from ..scheduler import PaymentSchedule, PaymentScheduleEntry
+from ..time_context import TimeContext
 from ..tz import to_datetime
 from .allocation import Allocation
 from .installment import Installment
@@ -640,3 +642,61 @@ def build_installments(
         interest_calc,
         last_payment_date=last_accrual_end,
     )
+
+
+# ------------------------------------------------------------------
+# Tolerance adjustment
+# ------------------------------------------------------------------
+
+
+def apply_tolerance_adjustment(
+    cashflow: CashFlow,
+    entry: PaymentScheduleEntry,
+    settlement: Settlement,
+    payment_date: datetime,
+    interest_date: datetime,
+    payment_tolerance: Money,
+    num_installments: int,
+    time_ctx: TimeContext,
+) -> None:
+    """Add a small CashFlowItem if the balance drifted from the schedule.
+
+    Compares the settlement's remaining balance against the schedule
+    entry's expected ending balance.  When the gap is positive and
+    within *payment_tolerance*, a tolerance adjustment is recorded as
+    a real, auditable cashflow entry.
+
+    After the last installment, any remaining balance within the
+    accumulated tolerance is also absorbed.  The multiplier of 3
+    accounts for compounding -- per-period rounding errors grow
+    faster than linearly at high interest rates.
+    """
+    balance = settlement.remaining_balance
+    gap = balance - entry.ending_balance
+    if gap.is_positive() and gap <= payment_tolerance:
+        cashflow.add_item(
+            CashFlowItem(
+                gap,
+                payment_date,
+                f"Tolerance adjustment for installment {entry.payment_number}",
+                "payment",
+                time_context=time_ctx,
+                interest_date=interest_date,
+            )
+        )
+        return
+
+    is_last_installment = entry.payment_number == num_installments
+    if balance.is_positive() and is_last_installment:
+        max_tolerance = payment_tolerance * num_installments * 3
+        if balance <= max_tolerance:
+            cashflow.add_item(
+                CashFlowItem(
+                    balance,
+                    payment_date,
+                    f"Tolerance adjustment closing residual after installment {entry.payment_number}",
+                    "payment",
+                    time_context=time_ctx,
+                    interest_date=interest_date,
+                )
+            )
