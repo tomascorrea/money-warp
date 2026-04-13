@@ -89,6 +89,6 @@ Statements are a reporting view — they don't affect the financial computation.
 
 - **No duplication of engine logic**: `loan/engines.py` has a single unified `compute_state` with a `MoraRateCallback` hook. BCL injects its per-cycle resolver via the callback; `Loan` omits it. All allocation, fine, and installment functions are shared.
 - **Three-layer engine architecture**: `engines.py` (root) → `loan/engines.py` → `billing_cycle_loan/engines.py`. Root has standalone types (no `loan/` dependency, avoids circular imports). Loan engines have the full forward pass. BCL engines add product-specific wrappers.
-- **Resolver is optional**: without it, behavior is identical to a `Loan` with billing-cycle-derived due dates.
+- **Resolver is optional**: without it, behavior is identical to a `Loan` with billing-cycle-derived due dates. This invariant is property-tested under Hypothesis (`tests/test_schedule_equivalence.py`) across many randomly generated configurations.
 - **Billing cycle owns all date logic**: the loan never receives explicit `due_dates` — it always derives them from the billing cycle. To customize due dates, pass them to the billing cycle constructor.
 - **`InterestCalculator.compute_accrued_interest` gained `mora_rate_override`**: backward-compatible (optional param), allows per-call mora rate without duplicating the calculator.
