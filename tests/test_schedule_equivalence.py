@@ -13,6 +13,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from money_warp import (
+    BaseScheduler,
     BillingCycleLoan,
     InterestRate,
     InvertedPriceScheduler,
@@ -48,7 +49,7 @@ def test_loan_and_billing_cycle_loan_schedules_are_equal(
     num_installments: int,
     closing_day: int,
     payment_due_days: int,
-    scheduler: type,
+    scheduler: type[BaseScheduler],
 ) -> None:
     """Schedules produced by Loan and BillingCycleLoan must be identical."""
     billing_cycle = MonthlyBillingCycle(
@@ -76,45 +77,4 @@ def test_loan_and_billing_cycle_loan_schedules_are_equal(
         scheduler=scheduler,
     )
 
-    bcl_schedule = bcl.get_original_schedule()
-    loan_schedule = loan.get_original_schedule()
-
-    assert len(bcl_schedule) == len(
-        loan_schedule
-    ), f"Length mismatch: BillingCycleLoan={len(bcl_schedule)}, Loan={len(loan_schedule)}"
-
-    for i, (bcl_entry, loan_entry) in enumerate(zip(bcl_schedule, loan_schedule)):
-        assert (
-            bcl_entry.payment_number == loan_entry.payment_number
-        ), f"Entry {i}: payment_number {bcl_entry.payment_number} != {loan_entry.payment_number}"
-        assert (
-            bcl_entry.due_date == loan_entry.due_date
-        ), f"Entry {i}: due_date {bcl_entry.due_date} != {loan_entry.due_date}"
-        assert (
-            bcl_entry.days_in_period == loan_entry.days_in_period
-        ), f"Entry {i}: days_in_period {bcl_entry.days_in_period} != {loan_entry.days_in_period}"
-        assert (
-            bcl_entry.beginning_balance == loan_entry.beginning_balance
-        ), f"Entry {i}: beginning_balance {bcl_entry.beginning_balance} != {loan_entry.beginning_balance}"
-        assert (
-            bcl_entry.payment_amount == loan_entry.payment_amount
-        ), f"Entry {i}: payment_amount {bcl_entry.payment_amount} != {loan_entry.payment_amount}"
-        assert (
-            bcl_entry.principal_payment == loan_entry.principal_payment
-        ), f"Entry {i}: principal_payment {bcl_entry.principal_payment} != {loan_entry.principal_payment}"
-        assert (
-            bcl_entry.interest_payment == loan_entry.interest_payment
-        ), f"Entry {i}: interest_payment {bcl_entry.interest_payment} != {loan_entry.interest_payment}"
-        assert (
-            bcl_entry.ending_balance == loan_entry.ending_balance
-        ), f"Entry {i}: ending_balance {bcl_entry.ending_balance} != {loan_entry.ending_balance}"
-
-    assert (
-        bcl_schedule.total_payments == loan_schedule.total_payments
-    ), f"total_payments: {bcl_schedule.total_payments} != {loan_schedule.total_payments}"
-    assert (
-        bcl_schedule.total_interest == loan_schedule.total_interest
-    ), f"total_interest: {bcl_schedule.total_interest} != {loan_schedule.total_interest}"
-    assert (
-        bcl_schedule.total_principal == loan_schedule.total_principal
-    ), f"total_principal: {bcl_schedule.total_principal} != {loan_schedule.total_principal}"
+    assert bcl.get_original_schedule() == loan.get_original_schedule()
