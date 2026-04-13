@@ -139,7 +139,7 @@ class BillingCycleLoan:
         far_end = self.start_date + relativedelta(months=self.num_installments + 2)
         all_dates = self.billing_cycle.closing_dates_between(self.start_date, far_end)
 
-        explicit = self.billing_cycle._explicit_due_dates
+        explicit = self.billing_cycle.explicit_due_dates
         if explicit is not None:
             target = explicit[: self.num_installments]
             selected: List[datetime] = []
@@ -152,6 +152,11 @@ class BillingCycleLoan:
                         break
                 if match is not None and match not in selected:
                     selected.append(match)
+            if len(selected) != len(target):
+                raise ValueError(
+                    "Could not find a closing date for each explicit due date: "
+                    f"expected {len(target)}, found {len(selected)}"
+                )
             return selected
 
         return all_dates[: self.num_installments]
