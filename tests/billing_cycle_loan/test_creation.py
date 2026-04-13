@@ -39,6 +39,24 @@ def test_explicit_due_dates_on_billing_cycle():
     assert loan.due_dates == [date(2025, 2, 10), date(2025, 3, 10), date(2025, 4, 10)]
 
 
+def test_explicit_due_dates_with_start_date_far_before_first_due():
+    """All explicit due dates are preserved when start_date is more than one cycle before the first due date."""
+    explicit = [date(2025, 11, 15), date(2025, 12, 15)]
+    bc = MonthlyBillingCycle(closing_day=1, payment_due_days=15, due_dates=explicit)
+    loan = BillingCycleLoan(
+        principal=Money("1000.00"),
+        interest_rate=InterestRate("12% a"),
+        billing_cycle=bc,
+        start_date=datetime(2025, 9, 15, tzinfo=timezone.utc),
+        num_installments=2,
+        disbursement_date=datetime(2025, 9, 15, tzinfo=timezone.utc),
+    )
+    assert loan.due_dates == [date(2025, 11, 15), date(2025, 12, 15)]
+    assert len(loan.installments) == 2
+    closing = [cd.date() for cd in loan.closing_dates]
+    assert closing == [date(2025, 11, 1), date(2025, 12, 1)]
+
+
 def test_principal_must_be_positive(billing_cycle):
     with pytest.raises(ValueError, match="Principal must be positive"):
         BillingCycleLoan(
