@@ -34,6 +34,11 @@ class BaseBillingCycle(ABC):
     def __init__(self, due_dates: Optional[List[date]] = None) -> None:
         self._explicit_due_dates: Optional[List[date]] = sorted(due_dates) if due_dates else None
 
+    @property
+    def explicit_due_dates(self) -> Optional[List[date]]:
+        """Explicit due dates provided at construction, or ``None``."""
+        return list(self._explicit_due_dates) if self._explicit_due_dates is not None else None
+
     @abstractmethod
     def closing_dates_between(self, start: datetime, end: datetime) -> List[datetime]:
         """Return closing dates for all *complete* cycles in [start, end].
