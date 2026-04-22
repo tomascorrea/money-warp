@@ -98,3 +98,41 @@ def test_mora_defaults_to_interest_rate(simple_loan):
 def test_original_schedule_has_correct_num_entries(simple_loan):
     schedule = simple_loan.get_original_schedule()
     assert len(schedule) == 3
+
+
+def test_first_due_date_before_first_closing_date():
+    """Loan with start_date between closing_day and first due date must not crash."""
+    from zoneinfo import ZoneInfo
+
+    SAO_PAULO = ZoneInfo("America/Sao_Paulo")
+    bc = MonthlyBillingCycle(
+        due_dates=[
+            date(2025, 11, 20),
+            date(2025, 12, 20),
+            date(2026, 1, 20),
+            date(2026, 2, 20),
+        ],
+    )
+    loan = BillingCycleLoan(
+        principal=Money(1000),
+        interest_rate=InterestRate("3% a.m."),
+        billing_cycle=bc,
+        start_date=datetime(2025, 11, 12, tzinfo=SAO_PAULO),
+        num_installments=4,
+        disbursement_date=datetime(2025, 11, 12, tzinfo=SAO_PAULO),
+        tz=SAO_PAULO,
+    )
+    assert loan.due_dates == [
+        date(2025, 11, 20),
+        date(2025, 12, 20),
+        date(2026, 1, 20),
+        date(2026, 2, 20),
+    ]
+    closing = [cd.date() for cd in loan.closing_dates]
+    assert closing == [
+        date(2025, 11, 1),
+        date(2025, 12, 1),
+        date(2026, 1, 1),
+        date(2026, 2, 1),
+    ]
+    assert len(loan.get_original_schedule()) == 4
