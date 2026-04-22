@@ -137,11 +137,17 @@ class BillingCycleLoan:
         from dateutil.relativedelta import relativedelta
 
         far_end = self.start_date + relativedelta(months=self.num_installments + 2)
-        all_dates = self.billing_cycle.closing_dates_between(self.start_date, far_end)
 
         explicit = self.billing_cycle.explicit_due_dates
         if explicit is not None:
             target = explicit[: self.num_installments]
+            earliest_due_dt = self._time_ctx.to_datetime(target[0])
+            search_start = min(self.start_date, earliest_due_dt - relativedelta(months=1))
+            all_dates = self.billing_cycle.closing_dates_between(search_start, far_end)
+        else:
+            all_dates = self.billing_cycle.closing_dates_between(self.start_date, far_end)
+
+        if explicit is not None:
             selected: List[datetime] = []
             for dd in target:
                 match = None
