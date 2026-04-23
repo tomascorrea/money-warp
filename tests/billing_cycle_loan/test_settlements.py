@@ -1,8 +1,16 @@
 """Tests for BillingCycleLoan payment settlements."""
 
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
-from money_warp import Money
+from money_warp import (
+    BillingCycleLoan,
+    InterestRate,
+    Money,
+    PriceScheduler,
+    Warp,
+)
+from money_warp.billing_cycle import MonthlyBillingCycle
 
 
 def test_on_time_payment_first_installment(simple_loan):
@@ -59,3 +67,32 @@ def test_allocation_installment_numbers(simple_loan):
     assert len(s.allocations) == 1
     assert s.allocations[0].installment_number == 1
     assert s.allocations[0].is_fully_covered is True
+
+
+def test_allocation_is_fully_covered_when_tolerance_absorbs_residual():
+    """Regression: is_paid_off=True must imply allocation.is_fully_covered=True.
+
+    Reproduces the reported scenario: a single-installment BillingCycleLoan
+    where forward-pass interest vs. schedule-level rounding leaves a
+    sub-cent principal residual, which is then absorbed by the tolerance
+    adjustment.  The loan becomes paid off but the settlement's allocation
+    used to still report is_fully_covered=False.
+    """
+    sao_paulo = ZoneInfo("America/Sao_Paulo")
+    loan = BillingCycleLoan(
+        principal=Money("19523.82"),
+        interest_rate=InterestRate("26.675% a.a."),
+        billing_cycle=MonthlyBillingCycle(
+            due_dates=[datetime(2025, 12, 12).date()],
+        ),
+        start_date=datetime(2025, 11, 11, tzinfo=sao_paulo),
+        num_installments=1,
+        disbursement_date=datetime(2025, 11, 11, tzinfo=sao_paulo),
+        scheduler=PriceScheduler,
+        tz=sao_paulo,
+    )
+
+    with Warp(loan, datetime(2025, 12, 10, tzinfo=sao_paulo)) as w:
+        settlement = w.pay_installment(Money("19919.86"))
+        assert w.is_paid_off is True
+        assert settlement.allocations[-1].is_fully_covered is True
