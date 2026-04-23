@@ -85,7 +85,7 @@ def distribute_into_installments(
 
         total = fine_alloc + mora_alloc + interest_alloc + principal_alloc
         if total.is_positive():
-            is_covered = total >= inst.balance
+            is_covered = total + BALANCE_TOLERANCE >= inst.balance
             allocations.append(
                 Allocation(
                     installment_number=inst.number,
