@@ -4,6 +4,7 @@ from typing import List, Tuple
 
 from ..models import Allocation, Installment
 from ..money import Money
+from .constants import BALANCE_TOLERANCE
 
 
 def allocate_payment(
@@ -158,11 +159,13 @@ def _apply_coverage_fixup(
 ) -> None:
     """Override coverage flags when the loan is paid off.
 
-    If the post-payment balance is zero (or negative), any allocation
-    whose principal was fully allocated is marked as fully covered.
+    If the post-payment balance is zero, negative, or within
+    ``BALANCE_TOLERANCE`` (a sub-cent residual that will be absorbed
+    by the tolerance adjustment mechanism), any allocation whose
+    principal was fully allocated is marked as fully covered.
     """
     post_balance = ending_balance - principal_total
-    if post_balance.is_positive():
+    if post_balance > BALANCE_TOLERANCE:
         return
 
     inst_by_number = {inst.number: inst for inst in installments}
@@ -173,7 +176,7 @@ def _apply_coverage_fixup(
         if inst is None:
             continue
         principal_owed = inst.expected_principal - inst.principal_paid
-        if alloc.principal_allocated >= principal_owed:
+        if alloc.principal_allocated + BALANCE_TOLERANCE >= principal_owed:
             allocations[i] = Allocation(
                 installment_number=alloc.installment_number,
                 principal_allocated=alloc.principal_allocated,

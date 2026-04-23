@@ -206,6 +206,34 @@ def test_installment_is_fully_paid_after_tolerance_adjustment(three_installment_
 
 
 # ---------------------------------------------------------------------------
+# Coverage flag consistency with is_paid_off when tolerance absorbs residual
+# ---------------------------------------------------------------------------
+
+
+def test_allocation_is_fully_covered_when_tolerance_absorbs_residual():
+    """If is_paid_off is True, the allocation must report is_fully_covered=True.
+
+    Regression for the reported contradiction: a single-installment loan paid
+    by an amount that leaves a sub-cent principal residual.  The tolerance
+    adjustment absorbs the residual so the loan is paid off, but the
+    returned Settlement used to still say is_fully_covered=False.
+    """
+    loan = Loan(
+        Money("10000"),
+        InterestRate("6% a"),
+        [date(2025, 2, 1)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+    schedule = loan.get_original_schedule()
+    short = schedule[0].payment_amount - Money("0.01")
+
+    with Warp(loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as warped:
+        settlement = warped.pay_installment(short)
+        assert warped.is_paid_off is True
+        assert settlement.allocations[-1].is_fully_covered is True
+
+
+# ---------------------------------------------------------------------------
 # Zero tolerance -- no adjustments
 # ---------------------------------------------------------------------------
 
