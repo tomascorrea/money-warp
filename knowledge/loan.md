@@ -367,3 +367,13 @@ This aligns the coverage flag with the tolerance-adjustment mechanism: a residua
 **What was *not* changed:** `Settlement.remaining_balance` still reports the truthful principal balance after the specific payment (e.g. `0.01`). The tolerance CashFlowItem appears as a separate, auditable Settlement in `loan.settlements`. Folding the tolerance amount into the returned Settlement was considered and rejected — it would have bumped `total_paid` above `payment_amount`, violating the allocation-completeness invariant asserted in `tests/loan/settlements/test_allocation_completeness.py`.
 
 **Lesson:** When two mechanisms (`_apply_coverage_fixup` and `apply_tolerance_adjustment`) both exist to handle the same class of rounding residual, they must use the same tolerance constant. Otherwise the tolerance mechanism silently fixes the loan-level view while leaving the settlement-level view in a contradictory state.
+
+### Per-installment is_fully_covered had no tolerance on multi-installment loans (fixed 2026-04-23)
+
+**Symptom:** When a payment covered an installment within R$0.01, `allocation.is_fully_covered` returned `False`. This affected 126 installments across production loans, all with exactly `mw_gap=0.01`.
+
+**Root cause:** The initial per-installment coverage check in `distribute_into_installments` used an exact comparison: `is_covered = total >= inst.balance`. The existing `_apply_coverage_fixup` only triggers when the **entire loan** is nearly paid off (`post_balance <= BALANCE_TOLERANCE`). For multi-installment loans where only one installment is paid R$0.01 short, the remaining loan balance is far above tolerance, so the fixup never fires.
+
+**Fix:** Added `BALANCE_TOLERANCE` to the per-installment coverage check: `is_covered = total + BALANCE_TOLERANCE >= inst.balance`. This is consistent with how `_apply_coverage_fixup` already uses the same constant for principal-level checks.
+
+**Lesson:** Tolerance must be applied at the point where the decision is made, not only in a downstream fixup that may not run. A fixup gated on loan-level state cannot correct per-installment flags when only one installment is affected.
