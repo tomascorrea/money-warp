@@ -259,6 +259,22 @@ def test_allocation_is_fully_covered_with_one_cent_gap_multi_installment():
         assert settlement.allocations[0].is_fully_covered is True
 
 
+def test_allocation_not_fully_covered_with_two_cent_gap_multi_installment():
+    """is_fully_covered=False when payment is R$0.02 short — beyond tolerance."""
+    loan = Loan(
+        Money("10000"),
+        InterestRate("6% a"),
+        [date(2025, 2, 1), date(2025, 3, 1), date(2025, 4, 1)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+    schedule = loan.get_original_schedule()
+    short = schedule[0].payment_amount - Money("0.02")
+
+    with Warp(loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as warped:
+        settlement = warped.pay_installment(short)
+        assert settlement.allocations[0].is_fully_covered is False
+
+
 def test_zero_tolerance_never_adds_adjustment():
     loan = Loan(
         Money("10000"),

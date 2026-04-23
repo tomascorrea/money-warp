@@ -102,6 +102,33 @@ def test_allocation_is_fully_covered_with_one_cent_gap_multi_installment():
         assert settlement.allocations[0].is_fully_covered is True
 
 
+def test_allocation_not_fully_covered_with_two_cent_gap_multi_installment():
+    """is_fully_covered=False when payment is R$0.02 short — beyond tolerance."""
+    sao_paulo = ZoneInfo("America/Sao_Paulo")
+    loan = BillingCycleLoan(
+        principal=Money("3000.00"),
+        interest_rate=InterestRate("26.675% a.a."),
+        billing_cycle=MonthlyBillingCycle(
+            due_dates=[
+                datetime(2025, 12, 18).date(),
+                datetime(2026, 1, 18).date(),
+                datetime(2026, 2, 18).date(),
+            ],
+        ),
+        start_date=datetime(2025, 11, 13, tzinfo=sao_paulo),
+        num_installments=3,
+        disbursement_date=datetime(2025, 11, 13, tzinfo=sao_paulo),
+        scheduler=PriceScheduler,
+        tz=sao_paulo,
+    )
+    schedule = loan.get_original_schedule()
+    short = schedule.entries[0].payment_amount - Money("0.02")
+
+    with Warp(loan, datetime(2025, 12, 18, tzinfo=sao_paulo)) as w:
+        settlement = w.pay_installment(short)
+        assert settlement.allocations[0].is_fully_covered is False
+
+
 def test_allocation_is_fully_covered_when_tolerance_absorbs_residual():
     """Regression: is_paid_off=True must imply allocation.is_fully_covered=True.
 
