@@ -7,12 +7,34 @@ The external system finances IOF into the principal (``financed_iof=True``),
 so each test case uses ``financed_amount`` -- not the raw requested amount --
 as the loan principal.
 
-Grossup rounding
-----------------
-The external system's grossup can land on a ``financed_amount`` that is 1 cent
-different from our solver's result.  That 1-cent principal difference
-propagates to a 1-cent PMT difference.  We therefore assert within 1-cent
-tolerance rather than exact equality.
+Why a 1-cent tolerance
+----------------------
+Our analytic PMT matches the external's PMT to within 1 cent across the full
+fixture set: ~90% of cases are exact and the remaining ~10% drift by exactly
+1 cent in either direction (never more).
+
+This residual is **not** a numeric precision issue. An empirical sweep in
+``_investigate_csharp_precision.py`` found:
+
+- Every decimal/double/``Math.Pow`` variant (full ``Decimal``, Python ``float``
+  end-to-end, ``Decimal`` at 15-digit context) produces the *same*
+  cent-rounded PMT as the baseline. Python's arbitrary precision is **not**
+  the culprit.
+- The external uses the same day count we do: ``running_day`` matches in
+  100% of 3450 cases.
+- Among the ~10% of PMT-mismatched cases, ~97% have period-1 **interest**
+  matching the external exactly -- only the PMT itself differs by 1 cent.
+  That means accrual is correct; the 1-cent drift comes from the external
+  computing PMT via a grossup/IOF fixed-point iteration that rounds PMT along
+  the way, rather than from the closed-form analytic PMT formula we use.
+- The tiny remaining population (~0.3% of all cases, 10/3450) has period-1
+  interest that differs by 1 cent from ours, consistent with the external
+  applying a slightly different per-period rounding on the unrounded accrual
+  (e.g. ``ROUND_DOWN`` in some edge cases) that we can't reproduce without
+  access to its source.
+
+Python is not less accurate than C# here; the two engines simply quantize
+intermediates in different places.
 """
 
 import json
