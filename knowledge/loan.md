@@ -136,7 +136,7 @@ The central algorithm in `engines.compute_state`. It processes a merged timeline
 After distributing loan-level totals into per-installment allocations, two adjustments run:
 
 1. **Residual** (`_apply_residual`): ensures `sum(allocations.X) == X_total` for each component. Loan-level accrual can exceed what installments absorb (rounding, partial periods, overpayment); the residual is added to the last allocation.
-2. **Coverage fixup** (`_apply_coverage_fixup`): if the post-payment balance is within tolerance of zero, any allocation whose principal was fully allocated is marked `is_fully_covered = True`.
+2. **Coverage fixup** (`_apply_coverage_fixup`): if the post-payment balance is within `BALANCE_TOLERANCE` of zero (i.e. `post_balance <= BALANCE_TOLERANCE`), any allocation whose principal was fully allocated within the same tolerance (`principal_allocated + BALANCE_TOLERANCE >= principal_owed`) is marked `is_fully_covered = True`. Both gates use the same tolerance so that a sub-cent residual that will be absorbed by `apply_tolerance_adjustment` does not leave the allocation in a state that contradicts `Loan.is_paid_off`.
 
 ## Dynamic Amortization Schedule
 
@@ -347,3 +347,23 @@ Internal dataclass returned by `compute_state`: `settlements`, `principal_balanc
 **Scope:** Both `Loan` and `BillingCycleLoan` were affected and fixed.
 
 **Lesson:** In a forward pass that processes events chronologically, the start of the next accrual period must be the *end* of the previous one, not the timestamp of the event that triggered it. When `interest_date` and `payment_date` diverge, using the wrong one as the accrual boundary creates invisible overlap.
+
+### Coverage fixup skipped when tolerance-adjustment absorbed residual (fixed 2026-04-23)
+
+**Symptom:** `pay_installment` was called with an amount that left a 1-cent principal residual (e.g. `19523.82` principal paid via `19919.86`, where schedule vs. forward-pass rounding left `0.01` unallocated). The subsequent `apply_tolerance_adjustment` added a synthetic `0.01` payment entry, so `Loan.is_paid_off` correctly returned `True` — but the Settlement returned by `pay_installment` still reported `allocation.is_fully_covered = False`, contradicting `is_paid_off`.
+
+**Root cause:** `_apply_coverage_fixup` in `engines/allocation.py` used two exact checks:
+
+1. Outer gate: `if post_balance.is_positive(): return` — skipped the fixup entirely for any positive residual, even a sub-cent one that the tolerance mechanism was about to absorb.
+2. Per-allocation check: `if alloc.principal_allocated >= principal_owed:` — failed by the same sub-cent even when the outer gate would have passed, because the missing `0.01` lived in that specific allocation.
+
+**Fix:** Both checks now use `BALANCE_TOLERANCE`:
+
+- Outer gate: `if post_balance > BALANCE_TOLERANCE: return`.
+- Per-allocation check: `if alloc.principal_allocated + BALANCE_TOLERANCE >= principal_owed:`.
+
+This aligns the coverage flag with the tolerance-adjustment mechanism: a residual small enough to be absorbed by a tolerance CashFlowItem is small enough to count as "fully covered" for the allocation that produced it.
+
+**What was *not* changed:** `Settlement.remaining_balance` still reports the truthful principal balance after the specific payment (e.g. `0.01`). The tolerance CashFlowItem appears as a separate, auditable Settlement in `loan.settlements`. Folding the tolerance amount into the returned Settlement was considered and rejected — it would have bumped `total_paid` above `payment_amount`, violating the allocation-completeness invariant asserted in `tests/loan/settlements/test_allocation_completeness.py`.
+
+**Lesson:** When two mechanisms (`_apply_coverage_fixup` and `apply_tolerance_adjustment`) both exist to handle the same class of rounding residual, they must use the same tolerance constant. Otherwise the tolerance mechanism silently fixes the loan-level view while leaving the settlement-level view in a contradictory state.
