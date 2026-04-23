@@ -1,7 +1,6 @@
 """Tests for BillingCycleLoan payment settlements."""
 
 from datetime import datetime, timezone
-
 from zoneinfo import ZoneInfo
 
 from money_warp import (
