@@ -3,7 +3,6 @@
 import warnings
 from datetime import date, datetime, tzinfo
 from typing import Dict, List, Optional, Type, Union
-
 from zoneinfo import ZoneInfo
 
 from ..cash_flow import CashFlow, CashFlowItem, CashFlowType
