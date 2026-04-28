@@ -111,7 +111,7 @@ class BrazilianWorkingDayCalendar:
         easter_date = easter(year)
         holidays.add(easter_date - timedelta(days=48))  # Carnival Monday
         holidays.add(easter_date - timedelta(days=47))  # Carnival Tuesday
-        holidays.add(easter_date - timedelta(days=2))   # Good Friday
+        holidays.add(easter_date - timedelta(days=2))  # Good Friday
         holidays.add(easter_date + timedelta(days=60))  # Corpus Christi
 
         self._cache[year] = holidays

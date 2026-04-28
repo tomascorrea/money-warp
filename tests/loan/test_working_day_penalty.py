@@ -7,7 +7,6 @@ import pytest
 from money_warp import InterestRate, Loan, Money
 from money_warp.working_day import (
     BrazilianWorkingDayCalendar,
-    EveryDayCalendar,
     WeekendCalendar,
 )
 

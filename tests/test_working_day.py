@@ -23,14 +23,14 @@ class TestEveryDayCalendar:
     @pytest.mark.parametrize(
         "d",
         [
-            date(2025, 1, 6),   # Monday
-            date(2025, 1, 7),   # Tuesday
-            date(2025, 1, 8),   # Wednesday
-            date(2025, 1, 9),   # Thursday
+            date(2025, 1, 6),  # Monday
+            date(2025, 1, 7),  # Tuesday
+            date(2025, 1, 8),  # Wednesday
+            date(2025, 1, 9),  # Thursday
             date(2025, 1, 10),  # Friday
             date(2025, 1, 11),  # Saturday
             date(2025, 1, 12),  # Sunday
-            date(2025, 12, 25), # Christmas
+            date(2025, 12, 25),  # Christmas
         ],
         ids=["mon", "tue", "wed", "thu", "fri", "sat", "sun", "christmas"],
     )
@@ -58,13 +58,13 @@ class TestWeekendCalendar:
     @pytest.mark.parametrize(
         "d,expected",
         [
-            (date(2025, 1, 6), True),   # Monday
-            (date(2025, 1, 7), True),   # Tuesday
-            (date(2025, 1, 8), True),   # Wednesday
-            (date(2025, 1, 9), True),   # Thursday
+            (date(2025, 1, 6), True),  # Monday
+            (date(2025, 1, 7), True),  # Tuesday
+            (date(2025, 1, 8), True),  # Wednesday
+            (date(2025, 1, 9), True),  # Thursday
             (date(2025, 1, 10), True),  # Friday
-            (date(2025, 1, 11), False), # Saturday
-            (date(2025, 1, 12), False), # Sunday
+            (date(2025, 1, 11), False),  # Saturday
+            (date(2025, 1, 12), False),  # Sunday
         ],
         ids=["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
     )
@@ -75,8 +75,8 @@ class TestWeekendCalendar:
     @pytest.mark.parametrize(
         "d,expected_next",
         [
-            (date(2025, 1, 6), date(2025, 1, 7)),   # Mon -> Tue
-            (date(2025, 1, 9), date(2025, 1, 10)),   # Thu -> Fri
+            (date(2025, 1, 6), date(2025, 1, 7)),  # Mon -> Tue
+            (date(2025, 1, 9), date(2025, 1, 10)),  # Thu -> Fri
             (date(2025, 1, 10), date(2025, 1, 13)),  # Fri -> Mon
             (date(2025, 1, 11), date(2025, 1, 13)),  # Sat -> Mon
             (date(2025, 1, 12), date(2025, 1, 13)),  # Sun -> Mon
@@ -150,12 +150,9 @@ class TestBrazilianWorkingDayCalendar:
 
     def test_extra_holidays(self) -> None:
         """Extra holidays (state/municipal) are respected."""
-        extra = {date(2025, 1, 25)}  # São Paulo anniversary
+        extra = {date(2025, 7, 9)}  # Revolução Constitucionalista (SP)
         calendar = BrazilianWorkingDayCalendar(extra_holidays=extra)
-        # Jan 25, 2025 is Saturday (already non-working), use a weekday example
-        extra2 = {date(2025, 7, 9)}  # Revolução Constitucionalista (SP)
-        calendar2 = BrazilianWorkingDayCalendar(extra_holidays=extra2)
-        assert calendar2.is_working_day(date(2025, 7, 9)) is False
+        assert calendar.is_working_day(date(2025, 7, 9)) is False
 
     def test_normal_weekday_not_holiday(self, calendar: BrazilianWorkingDayCalendar) -> None:
         """A regular weekday that is not a holiday is working."""

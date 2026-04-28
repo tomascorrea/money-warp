@@ -90,9 +90,15 @@ def test_holiday_due_date_no_penalty(brazilian_calendar: BrazilianWorkingDayCale
     """Due date on a national holiday, payment on next working day: no penalty."""
     # Apr 21, 2025 is Monday (Tiradentes) -> effective = Apr 22 (Tue)
     # Use closing_day=10, payment_due_days=11 so due dates land on the 21st
-    cycle = MonthlyBillingCycle(closing_day=10, payment_due_days=11, due_dates=[
-        date(2025, 2, 21), date(2025, 3, 21), date(2025, 4, 21),
-    ])
+    cycle = MonthlyBillingCycle(
+        closing_day=10,
+        payment_due_days=11,
+        due_dates=[
+            date(2025, 2, 21),
+            date(2025, 3, 21),
+            date(2025, 4, 21),
+        ],
+    )
     loan = BillingCycleLoan(
         principal=Money("3000"),
         interest_rate=InterestRate("12% annual"),
@@ -109,7 +115,9 @@ def test_holiday_due_date_no_penalty(brazilian_calendar: BrazilianWorkingDayCale
     for i in range(2):
         loan.record_payment(
             schedule[i].payment_amount,
-            datetime(schedule[i].due_date.year, schedule[i].due_date.month, schedule[i].due_date.day, tzinfo=timezone.utc),
+            datetime(
+                schedule[i].due_date.year, schedule[i].due_date.month, schedule[i].due_date.day, tzinfo=timezone.utc
+            ),
         )
     # 3rd installment: due Apr 21 (Tiradentes), pay Apr 22 (next working day)
     s = loan.record_payment(schedule[2].payment_amount + Money("5"), datetime(2025, 4, 22, tzinfo=timezone.utc))
