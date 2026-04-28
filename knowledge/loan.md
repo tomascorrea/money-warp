@@ -49,6 +49,7 @@ The forward pass merges payment events with fine observation dates into a sorted
 | `mora_interest_rate` | `Optional[InterestRate]` | `interest_rate` | Rate used for mora (late) interest; defaults to the base rate |
 | `mora_strategy` | `MoraStrategy` | `COMPOUND` | How mora interest is computed (see Mora Strategy below) |
 | `payment_tolerance` | `Optional[Money]` | `Money("0.01")` | Per-installment rounding error tolerance (see Payment Tolerance below) |
+| `working_day_calendar` | `Optional[WorkingDayCalendar]` | `EveryDayCalendar()` | Calendar for penalty due-date deferral; when a due date falls on a non-working day, fines and mora start from the next working day |
 
 ## Payment Tolerance
 
