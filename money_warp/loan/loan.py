@@ -24,6 +24,7 @@ from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, Pr
 from ..tax.base import BaseTax, TaxResult
 from ..time_context import TimeContext
 from ..tz import ensure_aware, get_tz, tz_aware
+from ..working_day import EveryDayCalendar, WorkingDayCalendar, effective_penalty_due_date
 from .tvm import loan_calculate_anticipation, loan_irr, loan_present_value
 
 
@@ -67,6 +68,7 @@ class Loan:
         taxes: Optional[List[BaseTax]] = None,
         is_grossed_up: bool = False,
         payment_tolerance: Optional[Money] = None,
+        working_day_calendar: Optional[WorkingDayCalendar] = None,
         tz: Optional[Union[str, tzinfo]] = None,
     ) -> None:
         if not due_dates:
@@ -94,6 +96,7 @@ class Loan:
         self.fine_rate = fine_rate if fine_rate is not None else InterestRate("2% annual")
         self.grace_period_days = grace_period_days
         self.payment_tolerance = payment_tolerance if payment_tolerance is not None else Money("0.01")
+        self.working_day_calendar: WorkingDayCalendar = working_day_calendar or EveryDayCalendar()
         self.taxes: List[BaseTax] = taxes or []
         self.is_grossed_up = is_grossed_up
         self._tax_cache: Optional[Dict[str, TaxResult]] = None
@@ -345,6 +348,7 @@ class Loan:
             self.now(),
             tz=self._time_ctx.tz,
             fine_observation_dates=self._fine_observation_dates,
+            calendar=self.working_day_calendar,
         )
 
     def _payment_entries(self) -> list:
@@ -374,6 +378,7 @@ class Loan:
             self._interest,
             state.last_accrual_end,
             tz=self._time_ctx.tz,
+            calendar=self.working_day_calendar,
         )
 
     # ------------------------------------------------------------------
@@ -393,11 +398,12 @@ class Loan:
         if state.principal_balance.is_positive() and days > 0:
             covered = covered_due_date_count(state.principal_balance, self.get_original_schedule())
             next_due = self.due_dates[covered] if covered < len(self.due_dates) else None
+            penalty_next_due = effective_penalty_due_date(next_due, self.working_day_calendar) if next_due else None
             return self._interest.compute_accrued_interest(
                 days,
                 state.principal_balance,
                 self._time_ctx.tz,
-                next_due,
+                penalty_next_due,
                 state.last_accrual_end,
             )
 
@@ -463,7 +469,7 @@ class Loan:
     def is_payment_late(self, due_date: date, as_of_date: Optional[datetime] = None) -> bool:
         """Check if a payment is late considering the grace period."""
         check = as_of_date if as_of_date is not None else self.now()
-        return is_payment_late(due_date, self.grace_period_days, check, self._time_ctx.tz)
+        return is_payment_late(due_date, self.grace_period_days, check, self._time_ctx.tz, self.working_day_calendar)
 
     def _on_warp(self, target_date: datetime) -> None:
         """Hook called by Warp after overriding TimeContext."""

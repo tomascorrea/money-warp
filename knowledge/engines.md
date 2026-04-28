@@ -20,7 +20,7 @@ Before this package existed, shared computation lived in `money_warp/loan/engine
 `InterestCalculator`, `MoraStrategy` (enum), `MoraRateCallback` (type alias). Pure interest math with no dependencies on loan domain types. `compute_accrued_interest` requires a `tz: tzinfo` parameter for business-date extraction via `to_date`.
 
 ### `fines.py`
-`is_payment_late`, `compute_fines_at`. Late-payment detection and fine calculation. Both functions require a `tz: tzinfo` parameter. Also imports `BALANCE_TOLERANCE` from `constants.py`.
+`is_payment_late`, `compute_fines_at`. Late-payment detection and fine calculation. Both functions require a `tz: tzinfo` parameter and a `calendar: WorkingDayCalendar` parameter for penalty due-date adjustment (non-working day deferral). `_has_payment_near` accepts an optional `schedule_due_date` to separate the payment window date from the schedule lookup date. Also imports `BALANCE_TOLERANCE` from `constants.py`.
 
 ### `constants.py`
 `BALANCE_TOLERANCE` -- sub-cent threshold for rounding comparisons, shared across submodules.
@@ -29,7 +29,7 @@ Before this package existed, shared computation lived in `money_warp/loan/engine
 `allocate_payment` (loan-level priority: fine -> mora -> interest -> principal), `distribute_into_installments` (maps totals to per-installment reporting), `allocate_payment_into_installments` (combines both steps). Imports `Allocation` and `Installment` from `models/`. No `tz` parameter needed (operates on Money amounts only).
 
 ### `forward_pass.py`
-`LoanState` (frozen dataclass), `compute_state` (unified forward pass), `build_installments`, `covered_due_date_count`, `apply_tolerance_adjustment`. The largest submodule -- orchestrates fines, allocation, and installment snapshots into a single chronological replay. `compute_state` and `build_installments` require a `tz: tzinfo` parameter; all internal `.date()` calls use `to_date(dt, tz)` for correct business-day extraction.
+`LoanState` (frozen dataclass), `compute_state` (unified forward pass), `build_installments`, `covered_due_date_count`, `apply_tolerance_adjustment`. The largest submodule -- orchestrates fines, allocation, and installment snapshots into a single chronological replay. `compute_state` and `build_installments` require a `tz: tzinfo` parameter and a `calendar: WorkingDayCalendar` parameter; all internal `.date()` calls use `to_date(dt, tz)` for correct business-day extraction. The calendar adjusts the mora boundary via `effective_penalty_due_date(next_due, calendar)` before passing to `compute_accrued_interest`.
 
 ## Import Patterns
 
@@ -64,3 +64,4 @@ Product-specific engines only contain wiring unique to that product:
 - **Import order in `__init__.py`**: The re-export order in `engines/__init__.py` doesn't need to match the dependency order -- Python handles submodule loading correctly as long as no circular chain exists.
 - **`BALANCE_TOLERANCE`**: Defined in `constants.py` and imported by `fines.py`, `forward_pass.py`, and `allocation.py`.
 - **`tz` parameter threading**: All engine functions that extract calendar dates from datetimes require an explicit `tz: tzinfo` parameter. No function falls back to a global timezone. Loan/BCL callers pass `self._time_ctx.tz`.
+- **`calendar` parameter threading**: All penalty-related engine functions (`compute_fines_at`, `compute_state`, `build_installments`) accept a `WorkingDayCalendar` parameter. The default is `EveryDayCalendar()` (all days working). Loan/BCL callers pass `self.working_day_calendar`.

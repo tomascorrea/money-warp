@@ -41,6 +41,7 @@ The `BillingCycleLoan` models a personal loan where principal is amortized on a 
 | `mora_interest_rate` | `Optional[InterestRate]` | `interest_rate` | Base mora rate |
 | `mora_rate_resolver` | `Optional[MoraRateResolver]` | `None` | Per-cycle mora adjustment |
 | `mora_strategy` | `MoraStrategy` | `COMPOUND` | How mora compounds |
+| `working_day_calendar` | `Optional[WorkingDayCalendar]` | `EveryDayCalendar()` | Calendar for penalty due-date deferral; when a due date falls on a non-working day, fines and mora start from the next working day |
 
 ## Mora Rate Resolution
 
