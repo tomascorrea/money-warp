@@ -17,10 +17,13 @@ from ..money import Money
 from ..scheduler import PaymentSchedule, PaymentScheduleEntry
 from ..time_context import TimeContext
 from ..tz import to_date, to_datetime
+from ..working_day import EveryDayCalendar, WorkingDayCalendar, effective_penalty_due_date
 from .allocation import allocate_payment_into_installments
 from .constants import BALANCE_TOLERANCE
 from .fines import compute_fines_at
 from .interest import InterestCalculator, MoraRateCallback
+
+_DEFAULT_CALENDAR = EveryDayCalendar()
 
 
 @dataclass(frozen=True)
@@ -97,6 +100,7 @@ def _build_installments_snapshot(
     interest_calc: InterestCalculator,
     tz: tzinfo,
     last_payment_date: Optional[datetime] = None,
+    calendar: WorkingDayCalendar = _DEFAULT_CALENDAR,
 ) -> List[Installment]:
     """Build Installment objects from pre-computed allocation data."""
     covered = covered_due_date_count(principal_balance, schedule)
@@ -112,23 +116,24 @@ def _build_installments_snapshot(
         if i < covered:
             expected_mora = prior_mora
         elif i == covered and entry.due_date < to_date(as_of_date, tz):
+            penalty_due = effective_penalty_due_date(entry.due_date, calendar)
             if last_payment_date is not None:
                 total_days = (to_date(as_of_date, tz) - to_date(last_payment_date, tz)).days
                 _, accrued_mora = interest_calc.compute_accrued_interest(
                     total_days,
                     principal_balance,
                     tz,
-                    entry.due_date,
+                    penalty_due,
                     last_payment_date,
                 )
             else:
-                days_overdue = (to_date(as_of_date, tz) - entry.due_date).days
+                days_overdue = (to_date(as_of_date, tz) - penalty_due).days
                 _, accrued_mora = interest_calc.compute_accrued_interest(
                     days_overdue,
                     principal_balance,
                     tz,
-                    entry.due_date,
-                    to_datetime(entry.due_date, tz),
+                    penalty_due,
+                    to_datetime(penalty_due, tz),
                 )
             expected_mora = prior_mora + accrued_mora
         else:
@@ -177,6 +182,7 @@ def compute_state(
     tz: tzinfo,
     fine_observation_dates: Optional[List[datetime]] = None,
     mora_rate_for_event: MoraRateCallback = None,
+    calendar: WorkingDayCalendar = _DEFAULT_CALENDAR,
 ) -> LoanState:
     """Forward pass: compute all settlements and derived state from payments.
 
@@ -198,6 +204,7 @@ def compute_state(
             ``BillingCycleLoan`` to resolve per-cycle mora rates.
             ``Loan`` omits this (``None``), getting the calculator's
             default mora rate.
+        calendar: Working-day calendar for penalty due-date adjustment.
     """
     running_principal = principal
     last_payment_date = disbursement_date
@@ -224,6 +231,7 @@ def compute_state(
             fines_applied,
             processed_payments,
             tz,
+            calendar,
         )
 
         if not is_payment:
@@ -237,11 +245,12 @@ def compute_state(
 
         mora_override = mora_rate_for_event(next_due) if mora_rate_for_event else None
 
+        penalty_next_due = effective_penalty_due_date(next_due, calendar) if next_due else None
         regular, mora = interest_calc.compute_accrued_interest(
             days,
             running_principal,
             tz,
-            next_due,
+            penalty_next_due,
             last_accrual_end,
             mora_rate_override=mora_override,
         )
@@ -255,6 +264,7 @@ def compute_state(
             interest_calc,
             tz,
             last_payment_date=last_accrual_end,
+            calendar=calendar,
         )
 
         skipped = _skipped_contractual_interest(installments, next_due, to_date(interest_date, tz))
@@ -325,6 +335,7 @@ def build_installments(
     interest_calc: InterestCalculator,
     last_accrual_end: datetime,
     tz: tzinfo,
+    calendar: WorkingDayCalendar = _DEFAULT_CALENDAR,
 ) -> List[Installment]:
     """Build the installment view from settlements + schedule."""
     allocs_by_number: Dict[int, List[Allocation]] = {}
@@ -341,6 +352,7 @@ def build_installments(
         interest_calc,
         tz,
         last_payment_date=last_accrual_end,
+        calendar=calendar,
     )
 
 

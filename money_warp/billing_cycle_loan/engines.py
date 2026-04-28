@@ -17,7 +17,10 @@ from ..models import BillingCycleLoanStatement, Settlement
 from ..money import Money
 from ..scheduler import PaymentSchedule
 from ..tz import to_date
+from ..working_day import EveryDayCalendar, WorkingDayCalendar
 from .mora_rate_resolver import MoraRateResolver
+
+_DEFAULT_CALENDAR = EveryDayCalendar()
 
 # ------------------------------------------------------------------
 # Mora rate resolution
@@ -89,6 +92,7 @@ def compute_state(
     base_mora_rate: InterestRate,
     mora_rate_resolver: Optional[MoraRateResolver] = None,
     fine_observation_dates: Optional[List[datetime]] = None,
+    calendar: WorkingDayCalendar = _DEFAULT_CALENDAR,
 ) -> LoanState:
     """Forward pass for billing-cycle loans.
 
@@ -110,6 +114,7 @@ def compute_state(
         tz=tz,
         fine_observation_dates=fine_observation_dates,
         mora_rate_for_event=callback,
+        calendar=calendar,
     )
 
 

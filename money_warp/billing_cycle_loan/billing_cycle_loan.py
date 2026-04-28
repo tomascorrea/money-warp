@@ -3,6 +3,7 @@
 import warnings
 from datetime import date, datetime, tzinfo
 from typing import Dict, List, Optional, Type, Union
+
 from zoneinfo import ZoneInfo
 
 from ..billing_cycle import BaseBillingCycle
@@ -22,6 +23,7 @@ from ..money import Money
 from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
 from ..time_context import TimeContext
 from ..tz import ensure_aware, get_tz, tz_aware
+from ..working_day import EveryDayCalendar, WorkingDayCalendar, effective_penalty_due_date
 from .engines import build_statements, compute_state, resolve_mora_rate
 from .mora_rate_resolver import MoraRateResolver
 
@@ -78,6 +80,7 @@ class BillingCycleLoan:
         mora_rate_resolver: Optional[MoraRateResolver] = None,
         mora_strategy: MoraStrategy = MoraStrategy.COMPOUND,
         payment_tolerance: Optional[Money] = None,
+        working_day_calendar: Optional[WorkingDayCalendar] = None,
         tz: Optional[Union[str, tzinfo]] = None,
     ) -> None:
         if principal.is_negative() or principal.is_zero():
@@ -102,6 +105,7 @@ class BillingCycleLoan:
         self.fine_rate = fine_rate if fine_rate is not None else InterestRate("2% annual")
         self.grace_period_days = grace_period_days
         self.payment_tolerance = payment_tolerance if payment_tolerance is not None else Money("0.01")
+        self.working_day_calendar: WorkingDayCalendar = working_day_calendar or EveryDayCalendar()
 
         self._interest = InterestCalculator(
             interest_rate,
@@ -354,6 +358,7 @@ class BillingCycleLoan:
             base_mora_rate=self.mora_interest_rate,
             mora_rate_resolver=self.mora_rate_resolver,
             fine_observation_dates=self._fine_observation_dates,
+            calendar=self.working_day_calendar,
         )
 
     def _payment_entries(self) -> list:
@@ -383,6 +388,7 @@ class BillingCycleLoan:
             self._interest,
             state.last_accrual_end,
             tz=self._time_ctx.tz,
+            calendar=self.working_day_calendar,
         )
 
     @property
@@ -431,11 +437,12 @@ class BillingCycleLoan:
                 self.mora_rate_resolver,
                 self._time_ctx.tz,
             )
+            penalty_next_due = effective_penalty_due_date(next_due, self.working_day_calendar) if next_due else None
             return self._interest.compute_accrued_interest(
                 days,
                 state.principal_balance,
                 self._time_ctx.tz,
-                next_due,
+                penalty_next_due,
                 state.last_accrual_end,
                 mora_rate_override=mora_rate,
             )
@@ -498,7 +505,7 @@ class BillingCycleLoan:
     def is_late(self, due_date: date, as_of_date: Optional[datetime] = None) -> bool:
         """Check if a payment is late considering the grace period."""
         check = as_of_date if as_of_date is not None else self.now()
-        return is_payment_late(due_date, self.grace_period_days, check, self._time_ctx.tz)
+        return is_payment_late(due_date, self.grace_period_days, check, self._time_ctx.tz, self.working_day_calendar)
 
     def _on_warp(self, target_date: datetime) -> None:
         """Hook called by Warp after overriding TimeContext."""
