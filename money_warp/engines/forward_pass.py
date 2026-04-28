@@ -127,7 +127,7 @@ def _build_installments_snapshot(
                     last_payment_date,
                 )
             else:
-                days_overdue = (to_date(as_of_date, tz) - penalty_due).days
+                days_overdue = max(0, (to_date(as_of_date, tz) - penalty_due).days)
                 _, accrued_mora = interest_calc.compute_accrued_interest(
                     days_overdue,
                     principal_balance,

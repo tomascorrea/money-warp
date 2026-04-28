@@ -1,6 +1,7 @@
 """Integration tests for Loan with working_day_calendar penalty deferral."""
 
 from datetime import date, datetime, timezone
+from typing import Optional
 
 import pytest
 
@@ -8,6 +9,7 @@ from money_warp import InterestRate, Loan, Money
 from money_warp.working_day import (
     BrazilianWorkingDayCalendar,
     WeekendCalendar,
+    WorkingDayCalendar,
 )
 
 
@@ -23,7 +25,7 @@ def brazilian_calendar() -> BrazilianWorkingDayCalendar:
 
 def _make_loan(
     due_dates: list[date],
-    calendar=None,
+    calendar: Optional[WorkingDayCalendar] = None,
     grace_period_days: int = 0,
 ) -> Loan:
     """Helper to create a simple loan for testing."""
