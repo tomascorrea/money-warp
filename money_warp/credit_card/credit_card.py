@@ -1,11 +1,12 @@
 """CreditCard — revolving credit modeled as a cash-flow state machine."""
 
+from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
 
 from ..billing_cycle import BaseBillingCycle, MonthlyBillingCycle, Statement
-from ..cash_flow import CashFlow, CashFlowItem
+from ..cash_flow import CashFlow, CashFlowEntry, CashFlowItem
 from ..interest_rate import InterestRate
 from ..money import Money
 from ..time_context import TimeContext
@@ -218,6 +219,21 @@ class CreditCard:
         """Whether the balance is zero (or overpaid)."""
         bal = self.current_balance
         return bal.is_zero() or bal.is_negative()
+
+    def get_cash_flow(self) -> List[CashFlowEntry]:
+        """Return a signed cash-flow view of all resolved transactions.
+
+        Debits (purchases, interest, fines) are positive.
+        Credits (payments, refunds) are negated to negative.
+        Items are sorted by datetime.
+        """
+        self._close_billing_cycles()
+        result = []
+        for entry in self.cash_flow.items():
+            if not entry.category.isdisjoint(_CREDIT_CATEGORIES):
+                entry = replace(entry, amount=-entry.amount)
+            result.append(entry)
+        return sorted(result, key=lambda e: e.datetime)
 
     @property
     def statements(self) -> List[Statement]:
