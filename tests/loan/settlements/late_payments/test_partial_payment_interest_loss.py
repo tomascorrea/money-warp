@@ -53,10 +53,10 @@ def partial_then_full(two_installment_loan):
 
 
 def test_total_interest_equals_scheduled(partial_then_full):
-    """Total interest across all settlements equals the schedule total (12.16)."""
+    """Total interest across all settlements equals 16.18 (contractual + accrued)."""
     _, settlements = partial_then_full
     total = settlements[0].interest_paid + settlements[1].interest_paid
-    assert total == Money("12.16")
+    assert total == Money("16.18")
 
 
 def test_p1_collects_both_installments_interest(partial_then_full):
@@ -66,33 +66,32 @@ def test_p1_collects_both_installments_interest(partial_then_full):
 
 
 def test_p1_first_installment_gets_full_interest(partial_then_full):
-    """Inst 1 gets its full contractual interest in P1."""
+    """Inst 1 absorbs all interest in P1 (12.16) via absorption from inst 2's pool."""
     _, settlements = partial_then_full
     a = settlements[0].allocations[0]
     assert a.installment_number == 1
-    assert a.interest_allocated == Money("8.14")
+    assert a.interest_allocated == Money("12.16")
 
 
-def test_p1_second_installment_gets_full_interest(partial_then_full):
-    """Inst 2 gets its full contractual interest from P1 (loan-level pays all interest first)."""
+def test_p1_has_no_second_installment_allocation(partial_then_full):
+    """P1 only covers inst 1 after absorption — no allocation for inst 2."""
     _, settlements = partial_then_full
-    a = settlements[0].allocations[1]
-    assert a.installment_number == 2
-    assert a.interest_allocated == Money("4.02")
+    inst2_allocs = [a for a in settlements[0].allocations if a.installment_number == 2]
+    assert len(inst2_allocs) == 0
 
 
-def test_p2_collects_no_interest(partial_then_full):
-    """P2 has no remaining interest (P1 already collected all contractual interest)."""
+def test_p2_collects_remaining_interest(partial_then_full):
+    """P2 collects inst 2's contractual interest (4.02), not absorbed by P1."""
     _, settlements = partial_then_full
-    assert settlements[1].interest_paid == Money("0.00")
+    assert settlements[1].interest_paid == Money("4.02")
 
 
-def test_p2_second_installment_gets_no_interest(partial_then_full):
-    """Inst 2's allocation in P2 has zero interest (already collected in P1)."""
+def test_p2_second_installment_gets_full_interest(partial_then_full):
+    """Inst 2's allocation in P2 gets its full contractual interest (4.02)."""
     _, settlements = partial_then_full
     inst2_allocs = [a for a in settlements[1].allocations if a.installment_number == 2]
     assert len(inst2_allocs) == 1
-    assert inst2_allocs[0].interest_allocated == Money("0.00")
+    assert inst2_allocs[0].interest_allocated == Money("4.02")
 
 
 def test_inst2_total_interest_equals_contractual(partial_then_full):

@@ -36,25 +36,25 @@ def test_single_late_payment_first_installment(loan_with_fine):
 
 
 def test_single_late_payment_second_installment(loan_with_fine):
-    """Second installment gets only principal, not fully covered."""
+    """Second installment absorbs extra principal from absorption, fully covered."""
     with Warp(loan_with_fine, datetime(2025, 2, 16, tzinfo=timezone.utc)) as w:
         settlement = w.pay_installment(Money("800.00"))
 
     second = settlement.allocations[1]
-    assert second.principal_allocated == Money("297.18")
+    assert second.principal_allocated == Money("303.62")
     assert second.interest_allocated == Money("0.00")
     assert second.fine_allocated == Money("0.00")
     assert second.mora_allocated == Money("0.00")
-    assert second.is_fully_covered is False
+    assert second.is_fully_covered is True
 
 
 def test_single_late_payment_third_installment(loan_with_fine):
-    """Third installment gets remaining principal, not fully covered."""
+    """Third installment gets less principal after absorption, not fully covered."""
     with Warp(loan_with_fine, datetime(2025, 2, 16, tzinfo=timezone.utc)) as w:
         settlement = w.pay_installment(Money("800.00"))
 
     third = settlement.allocations[2]
-    assert third.principal_allocated == Money("187.94")
+    assert third.principal_allocated == Money("181.50")
     assert third.interest_allocated == Money("0.00")
     assert third.fine_allocated == Money("0.00")
     assert third.mora_allocated == Money("0.00")

@@ -83,22 +83,22 @@ def test_allocation_count(nonmidnight_loan):
 
 
 def test_second_installment_allocation(nonmidnight_loan):
-    """Second installment receives full scheduled principal, not fully covered."""
+    """Second installment fully covered via absorption from later pools."""
     with Warp(nonmidnight_loan, datetime(2026, 3, 6, 19, 53, 0, tzinfo=timezone.utc)) as w:
         settlement = w.pay_installment(Money("800"))
 
     second = settlement.allocations[1]
-    assert second.principal_allocated == Money("246.43")
+    assert second.principal_allocated == Money("317.76")
     assert second.interest_allocated == Money("0.00")
-    assert second.is_fully_covered is False
+    assert second.is_fully_covered is True
 
 
 def test_third_installment_allocation(nonmidnight_loan):
-    """Third installment receives remaining principal."""
+    """Third installment receives reduced principal after absorption, not fully covered."""
     with Warp(nonmidnight_loan, datetime(2026, 3, 6, 19, 53, 0, tzinfo=timezone.utc)) as w:
         settlement = w.pay_installment(Money("800"))
 
     third = settlement.allocations[2]
-    assert third.principal_allocated == Money("235.81")
+    assert third.principal_allocated == Money("164.48")
     assert third.interest_allocated == Money("0.00")
     assert third.is_fully_covered is False

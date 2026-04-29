@@ -36,25 +36,25 @@ def test_on_time_single_payment_first_installment(three_installment_loan):
 
 
 def test_on_time_single_payment_second_installment(three_installment_loan):
-    """Second installment receives principal only, not fully covered."""
+    """Second installment fully covered via absorption from later pools."""
     with Warp(three_installment_loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as w:
         settlement = w.pay_installment(Money("800.00"))
 
     second = settlement.allocations[1]
-    assert second.principal_allocated == Money("297.18")
+    assert second.principal_allocated == Money("303.62")
     assert second.interest_allocated == Money("0.00")
     assert second.fine_allocated == Money("0.00")
     assert second.mora_allocated == Money("0.00")
-    assert second.is_fully_covered is False
+    assert second.is_fully_covered is True
 
 
 def test_on_time_single_payment_third_installment(three_installment_loan):
-    """Third installment receives remaining principal, not fully covered."""
+    """Third installment receives reduced principal after absorption, not fully covered."""
     with Warp(three_installment_loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as w:
         settlement = w.pay_installment(Money("800.00"))
 
     third = settlement.allocations[2]
-    assert third.principal_allocated == Money("199.20")
+    assert third.principal_allocated == Money("192.76")
     assert third.interest_allocated == Money("0.00")
     assert third.fine_allocated == Money("0.00")
     assert third.mora_allocated == Money("0.00")

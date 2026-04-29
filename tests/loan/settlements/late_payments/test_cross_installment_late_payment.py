@@ -94,19 +94,19 @@ def test_p2_second_installment(late_cross_settlements):
     assert a.installment_number == 2
     assert a.principal_allocated == Money("112.06")
     assert a.interest_allocated == Money("5.64")
-    assert a.fine_allocated == Money("6.07")
+    assert a.fine_allocated == Money("6.88")
     assert a.mora_allocated == Money("7.20")
     assert a.is_fully_covered is True
 
 
 def test_p2_third_installment(late_cross_settlements):
-    """Inst 3 gets its fine, full principal, and spill — covered (loan fully paid)."""
+    """Inst 3 gets its fine, full principal — covered (loan fully paid)."""
     _, settlements = late_cross_settlements
     a = settlements[1].allocations[1]
     assert a.installment_number == 3
     assert a.principal_allocated == Money("362.96")
     assert a.interest_allocated == Money("0.00")
-    assert a.fine_allocated == Money("6.07")
+    assert a.fine_allocated == Money("5.27")
     assert a.mora_allocated == Money("0.00")
     assert a.is_fully_covered is True
 

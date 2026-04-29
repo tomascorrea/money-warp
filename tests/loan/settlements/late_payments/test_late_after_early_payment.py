@@ -53,7 +53,7 @@ def test_late_after_early_first_installment(three_installment_loan):
 
 
 def test_late_after_early_second_installment(three_installment_loan):
-    """Inst 2 gets its fine, mora, full interest, and partial principal."""
+    """Inst 2 gets its fine, mora, full interest, and principal — fully covered via absorption."""
     with Warp(three_installment_loan, datetime(2025, 1, 20, tzinfo=timezone.utc)) as w:
         w.pay_installment(Money("400.00"))
 
@@ -62,15 +62,15 @@ def test_late_after_early_second_installment(three_installment_loan):
 
     second = settlement.allocations[1]
     assert second.installment_number == 2
-    assert second.principal_allocated == Money("200.80")
+    assert second.principal_allocated == Money("201.84")
     assert second.interest_allocated == Money("5.40")
     assert second.fine_allocated == Money("6.07")
     assert second.mora_allocated == Money("2.72")
-    assert second.is_fully_covered is False
+    assert second.is_fully_covered is True
 
 
 def test_late_after_early_third_installment(three_installment_loan):
-    """Inst 3 gets leftover principal and partial interest."""
+    """Inst 3 gets leftover principal only."""
     with Warp(three_installment_loan, datetime(2025, 1, 20, tzinfo=timezone.utc)) as w:
         w.pay_installment(Money("400.00"))
 
@@ -79,7 +79,7 @@ def test_late_after_early_third_installment(three_installment_loan):
 
     third = settlement.allocations[2]
     assert third.installment_number == 3
-    assert third.principal_allocated == Money("78.94")
+    assert third.principal_allocated == Money("77.89")
     assert third.interest_allocated == Money("0.00")
     assert third.fine_allocated == Money("0.00")
     assert third.mora_allocated == Money("0.00")
