@@ -41,6 +41,15 @@ Date-range queries in `_sum_category_between` are data slicing (category sums wi
 
 All validate positive amounts. `purchase` also checks `credit_limit` if set. `date` defaults to `self.now()` (Warp-aware). Transaction methods do NOT close billing cycles — cycle closing is lazy, triggered only by derived properties.
 
+## get_cash_flow()
+
+`get_cash_flow() -> List[CashFlowEntry]` returns a signed cash-flow view of all resolved transactions. Triggers `_close_billing_cycles()` first to materialise interest and fines, then iterates resolved entries:
+
+- Debits (purchase, interest_charge, fine_charge) — returned with original positive amount
+- Credits (payment, refund) — returned with negated (negative) amount
+
+Items are sorted by datetime. Uses `dataclasses.replace()` to create copies of frozen `CashFlowEntry` objects with flipped signs — does not mutate the underlying cash flow.
+
 ## CashFlowItem Categories
 
 | Category | Effect on Balance | Origin |

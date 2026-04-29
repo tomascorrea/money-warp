@@ -2,14 +2,9 @@
 
 from datetime import datetime, timezone
 
-import pytest
-
 from money_warp import Money, Warp
 
-xfail_cash_flow = pytest.mark.xfail(reason="get_cash_flow() not yet implemented")
 
-
-@xfail_cash_flow
 def test_cash_flow_contains_purchase(card):
     card.purchase(Money("100.00"), datetime(2024, 1, 5, tzinfo=timezone.utc), "Test")
     with Warp(card, datetime(2024, 1, 6, tzinfo=timezone.utc)) as w:
@@ -20,7 +15,6 @@ def test_cash_flow_contains_purchase(card):
         assert "purchase" in items[0].category
 
 
-@xfail_cash_flow
 def test_cash_flow_payment_is_negative(card):
     card.pay(Money("200.00"), datetime(2024, 1, 5, tzinfo=timezone.utc))
     with Warp(card, datetime(2024, 1, 6, tzinfo=timezone.utc)) as w:
@@ -29,7 +23,6 @@ def test_cash_flow_payment_is_negative(card):
         assert items[0].amount == Money("-200.00")
 
 
-@xfail_cash_flow
 def test_cash_flow_refund_is_negative(card):
     card.refund(Money("50.00"), datetime(2024, 1, 5, tzinfo=timezone.utc))
     with Warp(card, datetime(2024, 1, 6, tzinfo=timezone.utc)) as w:
@@ -38,7 +31,6 @@ def test_cash_flow_refund_is_negative(card):
         assert items[0].amount == Money("-50.00")
 
 
-@xfail_cash_flow
 def test_cash_flow_includes_interest_charge(card):
     card.purchase(Money("1000.00"), datetime(2024, 1, 10, tzinfo=timezone.utc))
     with Warp(card, datetime(2024, 2, 29, tzinfo=timezone.utc)) as w:
@@ -48,7 +40,6 @@ def test_cash_flow_includes_interest_charge(card):
         assert interest_items[0].amount.is_positive()
 
 
-@xfail_cash_flow
 def test_cash_flow_includes_fine_charge(card):
     card.purchase(Money("500.00"), datetime(2024, 1, 10, tzinfo=timezone.utc))
     with Warp(card, datetime(2024, 2, 29, tzinfo=timezone.utc)) as w:
