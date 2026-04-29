@@ -255,18 +255,29 @@ Before creating the PR, update the project's knowledge files:
 git add knowledge/
 git commit -m "docs: update knowledge for <feature>"
 ```
+
 ## Step 8: Verify
 
-Before creating the PR, run the full test suite and linter to confirm nothing is broken:
+Before creating the PR, run quality checks to confirm nothing is broken:
 
-1. Run the project's test suite (e.g., `pytest`, `go test`, `flutter test`). **All tests must pass.**
-2. Run the project's linter/formatter checks (e.g., `ruff check .`, `black --check .`).
-3. If tests or lints fail, fix the issues and re-run until green.
-4. Do **not** proceed to the PR step with failing tests.
+1. **Discover quality commands** — if this is the first verify run in the session, follow the Quality Command Discovery protocol in the quality-assurance skill (Section B) to find the project's actual quality commands (Makefile targets, CI config, or per-language defaults).
+2. **Run the discovered commands.** All checks must pass.
+3. If any check fails, fix the issues and re-run until green.
+4. Do **not** proceed to the PR step with failing checks.
 
 ## Step 9: Pull Request
 
 When all tasks are complete and tests pass:
+
+Check if a `make-a-pull-request` skill is available at `.cursor/skills/make-a-pull-request/SKILL.md`.
+
+**If the skill exists:**
+
+1. Read the skill file.
+2. Follow its instructions, passing the issue number and title already known from the workflow.
+3. Store the returned PR number and URL for subsequent steps.
+
+**If the skill does not exist**, create the PR inline:
 
 1. Ensure all changes are committed
 2. Push the branch: `git push`
@@ -315,7 +326,139 @@ If the subagent fails or times out, inform the user that the automated review co
 
 If the skill does not exist, skip this step.
 
-## Step 11: Review & Merge
+## Step 11: Address Review Comments
+
+After the code review is posted (or when resuming after a human review), resolve review comments in a loop. This step handles comments from any source — the automated review agent, human reviewers, or other bots.
+
+If no code-review skill is installed and no review has been posted yet, skip to Step 12.
+
+### 11.1 Fetch unresolved review threads
+
+Query all review threads and filter to unresolved ones:
+
+**Via MCP (if a GraphQL tool is available):**
+
+Use the repository's pull request review threads query.
+
+**Via CLI:**
+
+```bash
+gh api graphql -f query='
+  query {
+    repository(owner: "<owner>", name: "<repo>") {
+      pullRequest(number: <number>) {
+        reviewThreads(first: 100) {
+          nodes {
+            id
+            isResolved
+            comments(first: 10) {
+              nodes {
+                body
+                path
+                line
+                databaseId
+                author { login }
+              }
+            }
+          }
+        }
+      }
+    }
+  }'
+```
+
+Filter to threads where `isResolved` is `false`. If no unresolved threads remain, skip to Step 12.
+
+### 11.2 Triage each comment
+
+For each unresolved thread, read the first comment (the review comment) and:
+
+1. Read the comment body, file path, and line number.
+2. Read the surrounding code to understand the context.
+3. Classify the comment:
+   - **Agree** — the feedback is correct and actionable. The agent is confident it can fix it.
+   - **Questionable** — the comment might be wrong, is subjective, conflicts with project conventions, or the agent is unsure. This includes comments from unknown authors or comments that suggest architectural changes.
+   - **Nit** — minor stylistic preference that does not affect correctness.
+
+### 11.3 Handle agreed comments
+
+For comments classified as **agree**:
+
+1. Make the code change.
+2. Reply to the comment explaining what was done:
+
+**Via CLI:**
+
+```bash
+gh api repos/<owner>/<repo>/pulls/<number>/comments \
+  -X POST \
+  -f body="Fixed — <brief explanation of the change>." \
+  -F in_reply_to=<comment_database_id>
+```
+
+3. Resolve the thread:
+
+```bash
+gh api graphql -f query='
+  mutation {
+    resolveReviewThread(input: {threadId: "<thread_id>"}) {
+      thread { isResolved }
+    }
+  }'
+```
+
+### 11.4 Handle questionable comments
+
+For comments classified as **questionable**, present them to the user:
+
+```
+prompt: "Review comment on `<file>:<line>` by @<author>:\n\n> <comment body>\n\nWhat should we do?"
+options:
+  - Fix it as suggested
+  - Skip — reply explaining why
+  - Let me write a custom response
+```
+
+- **Fix it as suggested**: treat as an agreed comment (11.3).
+- **Skip**: reply with a brief rationale and resolve the thread. Ask the user for the rationale if not obvious.
+- **Custom response**: ask the user for the response text, post it as a reply, and leave the thread **unresolved** for the reviewer to follow up.
+
+### 11.5 Handle nits
+
+For comments classified as **nit**, use `AskQuestion`:
+
+```
+prompt: "Nit on `<file>:<line>` by @<author>:\n\n> <comment body>\n\nAddress it?"
+options:
+  - Yes, fix it
+  - No, skip it
+```
+
+If yes, treat as agreed (11.3). If no, reply acknowledging the nit and resolve the thread.
+
+### 11.6 Commit, push, and re-review
+
+After all unresolved threads have been processed:
+
+1. If any code changes were made, commit and push:
+
+```bash
+git add -A
+git commit -m "fix: address review comments"
+git push
+```
+
+2. If a code-review skill is available, re-run the code review agent (same as Step 10) to check if the fixes introduced new issues.
+
+3. Return to 11.1 to check for new unresolved threads.
+
+### 11.7 Loop termination
+
+The loop exits when:
+- No unresolved threads with severity `critical` or `suggestion` remain.
+- Maximum **3 iterations** have been reached. If the max is reached, warn the user and proceed to Step 12.
+
+## Step 12: Review & Merge
 
 Before presenting the options, check if a code-review skill is available at `.cursor/skills/code-review/SKILL.md`.
 
@@ -342,7 +485,7 @@ options:
 
 If the subagent fails or times out, inform the user that the review could not be completed and suggest running it manually later (e.g., "review this PR").
 
-After the review completes (or fails), present the Step 11 AskQuestion again so the user can check status, merge, or take other actions.
+After the review completes (or fails), return to Step 11 (Address Review Comments) to process any new comments, then present the Step 12 AskQuestion again.
 
 ### If "Check review status now"
 
@@ -444,13 +587,13 @@ git checkout main && git pull
 
 Tell the user they can resume this step by asking to check the PR status or merge. End the current session here — the Release step runs after the PR is merged.
 
-## Step 12: Release
+## Step 13: Release
 
 > This step only applies to projects with a release flow.
 
 After the PR is merged:
 
-### 12.1 Determine the next version
+### 13.1 Determine the next version
 
 1. Detect the latest release tag:
 
@@ -474,7 +617,7 @@ gh release list --limit 1
 
    Use the issue labels and nature of changes to decide.
 
-### 12.2 Bump the version in source files
+### 13.2 Bump the version in source files
 
 The version in source files **must** match the release tag. Skipping this step causes CI publish failures (e.g., PyPI rejects duplicate versions).
 
@@ -507,7 +650,7 @@ git commit -m "bump: v<version>"
 git push
 ```
 
-### 12.3 Create the release
+### 13.3 Create the release
 
 > No GitHub MCP equivalent exists for release creation — use `gh` CLI regardless of the detected method.
 
@@ -515,7 +658,7 @@ git push
 gh release create v<version> --generate-notes --title "v<version>"
 ```
 
-### 12.4 Verify the release pipeline
+### 13.4 Verify the release pipeline
 
 After creating the release, check that the triggered CI workflow succeeds:
 
@@ -536,7 +679,7 @@ If the workflow is still running, wait and re-check. If it fails, tell the user 
 
 Tell the user the release has been created and whether the publish pipeline succeeded.
 
-## Step 13: End
+## Step 14: End
 
 Summarize what was accomplished:
 - Issue number and title
