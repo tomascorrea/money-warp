@@ -96,21 +96,21 @@ def test_p2_allocation_count(cross_installment_settlements):
 
 
 def test_p2_second_installment(cross_installment_settlements):
-    """Inst 2 gets remaining principal (100.80) and partial interest (4.32)."""
+    """Inst 2 fully covered via absorption: principal (102.92) and interest (4.32)."""
     _, settlements = cross_installment_settlements
     a = settlements[1].allocations[0]
     assert a.installment_number == 2
-    assert a.principal_allocated == Money("100.80")
+    assert a.principal_allocated == Money("102.92")
     assert a.interest_allocated == Money("4.32")
-    assert a.is_fully_covered is False
+    assert a.is_fully_covered is True
 
 
 def test_p2_third_installment(cross_installment_settlements):
-    """Inst 3 gets excess principal (294.88), not fully covered."""
+    """Inst 3 gets reduced principal (292.76) after absorption, not fully covered."""
     _, settlements = cross_installment_settlements
     a = settlements[1].allocations[1]
     assert a.installment_number == 3
-    assert a.principal_allocated == Money("294.88")
+    assert a.principal_allocated == Money("292.76")
     assert a.interest_allocated == Money("0.00")
     assert a.is_fully_covered is False
 
@@ -124,15 +124,14 @@ def test_final_installment_one_paid(cross_installment_settlements):
     assert loan.installments[0].is_fully_paid is True
 
 
-def test_final_installment_two_not_paid(cross_installment_settlements):
-    """Installment 2 has remaining interest (actual accrual < scheduled)."""
+def test_final_installment_two_paid(cross_installment_settlements):
+    """Installment 2 is fully paid after absorption covered the shortfall."""
     loan, _ = cross_installment_settlements
-    assert loan.installments[1].is_fully_paid is False
-    assert loan.installments[1].balance == Money("2.12")
+    assert loan.installments[1].is_fully_paid is True
 
 
 def test_final_installment_three_not_paid(cross_installment_settlements):
     """Installment 3 still owes interest + partial principal."""
     loan, _ = cross_installment_settlements
     assert loan.installments[2].is_fully_paid is False
-    assert loan.installments[2].balance == Money("8.75")
+    assert loan.installments[2].balance == Money("10.87")

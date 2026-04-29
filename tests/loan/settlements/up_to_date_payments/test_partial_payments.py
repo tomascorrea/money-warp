@@ -142,13 +142,13 @@ def test_p4_second_installment(six_partial_settlements):
 
 
 def test_p5_second_installment(six_partial_settlements):
-    """P5 on the second due date pays inst 2's remaining principal and spills to inst 3."""
+    """P5 on the second due date fully covers inst 2 via absorption and spills to inst 3."""
     _, settlements = six_partial_settlements
     first_alloc = settlements[4].allocations[0]
     assert first_alloc.installment_number == 2
-    assert first_alloc.principal_allocated == Money("97.17")
+    assert first_alloc.principal_allocated == Money("97.24")
     assert first_alloc.interest_allocated == Money("0.00")
-    assert first_alloc.is_fully_covered is False
+    assert first_alloc.is_fully_covered is True
 
 
 # --- Payment 6: R$200 on Apr 1 (inst 3 remains partially unpaid) ---
@@ -193,4 +193,4 @@ def test_final_installment_three_not_paid(six_partial_settlements):
     """Installment 3 still has a remaining balance (R$910 < total owed)."""
     loan, _ = six_partial_settlements
     assert loan.installments[2].is_fully_paid is False
-    assert loan.installments[2].balance == Money("0.87")
+    assert loan.installments[2].balance == Money("0.94")

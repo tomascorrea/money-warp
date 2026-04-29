@@ -4,9 +4,8 @@ Scenario:
   - 6-installment loan (Mar-Aug 2025), all overdue by Aug 15
   - Single partial payment equal to one scheduled installment amount (354.34)
   - Loan-level allocation prioritises: fines -> mora -> interest -> principal
-  - All six installments receive fines and interest allocations because the
-    loan-level step pays all accrued fines and interest before any principal
-  - Only inst 1 receives principal (what remains after fines, mora, interest)
+  - Absorption pulls fines, mora, and interest from later installments' pools
+    into inst 1, so only one allocation is created (all money goes to inst 1)
 """
 
 from datetime import date, datetime, timezone
@@ -76,55 +75,21 @@ def test_settlement_remaining_balance(overdue_settlement):
     assert s.remaining_balance == Money("1922.45")
 
 
-def test_six_installments_receive_allocation(overdue_settlement):
-    """All six installments receive allocations (fines and interest distributed to each)."""
+def test_single_installment_receives_allocation(overdue_settlement):
+    """Absorption funnels all money into inst 1 — only one allocation created."""
     _, s = overdue_settlement
-    assert len(s.allocations) == 6
+    assert len(s.allocations) == 1
     assert s.allocations[0].installment_number == 1
-    assert s.allocations[1].installment_number == 2
-    assert s.allocations[2].installment_number == 3
-    assert s.allocations[3].installment_number == 4
-    assert s.allocations[4].installment_number == 5
-    assert s.allocations[5].installment_number == 6
 
 
 def test_first_installment_allocation_breakdown(overdue_settlement):
+    """Inst 1 absorbs all fines, mora, interest, and residual principal."""
     _, s = overdue_settlement
     a = s.allocations[0]
-    assert a.fine_allocated == Money("7.09")
+    assert a.fine_allocated == Money("42.52")
     assert a.mora_allocated == Money("108.21")
-    assert a.interest_allocated == Money("33.28")
+    assert a.interest_allocated == Money("126.06")
     assert a.principal_allocated == Money("77.55")
-    assert a.is_fully_covered is False
-
-
-def test_second_installment_allocation_breakdown(overdue_settlement):
-    """Inst 2 gets its contractual interest and fine."""
-    _, s = overdue_settlement
-    a = s.allocations[1]
-    assert a.fine_allocated == Money("7.09")
-    assert a.interest_allocated == Money("30.96")
-    assert a.principal_allocated == Money("0.00")
-    assert a.is_fully_covered is False
-
-
-def test_third_installment_allocation_breakdown(overdue_settlement):
-    """Inst 3 gets its contractual interest and fine."""
-    _, s = overdue_settlement
-    a = s.allocations[2]
-    assert a.fine_allocated == Money("7.09")
-    assert a.interest_allocated == Money("24.18")
-    assert a.principal_allocated == Money("0.00")
-    assert a.is_fully_covered is False
-
-
-def test_fourth_installment_allocation_breakdown(overdue_settlement):
-    """Inst 4 gets its full contractual interest and fine."""
-    _, s = overdue_settlement
-    a = s.allocations[3]
-    assert a.fine_allocated == Money("7.09")
-    assert a.interest_allocated == Money("18.91")
-    assert a.principal_allocated == Money("0.00")
     assert a.is_fully_covered is False
 
 

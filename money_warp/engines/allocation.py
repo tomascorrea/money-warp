@@ -86,6 +86,20 @@ def distribute_into_installments(
         total = fine_alloc + mora_alloc + interest_alloc + principal_alloc
         if total.is_positive():
             is_covered = total + BALANCE_TOLERANCE >= inst.balance
+
+            if not is_covered:
+                shortfall = inst.balance - total
+                fine_extra, shortfall, fine_remaining = _absorb(shortfall, fine_remaining)
+                mora_extra, shortfall, mora_remaining = _absorb(shortfall, mora_remaining)
+                interest_extra, shortfall, interest_remaining = _absorb(shortfall, interest_remaining)
+                principal_extra, shortfall, principal_remaining = _absorb(shortfall, principal_remaining)
+                fine_alloc = fine_alloc + fine_extra
+                mora_alloc = mora_alloc + mora_extra
+                interest_alloc = interest_alloc + interest_extra
+                principal_alloc = principal_alloc + principal_extra
+                total = fine_alloc + mora_alloc + interest_alloc + principal_alloc
+                is_covered = total + BALANCE_TOLERANCE >= inst.balance
+
             allocations.append(
                 Allocation(
                     installment_number=inst.number,
@@ -99,7 +113,17 @@ def distribute_into_installments(
 
     _apply_residual(allocations, installments, fine_total, mora_total, interest_total, principal_total)
     _apply_coverage_fixup(allocations, installments, ending_balance, principal_total)
+    _enforce_sequential_coverage(allocations)
     return allocations
+
+
+def _absorb(shortfall: Money, pool: Money) -> Tuple[Money, Money, Money]:
+    """Pull up to *shortfall* from *pool*.
+
+    Returns ``(absorbed, remaining_shortfall, remaining_pool)``.
+    """
+    grab = Money(min(shortfall.raw_amount, pool.raw_amount))
+    return grab, shortfall - grab, pool - grab
 
 
 def _apply_residual(
@@ -185,6 +209,29 @@ def _apply_coverage_fixup(
                 fine_allocated=alloc.fine_allocated,
                 is_fully_covered=True,
             )
+
+
+def _enforce_sequential_coverage(allocations: List[Allocation]) -> None:
+    """Ensure coverage flags are monotonically ordered.
+
+    If allocation N is not fully covered, all subsequent allocations
+    must also be marked as not covered.  This prevents a later
+    installment from appearing paid while an earlier one is still
+    outstanding.
+    """
+    seen_uncovered = False
+    for i, alloc in enumerate(allocations):
+        if seen_uncovered and alloc.is_fully_covered:
+            allocations[i] = Allocation(
+                installment_number=alloc.installment_number,
+                principal_allocated=alloc.principal_allocated,
+                interest_allocated=alloc.interest_allocated,
+                mora_allocated=alloc.mora_allocated,
+                fine_allocated=alloc.fine_allocated,
+                is_fully_covered=False,
+            )
+        if not alloc.is_fully_covered:
+            seen_uncovered = True
 
 
 def allocate_payment_into_installments(
