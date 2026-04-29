@@ -10,10 +10,10 @@ for arbitrary loan parameters, payment amounts, and timing.
 
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from zoneinfo import ZoneInfo
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from zoneinfo import ZoneInfo
 
 from money_warp import (
     BillingCycleLoan,
@@ -21,8 +21,8 @@ from money_warp import (
     InterestRate,
     InvertedPriceScheduler,
     Loan,
-    MonthlyBillingCycle,
     Money,
+    MonthlyBillingCycle,
     PriceScheduler,
     Settlement,
     Warp,
@@ -98,14 +98,16 @@ def test_high_mora_does_not_cover_later_installment_before_earlier():
     loan = BillingCycleLoan(
         principal=Money("6554.31"),
         interest_rate=InterestRate("1.99% a.m."),
-        billing_cycle=MonthlyBillingCycle(due_dates=[
-            date(2025, 2, 3),
-            date(2025, 3, 3),
-            date(2025, 4, 3),
-            date(2025, 5, 3),
-            date(2025, 6, 3),
-            date(2025, 7, 3),
-        ]),
+        billing_cycle=MonthlyBillingCycle(
+            due_dates=[
+                date(2025, 2, 3),
+                date(2025, 3, 3),
+                date(2025, 4, 3),
+                date(2025, 5, 3),
+                date(2025, 6, 3),
+                date(2025, 7, 3),
+            ]
+        ),
         start_date=datetime(2025, 1, 21, tzinfo=SAO_PAULO),
         num_installments=6,
         disbursement_date=datetime(2025, 1, 21, tzinfo=SAO_PAULO),
