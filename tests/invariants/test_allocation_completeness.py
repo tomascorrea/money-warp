@@ -9,6 +9,7 @@ from strategies import (
     DISBURSEMENT,
     annual_rate_st,
     build_loan,
+    make_payment_amount,
     payment_fraction_st,
     principal_st,
     scheduler_st,
@@ -64,9 +65,7 @@ def test_on_time_payment_fully_allocated(principal, annual_rate, num_installment
     )
 
     with Warp(loan, due_date_dt) as warped:
-        amount = Money(
-            str((warped.current_balance.raw_amount * Decimal(str(payment_fraction))).quantize(Decimal("0.01")))
-        )
+        amount = make_payment_amount(warped.current_balance, payment_fraction)
         if amount.is_zero() or amount.is_negative():
             return
         settlement = warped.pay_installment(amount)
@@ -99,10 +98,7 @@ def test_early_payment_fully_allocated(
         return
 
     with Warp(loan, early_dt) as warped:
-        amount = Money(
-            str((warped.current_balance.raw_amount * Decimal(str(payment_fraction))).quantize(Decimal("0.01")))
-        )
-
+        amount = make_payment_amount(warped.current_balance, payment_fraction)
         settlement = warped.pay_installment(amount)
 
     _assert_fully_allocated(settlement)
@@ -131,10 +127,7 @@ def test_late_payment_with_fines_fully_allocated(
     late_dt = due_date_dt + timedelta(days=days_late)
 
     with Warp(loan, late_dt) as warped:
-        amount = Money(
-            str((warped.current_balance.raw_amount * Decimal(str(payment_fraction))).quantize(Decimal("0.01")))
-        )
-
+        amount = make_payment_amount(warped.current_balance, payment_fraction)
         settlement = warped.pay_installment(amount)
 
     _assert_fully_allocated(settlement)
@@ -168,10 +161,7 @@ def test_multiple_sequential_payments_all_fully_allocated(
         )
 
         with Warp(loan, due_date_dt) as warped:
-            amount = Money(
-                str((warped.current_balance.raw_amount * Decimal(str(fractions[i]))).quantize(Decimal("0.01")))
-            )
-
+            amount = make_payment_amount(warped.current_balance, fractions[i])
             warped.pay_installment(amount)
 
     for settlement in loan.settlements:

@@ -1,8 +1,4 @@
-"""Shared Hypothesis strategies and helpers for invariant tests.
-
-conftest.py adds this directory to sys.path so test files can import
-the strategies module directly.
-"""
+"""Make the strategies module importable by adding this directory to sys.path."""
 
 import sys
 from pathlib import Path
