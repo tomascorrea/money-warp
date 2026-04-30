@@ -9,7 +9,10 @@ from datetime import datetime, timedelta, timezone
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from strategies import (
+
+from money_warp import InterestRate, Money, Warp
+
+from .strategies import (
     DISBURSEMENT,
     annual_rate_st,
     build_loan,
@@ -19,8 +22,6 @@ from strategies import (
     principal_st,
     scheduler_st,
 )
-
-from money_warp import InterestRate, Money, Warp
 
 
 # ── Invariant 6: Interest monotonicity ──────────────────────────────

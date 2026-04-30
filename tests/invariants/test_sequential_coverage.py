@@ -13,17 +13,6 @@ from zoneinfo import ZoneInfo
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from strategies import (
-    DISBURSEMENT,
-    annual_rate_st,
-    build_loan,
-    days_offset_st,
-    make_payment_amount,
-    num_installments_st,
-    payment_fraction_st,
-    principal_st,
-    scheduler_st,
-)
 
 from money_warp import (
     BillingCycleLoan,
@@ -34,6 +23,18 @@ from money_warp import (
     PriceScheduler,
     Settlement,
     Warp,
+)
+
+from .strategies import (
+    DISBURSEMENT,
+    annual_rate_st,
+    build_loan,
+    days_offset_st,
+    make_payment_amount,
+    num_installments_st,
+    payment_fraction_st,
+    principal_st,
+    scheduler_st,
 )
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")

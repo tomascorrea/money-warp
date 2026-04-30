@@ -5,7 +5,10 @@ from decimal import Decimal
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from strategies import (
+
+from money_warp import Money, Settlement, Warp
+
+from .strategies import (
     DISBURSEMENT,
     annual_rate_st,
     build_loan,
@@ -14,8 +17,6 @@ from strategies import (
     principal_st,
     scheduler_st,
 )
-
-from money_warp import Money, Settlement, Warp
 
 num_installments_st = st.integers(min_value=1, max_value=12)
 
