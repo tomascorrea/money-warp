@@ -11,15 +11,14 @@ installments, and scheduler type:
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
-
-from money_warp.engines.constants import BALANCE_TOLERANCE
-
 from strategies import (
     annual_rate_st,
     build_loan,
     principal_st,
     scheduler_st,
 )
+
+from money_warp.engines.constants import BALANCE_TOLERANCE
 
 num_installments_st = st.integers(min_value=1, max_value=12)
 

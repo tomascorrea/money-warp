@@ -9,22 +9,10 @@ for arbitrary loan parameters, payment amounts, and timing.
 """
 
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from zoneinfo import ZoneInfo
-
-from money_warp import (
-    BillingCycleLoan,
-    BrazilianWorkingDayCalendar,
-    InterestRate,
-    Money,
-    MonthlyBillingCycle,
-    PriceScheduler,
-    Settlement,
-    Warp,
-)
-
 from strategies import (
     DISBURSEMENT,
     annual_rate_st,
@@ -35,6 +23,17 @@ from strategies import (
     payment_fraction_st,
     principal_st,
     scheduler_st,
+)
+
+from money_warp import (
+    BillingCycleLoan,
+    BrazilianWorkingDayCalendar,
+    InterestRate,
+    Money,
+    MonthlyBillingCycle,
+    PriceScheduler,
+    Settlement,
+    Warp,
 )
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
@@ -65,7 +64,7 @@ def _assert_sequential_coverage(settlement: Settlement) -> None:
             assert alloc.total_allocated.is_zero(), (
                 f"Installment #{alloc.installment_number} received "
                 f"{alloc.total_allocated} but installment #{uncovered_number} "
-                f"is not fully covered — money must not leak to newer installments"
+                "is not fully covered — money must not leak to newer installments"
             )
         if not alloc.is_fully_covered:
             seen_uncovered = True

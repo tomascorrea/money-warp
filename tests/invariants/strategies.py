@@ -29,10 +29,7 @@ def build_loan(
     num_installments: int,
     scheduler: type,
 ) -> Loan:
-    due_dates = [
-        (DISBURSEMENT + timedelta(days=30 * (i + 1))).date()
-        for i in range(num_installments)
-    ]
+    due_dates = [(DISBURSEMENT + timedelta(days=30 * (i + 1))).date() for i in range(num_installments)]
     return Loan(
         Money(str(principal)),
         InterestRate(f"{annual_rate}% a"),

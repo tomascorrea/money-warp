@@ -10,9 +10,6 @@ from datetime import datetime, timedelta, timezone
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
-
-from money_warp import Warp
-
 from strategies import (
     DISBURSEMENT,
     annual_rate_st,
@@ -23,6 +20,8 @@ from strategies import (
     principal_st,
     scheduler_st,
 )
+
+from money_warp import Warp
 
 
 @given(
@@ -99,6 +98,6 @@ def test_installment_balance_nonneg_and_consistency(
         for inst in warped.installments:
             assert not inst.balance.is_negative(), f"Installment #{inst.number} has negative balance: {inst.balance}"
             if inst.is_fully_paid:
-                assert inst.balance.is_zero(), (
-                    f"Installment #{inst.number} is_fully_paid=True " f"but balance={inst.balance}"
-                )
+                assert (
+                    inst.balance.is_zero()
+                ), f"Installment #{inst.number} is_fully_paid=True but balance={inst.balance}"

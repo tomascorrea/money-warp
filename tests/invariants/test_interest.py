@@ -9,9 +9,6 @@ from datetime import datetime, timedelta, timezone
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
-
-from money_warp import InterestRate, Money, Warp
-
 from strategies import (
     DISBURSEMENT,
     annual_rate_st,
@@ -22,6 +19,8 @@ from strategies import (
     principal_st,
     scheduler_st,
 )
+
+from money_warp import InterestRate, Money, Warp
 
 
 # ── Invariant 6: Interest monotonicity ──────────────────────────────
@@ -59,9 +58,9 @@ def test_interest_is_nonnegative(principal, annual_rate, days):
     p = Money(str(principal))
 
     interest = rate.accrue(p, days)
-    assert not interest.is_negative(), (
-        f"Interest should be nonneg but got {interest} " f"for principal={principal}, rate={annual_rate}%, days={days}"
-    )
+    assert (
+        not interest.is_negative()
+    ), f"Interest should be nonneg but got {interest} for principal={principal}, rate={annual_rate}%, days={days}"
 
 
 # ── Invariant 7: Covered due date count monotone ────────────────────
@@ -105,10 +104,9 @@ def test_covered_due_date_count_never_decreases(
             warped.pay_installment(amount)
             covered = warped._covered_due_date_count()
 
-            assert covered >= prev_covered, (
-                f"Covered count decreased from {prev_covered} to {covered} "
-                f"after payment of {amount} on day {day_offset}"
-            )
+            assert (
+                covered >= prev_covered
+            ), f"Covered count decreased from {prev_covered} to {covered} after payment of {amount} on day {day_offset}"
             prev_covered = covered
         loan = warped
 
@@ -147,7 +145,7 @@ def test_mora_is_zero_when_paying_on_or_before_due_date(
         settlement = warped.pay_installment(amount)
 
     assert settlement.mora_paid.is_zero(), (
-        f"Mora should be zero for payment on/before due date "
+        "Mora should be zero for payment on/before due date "
         f"but got {settlement.mora_paid} "
         f"(paid {days_early} days early)"
     )

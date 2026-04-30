@@ -10,9 +10,6 @@ from datetime import datetime, timedelta, timezone
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
-
-from money_warp import Settlement, Warp
-
 from strategies import (
     DISBURSEMENT,
     annual_rate_st,
@@ -23,6 +20,8 @@ from strategies import (
     principal_st,
     scheduler_st,
 )
+
+from money_warp import Settlement, Warp
 
 
 def _assert_components_nonneg(settlement: Settlement) -> None:
