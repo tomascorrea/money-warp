@@ -9,7 +9,6 @@ for arbitrary loan parameters, payment amounts, and timing.
 """
 
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -19,8 +18,6 @@ from money_warp import (
     BillingCycleLoan,
     BrazilianWorkingDayCalendar,
     InterestRate,
-    InvertedPriceScheduler,
-    Loan,
     Money,
     MonthlyBillingCycle,
     PriceScheduler,
@@ -28,26 +25,19 @@ from money_warp import (
     Warp,
 )
 
+from strategies import (
+    DISBURSEMENT,
+    annual_rate_st,
+    build_loan,
+    days_offset_st,
+    make_payment_amount,
+    num_installments_st,
+    payment_fraction_st,
+    principal_st,
+    scheduler_st,
+)
+
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
-DISBURSEMENT = datetime(2025, 1, 1, tzinfo=timezone.utc)
-
-principal_st = st.decimals(min_value=1000, max_value=500_000, places=2)
-annual_rate_st = st.decimals(min_value=1, max_value=50, places=1)
-num_installments_st = st.integers(min_value=2, max_value=12)
-payment_fraction_st = st.floats(min_value=0.05, max_value=1.0)
-scheduler_st = st.sampled_from([PriceScheduler, InvertedPriceScheduler])
-days_offset_st = st.integers(min_value=-25, max_value=90)
-
-
-def _build_loan(principal: Decimal, annual_rate: Decimal, num_installments: int, scheduler: type) -> Loan:
-    due_dates = [(DISBURSEMENT + timedelta(days=30 * (i + 1))).date() for i in range(num_installments)]
-    return Loan(
-        Money(str(principal)),
-        InterestRate(f"{annual_rate}% a"),
-        due_dates,
-        disbursement_date=DISBURSEMENT,
-        scheduler=scheduler,
-    )
 
 
 def _resolve_high_mora_rate(reference_date: date, base_mora_rate: InterestRate) -> InterestRate:
@@ -80,11 +70,6 @@ def _assert_sequential_coverage(settlement: Settlement) -> None:
         if not alloc.is_fully_covered:
             seen_uncovered = True
             uncovered_number = alloc.installment_number
-
-
-def _make_payment_amount(balance: Money, fraction: float) -> Money:
-    raw = (balance.raw_amount * Decimal(str(fraction))).quantize(Decimal("0.01"))
-    return Money(str(raw))
 
 
 # ── Deterministic reproduction ──────────────────────────────────────
@@ -154,7 +139,7 @@ def test_single_payment_coverage_always_sequential(
     """A single payment — early, on-time, or late — must never produce
     out-of-order coverage flags.
     """
-    loan = _build_loan(principal, annual_rate, num_installments, scheduler)
+    loan = build_loan(principal, annual_rate, num_installments, scheduler)
     due_date_dt = datetime(
         loan.due_dates[0].year,
         loan.due_dates[0].month,
@@ -166,7 +151,7 @@ def test_single_payment_coverage_always_sequential(
         return
 
     with Warp(loan, pay_dt) as warped:
-        amount = _make_payment_amount(warped.current_balance, payment_fraction)
+        amount = make_payment_amount(warped.current_balance, payment_fraction)
         if amount.is_zero() or amount.is_negative():
             return
         settlement = warped.pay_installment(amount)
@@ -202,7 +187,7 @@ def test_multiple_payments_coverage_always_sequential(
     flags must be sequential in every settlement regardless of how many
     payments are made or when they land.
     """
-    loan = _build_loan(principal, annual_rate, num_installments, scheduler)
+    loan = build_loan(principal, annual_rate, num_installments, scheduler)
 
     all_settlements = []
     for i, day_offset in enumerate(payment_days):
@@ -212,7 +197,7 @@ def test_multiple_payments_coverage_always_sequential(
             balance = warped.current_balance
             if balance.is_zero() or balance.is_negative():
                 break
-            amount = _make_payment_amount(balance, fractions[i])
+            amount = make_payment_amount(balance, fractions[i])
             if amount.is_zero() or amount.is_negative():
                 continue
             all_settlements.append(warped.pay_installment(amount))

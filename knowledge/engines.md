@@ -61,6 +61,21 @@ from ..models import AnticipationResult, Installment, Settlement
 Product-specific engines only contain wiring unique to that product:
 - `billing_cycle_loan/engines.py`: mora rate resolution, `compute_state` wrapper (adds mora callback), statement building.
 
+## Invariant Tests
+
+Property-based invariant tests live in `tests/invariants/`, not `tests/engines/`. This is intentional: these tests verify cross-cutting domain invariants that exercise the full stack (Loan/BCL + Warp + engines), not individual engine functions.
+
+| File | Invariants |
+|------|-----------|
+| `test_schedule.py` | (1-2) Amortization sums to principal, ends at zero; per-row balance and payment identities |
+| `test_balance.py` | (3, 5) Principal balance never negative; installment balances nonneg; `is_fully_paid` implies zero |
+| `test_allocation.py` | (4) Settlement components nonneg and sum to payment amount |
+| `test_allocation_completeness.py` | Per-component allocation sums match settlement totals across all installments |
+| `test_interest.py` | (6-8) Interest monotonicity; covered due-date count non-decreasing; zero mora on/before due date |
+| `test_sequential_coverage.py` | Coverage flags monotonically ordered; no money leaks past uncovered installments |
+
+Shared Hypothesis strategies and helpers (`build_loan`, `make_payment_amount`, etc.) live in `tests/invariants/strategies.py`. The `conftest.py` adds the directory to `sys.path` so test files can import strategies directly.
+
 ## Key Learnings / Gotchas
 
 - **Import order in `__init__.py`**: The re-export order in `engines/__init__.py` doesn't need to match the dependency order -- Python handles submodule loading correctly as long as no circular chain exists.

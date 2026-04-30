@@ -32,6 +32,7 @@ These rules apply whenever you create or modify test files.
 - Descriptive function names: `test_<action>_<scenario>`
 - One test, one purpose
 - Brief docstring on each test function
+- **Exception**: `tests/invariants/` is a cross-cutting directory for Hypothesis-based property tests that verify domain invariants (allocation sums, balance non-negativity, schedule identities, sequential coverage). These tests exercise the full stack rather than a single module, so they do not mirror a specific source directory.
 
 ## Mandatory Security Tests
 
@@ -48,6 +49,7 @@ Never ask whether to include these. If the endpoint is protected, they are requi
 
 - Use `@pytest.mark.parametrize` with clear `ids` when tests share the same logic but differ in input/output
 - Use `@pytest.fixture` for repeated setup logic (never standalone helper functions)
+- For Hypothesis tests that cannot use pytest fixtures: shared strategies and builder functions live in `tests/invariants/strategies.py` (made importable via `conftest.py` sys.path registration)
 - Use `hypothesis` (`@given()`) for property-based testing of validators and numeric logic
 
 ## Factory-Boy

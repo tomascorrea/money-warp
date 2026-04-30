@@ -9,38 +9,19 @@ installments, and scheduler type:
    and payment = principal + interest for every row.
 """
 
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
-
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from money_warp import (
-    InterestRate,
-    InvertedPriceScheduler,
-    Loan,
-    Money,
-    PriceScheduler,
-)
 from money_warp.engines.constants import BALANCE_TOLERANCE
 
-DISBURSEMENT = datetime(2025, 1, 1, tzinfo=timezone.utc)
+from strategies import (
+    annual_rate_st,
+    build_loan,
+    principal_st,
+    scheduler_st,
+)
 
-principal_st = st.decimals(min_value=1000, max_value=500_000, places=2)
-annual_rate_st = st.decimals(min_value=1, max_value=50, places=1)
 num_installments_st = st.integers(min_value=1, max_value=12)
-scheduler_st = st.sampled_from([PriceScheduler, InvertedPriceScheduler])
-
-
-def _build_loan(principal: Decimal, annual_rate: Decimal, num_installments: int, scheduler: type) -> Loan:
-    due_dates = [(DISBURSEMENT + timedelta(days=30 * (i + 1))).date() for i in range(num_installments)]
-    return Loan(
-        Money(str(principal)),
-        InterestRate(f"{annual_rate}% a"),
-        due_dates,
-        disbursement_date=DISBURSEMENT,
-        scheduler=scheduler,
-    )
 
 
 @given(
@@ -52,7 +33,7 @@ def _build_loan(principal: Decimal, annual_rate: Decimal, num_installments: int,
 @settings(max_examples=200)
 def test_schedule_principal_sums_to_loan_principal(principal, annual_rate, num_installments, scheduler):
     """Sum of all principal payments equals the original loan principal."""
-    loan = _build_loan(principal, annual_rate, num_installments, scheduler)
+    loan = build_loan(principal, annual_rate, num_installments, scheduler)
     schedule = loan.get_original_schedule()
 
     assert schedule.total_principal + BALANCE_TOLERANCE >= loan.principal
@@ -68,7 +49,7 @@ def test_schedule_principal_sums_to_loan_principal(principal, annual_rate, num_i
 @settings(max_examples=200)
 def test_schedule_last_entry_ends_at_zero(principal, annual_rate, num_installments, scheduler):
     """The last schedule entry has an ending balance at or near zero."""
-    loan = _build_loan(principal, annual_rate, num_installments, scheduler)
+    loan = build_loan(principal, annual_rate, num_installments, scheduler)
     schedule = loan.get_original_schedule()
     last = schedule.entries[-1]
 
@@ -86,7 +67,7 @@ def test_schedule_last_entry_ends_at_zero(principal, annual_rate, num_installmen
 @settings(max_examples=200)
 def test_per_row_balance_identity(principal, annual_rate, num_installments, scheduler):
     """For every row: beginning_balance - principal_payment == ending_balance."""
-    loan = _build_loan(principal, annual_rate, num_installments, scheduler)
+    loan = build_loan(principal, annual_rate, num_installments, scheduler)
     schedule = loan.get_original_schedule()
 
     for entry in schedule:
@@ -108,7 +89,7 @@ def test_per_row_balance_identity(principal, annual_rate, num_installments, sche
 @settings(max_examples=200)
 def test_per_row_payment_equals_principal_plus_interest(principal, annual_rate, num_installments, scheduler):
     """For every row: payment_amount == principal_payment + interest_payment."""
-    loan = _build_loan(principal, annual_rate, num_installments, scheduler)
+    loan = build_loan(principal, annual_rate, num_installments, scheduler)
     schedule = loan.get_original_schedule()
 
     for entry in schedule:
