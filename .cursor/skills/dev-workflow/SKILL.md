@@ -45,7 +45,9 @@ If resuming an in-progress workflow (the user selected "Continue current work" f
 git branch --show-current
 ```
 
-2. Extract the issue number from the branch name. Branches follow the pattern `<type>/<issue-number>-<slug>` (e.g., `fix/42-login-timeout` → issue `42`).
+2. Determine if this is a sub-branch or a regular branch:
+   - **Sub-branch**: the branch name contains more than one `/` after the type prefix (e.g., `feat/42-new-feature/refactor-parser`). Extract the parent branch (everything before the last `/segment`) and the issue number from the parent branch name.
+   - **Regular branch**: follows `<type>/<issue-number>-<slug>` (e.g., `fix/42-login-timeout` → issue `42`).
 
 3. Fetch the issue details and comments:
 
@@ -69,16 +71,79 @@ arguments: { "owner": "<owner>", "repo": "<repo>", "issue_number": <number>, "me
 gh issue view <number> --json title,body,labels,number,comments
 ```
 
-4. Search the issue comments for an **Implementation Plan**. If found:
+4. Search the issue comments for an **Implementation Plan** matching the current branch. Plan comments include the branch name in the heading (e.g., `## Implementation Plan (feat/42-slug)`). If multiple plans exist, use the one matching the current branch. If found:
    - Parse the plan tasks
-   - Cross-reference with the git log (`git log main..HEAD --oneline`) to determine which tasks are likely completed
+   - Cross-reference with the git log to determine which tasks are likely completed. Use `git log <base>..HEAD --oneline` where `<base>` is the parent branch for sub-branches, or `main` for regular branches.
    - Create TodoWrite entries: mark completed tasks as `completed`, set the next unfinished task to `in_progress`, rest as `pending`
    - Tell the user what was found and which task you'll resume from
+   - If this is a sub-branch, note the parent branch — PRs target the parent branch, and merge returns to it
    - Continue from **Step 5: Execute**
 
 5. If no plan is found in the comments:
    - Tell the user the issue context and that no plan was stored yet
    - Continue from **Step 3: Plan**
+
+---
+
+## Sub-Branch Workflow
+
+A sub-branch is a child branch created from a feature branch for focused sub-tasks. It reuses the parent branch's issue and targets the parent branch for PRs.
+
+### Entering the sub-branch workflow
+
+When the user selects **subbranch** from the Resume-Aware Triage:
+
+1. Record the current branch as the **parent branch**.
+2. Extract the issue number from the parent branch name (same logic as Resume).
+3. Fetch the issue details to get context.
+4. Ask the user to describe the sub-task.
+5. Create the sub-branch:
+
+```bash
+git checkout -b <parent-branch>/<sub-task-slug>
+git push -u origin HEAD
+```
+
+Example: parent `fix/42-login-timeout` + sub-task "refactor parser" → `fix/42-login-timeout/refactor-parser`
+
+6. Continue from **Step 3: Plan** — skip Step 1 (Issue) and Step 2 (Branch) since the issue is reused and the branch is already created.
+
+### Sub-branch PR creation (Step 9 override)
+
+When creating a PR for a sub-branch, target the parent branch instead of main:
+
+**Via MCP:**
+
+```
+CallMcpTool: server=github, toolName=create_pull_request
+arguments: { "owner": "<owner>", "repo": "<repo>", "title": "<title>", "body": "<body>", "head": "<sub-branch-name>", "base": "<parent-branch>" }
+```
+
+**Via CLI:**
+
+```bash
+gh pr create --base <parent-branch> --title "<title>" --body "<body>"
+```
+
+If using the `make-a-pull-request` skill, pass `--base <parent-branch>` to ensure the PR targets the parent.
+
+### Sub-branch merge (Step 12 override)
+
+After the sub-branch PR is merged:
+
+1. Check out the parent branch and pull to get the merged changes:
+
+```bash
+git checkout <parent-branch> && git pull
+```
+
+If the parent branch no longer exists (it was already merged and deleted), check out `main` and pull instead. Inform the user that the parent branch was already merged.
+
+2. Resume the parent branch's workflow — extract the issue number from the parent branch name, fetch the implementation plan, and pick up where the parent left off. Follow the same logic as the **Resume** section.
+
+### Sub-branch nesting
+
+Sub-branches are intended to be **one level deep** (e.g., `feat/42-slug/sub-task`). Deeper nesting is not supported.
 
 ---
 
@@ -173,20 +238,20 @@ Wait for the user to review and approve the plan.
 
 Once the plan is approved:
 
-1. Post the plan as a comment on the issue:
+1. Post the plan as a comment on the issue. Include the branch name in the heading so that multiple plans on the same issue (e.g., parent + sub-branch) can be distinguished:
 
 **Via MCP:**
 
 ```
 CallMcpTool: server=github, toolName=add_issue_comment
-arguments: { "owner": "<owner>", "repo": "<repo>", "issue_number": <number>, "body": "## Implementation Plan\n\n<the approved plan>" }
+arguments: { "owner": "<owner>", "repo": "<repo>", "issue_number": <number>, "body": "## Implementation Plan (`<branch-name>`)\n\n<the approved plan>" }
 ```
 
 **Via CLI:**
 
 ```bash
 gh issue comment <number> --body "$(cat <<'EOF'
-## Implementation Plan
+## Implementation Plan (`<branch-name>`)
 
 <paste the approved plan here>
 

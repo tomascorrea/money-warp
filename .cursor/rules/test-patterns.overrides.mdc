@@ -1,0 +1,9 @@
+---
+description: Project overrides for test-patterns rule
+globs: **/tests/**/*.py, **/test_*.py
+alwaysApply: false
+---
+
+# Test Structure Override
+
+`tests/invariants/` is a cross-cutting directory for Hypothesis-based property tests that verify domain invariants (allocation sums, balance non-negativity, schedule identities, sequential coverage). These tests exercise the full stack rather than a single module, so they do not need to mirror a specific source directory.
