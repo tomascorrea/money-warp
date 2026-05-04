@@ -37,7 +37,7 @@ The `BillingCycleLoan` models a personal loan where principal is amortized on a 
 | `disbursement_date` | `Optional[datetime]` | `now()` | Must be before first due date |
 | `scheduler` | `Optional[Type[BaseScheduler]]` | `PriceScheduler` | Amortization strategy |
 | `fine_rate` | `Optional[InterestRate]` | `InterestRate("2% annual")` | Fine rate on missed payments |
-| `grace_period_days` | `int` | `0` | Days after due date before fines |
+| `grace_period_days` | `int` | `0` | Days after due date before fines and mora (threshold, not shift) |
 | `mora_interest_rate` | `Optional[InterestRate]` | `interest_rate` | Base mora rate |
 | `mora_rate_resolver` | `Optional[MoraRateResolver]` | `None` | Per-cycle mora adjustment |
 | `mora_strategy` | `MoraStrategy` | `COMPOUND` | How mora compounds |

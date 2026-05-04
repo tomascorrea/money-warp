@@ -411,6 +411,7 @@ class BillingCycleLoan:
             state.last_accrual_end,
             tz=self._time_ctx.tz,
             calendar=self.working_day_calendar,
+            grace_period_days=self.grace_period_days,
         )
 
     @property

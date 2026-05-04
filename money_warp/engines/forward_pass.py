@@ -20,7 +20,7 @@ from ..tz import to_date, to_datetime
 from ..working_day import EveryDayCalendar, WorkingDayCalendar, effective_penalty_due_date
 from .allocation import allocate_payment_into_installments
 from .constants import BALANCE_TOLERANCE
-from .fines import compute_fines_at
+from .fines import compute_fines_at, is_payment_late
 from .interest import InterestCalculator, MoraRateCallback
 
 _DEFAULT_CALENDAR = EveryDayCalendar()
@@ -101,6 +101,7 @@ def _build_installments_snapshot(
     tz: tzinfo,
     last_payment_date: Optional[datetime] = None,
     calendar: WorkingDayCalendar = _DEFAULT_CALENDAR,
+    grace_period_days: int = 0,
 ) -> List[Installment]:
     """Build Installment objects from pre-computed allocation data."""
     covered = covered_due_date_count(principal_balance, schedule)
@@ -116,8 +117,11 @@ def _build_installments_snapshot(
         if i < covered:
             expected_mora = prior_mora
         elif i == covered and entry.due_date < to_date(as_of_date, tz):
-            penalty_due = effective_penalty_due_date(entry.due_date, calendar)
-            if last_payment_date is not None:
+            within_grace = not is_payment_late(entry.due_date, grace_period_days, as_of_date, tz, calendar)
+            if within_grace:
+                accrued_mora = Money.zero()
+            elif last_payment_date is not None:
+                penalty_due = effective_penalty_due_date(entry.due_date, calendar)
                 total_days = (to_date(as_of_date, tz) - to_date(last_payment_date, tz)).days
                 _, accrued_mora = interest_calc.compute_accrued_interest(
                     total_days,
@@ -127,6 +131,7 @@ def _build_installments_snapshot(
                     last_payment_date,
                 )
             else:
+                penalty_due = effective_penalty_due_date(entry.due_date, calendar)
                 days_overdue = max(0, (to_date(as_of_date, tz) - penalty_due).days)
                 _, accrued_mora = interest_calc.compute_accrued_interest(
                     days_overdue,
@@ -255,6 +260,10 @@ def compute_state(
             mora_rate_override=mora_override,
         )
 
+        if next_due and not is_payment_late(next_due, grace_period_days, payment.datetime, tz, calendar):
+            regular = regular + mora
+            mora = Money.zero()
+
         installments = _build_installments_snapshot(
             allocs_by_number,
             running_principal,
@@ -265,6 +274,7 @@ def compute_state(
             tz,
             last_payment_date=last_accrual_end,
             calendar=calendar,
+            grace_period_days=grace_period_days,
         )
 
         skipped = _skipped_contractual_interest(installments, next_due, to_date(interest_date, tz))
@@ -353,6 +363,7 @@ def build_installments(
     last_accrual_end: datetime,
     tz: tzinfo,
     calendar: WorkingDayCalendar = _DEFAULT_CALENDAR,
+    grace_period_days: int = 0,
 ) -> List[Installment]:
     """Build the installment view from settlements + schedule."""
     allocs_by_number: Dict[int, List[Allocation]] = {}
@@ -370,6 +381,7 @@ def build_installments(
         tz,
         last_payment_date=last_accrual_end,
         calendar=calendar,
+        grace_period_days=grace_period_days,
     )
 
 

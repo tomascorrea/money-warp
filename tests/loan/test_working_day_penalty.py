@@ -124,27 +124,27 @@ def test_is_payment_late_with_calendar(weekend_calendar: WeekendCalendar) -> Non
 
 
 def test_grace_period_with_calendar(weekend_calendar: WeekendCalendar) -> None:
-    """Grace period is applied after the effective due date for fines.
+    """Payment within grace period incurs neither fine nor mora.
 
-    Mora still accrues from the effective due date (Mon Feb 3) because
-    grace period only defers the fine, not the interest boundary.
+    Feb 1, 2025 is Saturday -> effective Monday Feb 3.
+    With 1-day grace the deadline is Feb 4 (Tuesday).
+    Paying on Feb 4 is within the grace window: no fine, no mora.
     """
-    # Feb 1, 2025 is Saturday -> effective Monday Feb 3
-    # With 1 day grace: fine deadline is Feb 4 (Tuesday)
     loan = _make_loan([date(2025, 2, 1)], calendar=weekend_calendar, grace_period_days=1)
     s = loan.record_payment(Money("3000"), datetime(2025, 2, 4, tzinfo=timezone.utc))
     assert s.fine_paid == Money.zero()
-    assert s.mora_paid > Money.zero()
+    assert s.mora_paid == Money.zero()
 
 
 def test_grace_period_exceeded_with_calendar(weekend_calendar: WeekendCalendar) -> None:
-    """Payment after grace period on the effective due date incurs penalty."""
+    """Payment after grace period incurs both fine and full mora."""
     # Feb 1, 2025 is Saturday -> effective Monday Feb 3
     # With 1 day grace: deadline is Feb 4 (Tuesday)
-    # Pay on Wednesday Feb 5 -> late
+    # Pay on Wednesday Feb 5 -> late, full mora from effective due date
     loan = _make_loan([date(2025, 2, 1)], calendar=weekend_calendar, grace_period_days=1)
     s = loan.record_payment(Money("3000"), datetime(2025, 2, 5, tzinfo=timezone.utc))
     assert s.fine_paid > Money.zero()
+    assert s.mora_paid > Money.zero()
 
 
 def test_fine_observation_respects_calendar(weekend_calendar: WeekendCalendar) -> None:

@@ -542,3 +542,66 @@ def test_late_overpayment_projected_entry_closes_loan():
         projected = schedule[-1]
 
     assert projected.ending_balance == Money.zero()
+
+
+def test_grace_period_eliminates_mora_within_grace():
+    """Payment within grace period should incur neither fine nor mora."""
+    principal = Money("10000.00")
+    rate = InterestRate("6% a")
+    due_date = date(2025, 2, 1)
+    disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
+
+    loan = Loan(
+        principal,
+        rate,
+        [due_date],
+        disbursement_date=disbursement,
+        fine_rate=InterestRate("2% annual"),
+        grace_period_days=5,
+    )
+
+    with Warp(loan, datetime(2025, 2, 4, tzinfo=timezone.utc)) as warped:
+        warped.pay_installment(Money("11000.00"))
+        settlement = warped.settlements[-1]
+
+    assert settlement.fine_paid == Money.zero()
+    assert settlement.mora_paid == Money.zero()
+
+
+def test_grace_period_full_mora_after_grace():
+    """Payment after grace period should charge full mora from the due date."""
+    principal = Money("10000.00")
+    rate = InterestRate("6% a")
+    due_date = date(2025, 2, 1)
+    disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
+
+    loan_with_grace = Loan(
+        principal,
+        rate,
+        [due_date],
+        disbursement_date=disbursement,
+        fine_rate=InterestRate("2% annual"),
+        grace_period_days=5,
+    )
+
+    loan_no_grace = Loan(
+        principal,
+        rate,
+        [due_date],
+        disbursement_date=disbursement,
+        fine_rate=InterestRate("2% annual"),
+        grace_period_days=0,
+    )
+
+    payment_date = datetime(2025, 2, 15, tzinfo=timezone.utc)
+
+    with Warp(loan_with_grace, payment_date) as warped:
+        warped.pay_installment(Money("11000.00"))
+        settlement_grace = warped.settlements[-1]
+
+    with Warp(loan_no_grace, payment_date) as warped:
+        warped.pay_installment(Money("11000.00"))
+        settlement_no_grace = warped.settlements[-1]
+
+    assert settlement_grace.mora_paid > Money.zero()
+    assert settlement_grace.mora_paid == settlement_no_grace.mora_paid

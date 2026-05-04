@@ -144,11 +144,11 @@ def test_fine_observation_respects_calendar(weekend_calendar: WeekendCalendar) -
     assert fines > Money.zero()
 
 
-def test_grace_period_defers_fine_not_mora(weekend_calendar: WeekendCalendar) -> None:
-    """Grace period defers fine but mora still accrues from effective due date."""
+def test_grace_period_eliminates_fine_and_mora(weekend_calendar: WeekendCalendar) -> None:
+    """Payment within grace period incurs neither fine nor mora."""
     # Feb 1, 2025 is Saturday -> effective Monday Feb 3
-    # With 1 day grace: fine deadline is Feb 4
+    # With 1 day grace: deadline is Feb 4
     loan = _make_bcl([date(2025, 2, 1)], calendar=weekend_calendar, grace_period_days=1)
     s = loan.record_payment(Money("3000"), datetime(2025, 2, 4, tzinfo=timezone.utc))
     assert s.fine_paid == Money.zero()
-    assert s.mora_paid > Money.zero()
+    assert s.mora_paid == Money.zero()
