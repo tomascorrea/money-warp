@@ -276,3 +276,28 @@ def test_record_payment_waive_flags():
     assert settlement.mora_paid == Money.zero()
     assert settlement.fines_waived > Money.zero()
     assert settlement.mora_waived > Money.zero()
+
+
+def test_anticipate_payment_waive_flags():
+    """anticipate_payment should forward waiver flags to record_payment."""
+    loan = Loan(
+        Money("10000.00"),
+        InterestRate("6% a"),
+        [date(2025, 2, 1), date(2025, 3, 1)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        fine_rate=InterestRate("5% annual"),
+    )
+
+    loan.calculate_late_fines(datetime(2025, 2, 10, tzinfo=timezone.utc))
+
+    with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        settlement = warped.anticipate_payment(
+            Money("11000.00"),
+            installments=[1, 2],
+            waive_fines=True,
+            waive_mora=True,
+        )
+
+    assert settlement.fine_paid == Money.zero()
+    assert settlement.mora_paid == Money.zero()
+    assert settlement.fines_waived > Money.zero()

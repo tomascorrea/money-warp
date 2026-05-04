@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from money_warp import Money
+from money_warp import Money, Warp
 
 
 def test_waive_fines_zeroes_fine_balance(simple_loan):
@@ -75,8 +75,6 @@ def test_waive_fines_no_fines_is_noop(simple_loan):
 
 def test_pay_installment_waive_flags(simple_loan):
     """pay_installment should forward waiver flags to record_payment."""
-    from money_warp import Warp
-
     with Warp(simple_loan, datetime(2025, 3, 4, tzinfo=timezone.utc)) as warped:
         s = warped.pay_installment(Money("1022.58"), waive_fines=True, waive_mora=True)
 
