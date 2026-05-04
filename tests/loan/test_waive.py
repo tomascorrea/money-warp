@@ -3,6 +3,8 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
+import pytest
+
 from money_warp import InterestRate, Loan, Money, Warp
 
 
@@ -301,3 +303,125 @@ def test_anticipate_payment_waive_flags():
     assert settlement.fine_paid == Money.zero()
     assert settlement.mora_paid == Money.zero()
     assert settlement.fines_waived > Money.zero()
+
+
+# --- Late payment with waive covers the installment ---
+
+
+@pytest.fixture
+def late_loan():
+    """3-installment loan with fine and mora, for coverage tests."""
+    return Loan(
+        Money("890.22"),
+        InterestRate("15% annual"),
+        [
+            date(2025, 2, 1),
+            date(2025, 3, 1),
+            date(2025, 4, 1),
+        ],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        fine_rate=InterestRate("2% annual"),
+    )
+
+
+def test_late_without_waive_installment_not_fully_paid(late_loan):
+    """Paying the scheduled amount late leaves the installment short due to fines and mora."""
+    scheduled = late_loan.get_expected_payment_amount(date(2025, 2, 1))
+
+    with Warp(late_loan, datetime(2025, 2, 16, tzinfo=timezone.utc)) as warped:
+        warped.pay_installment(scheduled)
+        inst = warped.installments[0]
+
+    assert inst.fine_paid > Money.zero()
+    assert not inst.is_fully_paid
+
+
+def test_late_with_waive_both_installment_fully_paid(late_loan):
+    """Same scheduled amount late with both waivers covers the installment fully."""
+    scheduled = late_loan.get_expected_payment_amount(date(2025, 2, 1))
+
+    with Warp(late_loan, datetime(2025, 2, 16, tzinfo=timezone.utc)) as warped:
+        warped.pay_installment(scheduled, waive_fines=True, waive_mora=True)
+        inst = warped.installments[0]
+        settlement = warped.settlements[-1]
+
+    assert settlement.fine_paid == Money.zero()
+    assert settlement.mora_paid == Money.zero()
+    assert inst.is_fully_paid
+
+
+def test_late_with_waive_fines_more_principal_than_without(late_loan):
+    """Waiving fines redirects fine amount to principal."""
+    scheduled = late_loan.get_expected_payment_amount(date(2025, 2, 1))
+
+    loan_no_waive = Loan(
+        Money("890.22"),
+        InterestRate("15% annual"),
+        [date(2025, 2, 1), date(2025, 3, 1), date(2025, 4, 1)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        fine_rate=InterestRate("2% annual"),
+    )
+
+    with Warp(late_loan, datetime(2025, 2, 16, tzinfo=timezone.utc)) as warped:
+        s_waived = warped.pay_installment(scheduled, waive_fines=True)
+
+    with Warp(loan_no_waive, datetime(2025, 2, 16, tzinfo=timezone.utc)) as warped:
+        s_normal = warped.pay_installment(scheduled)
+
+    assert s_waived.fine_paid == Money.zero()
+    assert s_waived.principal_paid > s_normal.principal_paid
+
+
+def test_late_with_waive_both_loan_paid_off():
+    """Full loan amount late with both waivers pays off a single-installment loan."""
+    loan = Loan(
+        Money("1000.00"),
+        InterestRate("12% annual"),
+        [date(2025, 2, 1)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        fine_rate=InterestRate("5% annual"),
+    )
+
+    scheduled = loan.get_expected_payment_amount(date(2025, 2, 1))
+
+    with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        warped.pay_installment(scheduled, waive_fines=True, waive_mora=True)
+        assert warped.is_paid_off
+
+
+def test_late_without_waive_loan_not_paid_off():
+    """Same payment without waivers does not pay off the loan."""
+    loan = Loan(
+        Money("1000.00"),
+        InterestRate("12% annual"),
+        [date(2025, 2, 1)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        fine_rate=InterestRate("5% annual"),
+    )
+
+    scheduled = loan.get_expected_payment_amount(date(2025, 2, 1))
+
+    with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        warped.pay_installment(scheduled)
+        assert not warped.is_paid_off
+
+
+def test_late_with_waive_covers_more_installments(late_loan):
+    """Large late payment with waivers covers more installments than without."""
+    with Warp(late_loan, datetime(2025, 2, 16, tzinfo=timezone.utc)) as warped:
+        warped.pay_installment(Money("800.00"), waive_fines=True, waive_mora=True)
+        covered_waived = [a for a in warped.settlements[-1].allocations if a.is_fully_covered]
+
+    loan_no_waive = Loan(
+        Money("890.22"),
+        InterestRate("15% annual"),
+        [date(2025, 2, 1), date(2025, 3, 1), date(2025, 4, 1)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        fine_rate=InterestRate("2% annual"),
+    )
+
+    with Warp(loan_no_waive, datetime(2025, 2, 16, tzinfo=timezone.utc)) as warped:
+        warped.pay_installment(Money("800.00"))
+        covered_normal = [a for a in warped.settlements[-1].allocations if a.is_fully_covered]
+
+    assert len(covered_waived) >= len(covered_normal)

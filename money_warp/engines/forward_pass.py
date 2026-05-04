@@ -282,7 +282,8 @@ def compute_state(
 
         if payment.waive_fines:
             fines_waived = fine_balance
-            fines_paid_total = fines_paid_total + fine_balance
+            fines_applied = {dd: Money.zero() for dd in fines_applied}
+            fines_paid_total = Money.zero()
             effective_fine_cap = Money.zero()
 
         if payment.waive_mora:
