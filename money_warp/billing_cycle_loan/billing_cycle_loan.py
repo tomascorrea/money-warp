@@ -3,7 +3,6 @@
 import warnings
 from datetime import date, datetime, tzinfo
 from typing import Dict, List, Optional, Type, Union
-
 from zoneinfo import ZoneInfo
 
 from ..billing_cycle import BaseBillingCycle
@@ -411,6 +410,7 @@ class BillingCycleLoan:
             state.last_accrual_end,
             tz=self._time_ctx.tz,
             calendar=self.working_day_calendar,
+            grace_period_days=self.grace_period_days,
         )
 
     @property

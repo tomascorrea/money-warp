@@ -45,7 +45,7 @@ The forward pass merges payment events with fine observation dates into a sorted
 | `disbursement_date` | `Optional[datetime]` | now | When funds are released; must be strictly before first due date |
 | `scheduler` | `Optional[Type[BaseScheduler]]` | `PriceScheduler` | Amortization strategy |
 | `fine_rate` | `Optional[InterestRate]` | `InterestRate("2% annual")` | Fine rate applied to expected payment |
-| `grace_period_days` | `int` | `0` | Days after due date before fines apply |
+| `grace_period_days` | `int` | `0` | Days after due date before fines and mora apply (threshold, not shift — see Grace Period below) |
 | `mora_interest_rate` | `Optional[InterestRate]` | `interest_rate` | Rate used for mora (late) interest; defaults to the base rate |
 | `mora_strategy` | `MoraStrategy` | `COMPOUND` | How mora interest is computed (see Mora Strategy below) |
 | `payment_tolerance` | `Optional[Money]` | `Money("0.01")` | Per-installment rounding error tolerance (see Payment Tolerance below) |
@@ -188,6 +188,15 @@ Fixed total payment per period. The PMT is computed as `principal / sum(1 / (1 +
 Fixed principal payment per period (`principal / number_of_payments`). Interest is computed on the outstanding balance.
 
 ## Late Payments
+
+### Grace Period
+
+The `grace_period_days` parameter acts as a **forgiveness threshold** for both fines and mora. It is all-or-nothing:
+
+- **Within grace period** (payment date ≤ due date + grace days): no fine, no mora. Any interest accrued beyond the due date is reclassified as regular interest.
+- **After grace period** (payment date > due date + grace days): full fine + full mora. Mora is computed from the (working-day-adjusted) due date, not from the grace period end.
+
+The gate is implemented via `is_payment_late` checks in the forward pass (`compute_state`) and the installment snapshot builder (`_build_installments_snapshot`).
 
 ### Fines
 
@@ -400,3 +409,13 @@ This aligns the coverage flag with the tolerance-adjustment mechanism: a residua
 **Fix:** Added `BALANCE_TOLERANCE` to the per-installment coverage check: `is_covered = total + BALANCE_TOLERANCE >= inst.balance`. This is consistent with how `_apply_coverage_fixup` already uses the same constant for principal-level checks.
 
 **Lesson:** Tolerance must be applied at the point where the decision is made, not only in a downstream fixup that may not run. A fixup gated on loan-level state cannot correct per-installment flags when only one installment is affected.
+
+### Grace period only eliminated fines, not mora (fixed 2026-05-04)
+
+**Symptom:** A payment within the grace period was charged mora interest. Only fines were deferred by `grace_period_days`; mora started accruing from the due date regardless.
+
+**Root cause:** In `compute_state`, the mora boundary (`penalty_next_due`) was set to the working-day-adjusted due date without adding `grace_period_days`. The `is_payment_late` check (which does add `grace_period_days`) was only used for the fine computation in `compute_fines_at`, not for the mora split.
+
+**Fix:** After computing `regular` and `mora` interest in the forward pass, added an `is_payment_late` gate: if the payment is within the grace period, mora is reclassified as regular interest (`regular += mora; mora = 0`). Same gate applied in `_build_installments_snapshot` for the display estimate. The mora computation itself stays anchored to the due date — when the grace period is exceeded, full mora accrues from the due date (not from the grace period end).
+
+**Lesson:** When two penalty types (fine and mora) share the same grace period concept, the gate must be applied to both. Implementing it in only one path creates an inconsistency that is hard to spot because the two computations live in different functions.
