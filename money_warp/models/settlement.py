@@ -1,6 +1,6 @@
 """Settlement data structures for loan payment allocation."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, List
 
@@ -9,6 +9,10 @@ from .allocation import Allocation
 
 if TYPE_CHECKING:
     from .installment import Installment
+
+
+def _zero() -> Money:
+    return Money.zero()
 
 
 @dataclass(frozen=True)
@@ -28,6 +32,8 @@ class Settlement:
     principal_paid: Money
     remaining_balance: Money
     allocations: List[Allocation]
+    fines_waived: Money = field(default_factory=_zero)
+    mora_waived: Money = field(default_factory=_zero)
 
     @property
     def total_paid(self) -> Money:

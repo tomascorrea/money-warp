@@ -3,6 +3,7 @@
 import warnings
 from datetime import date, datetime, tzinfo
 from typing import Dict, List, Optional, Type, Union
+
 from zoneinfo import ZoneInfo
 
 from ..billing_cycle import BaseBillingCycle
@@ -251,6 +252,8 @@ class BillingCycleLoan:
         payment_date: datetime,
         interest_date: Optional[datetime] = None,
         description: Optional[str] = None,
+        waive_fines: bool = False,
+        waive_mora: bool = False,
     ) -> Settlement:
         """Record a payment and return the derived settlement.
 
@@ -260,6 +263,8 @@ class BillingCycleLoan:
             interest_date: Cutoff for interest accrual.  Defaults to
                 *payment_date*.
             description: Optional description.
+            waive_fines: If True, forgive accumulated fines.
+            waive_mora: If True, forgive accrued mora interest.
         """
         if amount.is_negative() or amount.is_zero():
             raise ValueError("Payment amount must be positive")
@@ -275,12 +280,20 @@ class BillingCycleLoan:
                 "payment",
                 time_context=self._time_ctx,
                 interest_date=interest_date,
+                waive_fines=waive_fines,
+                waive_mora=waive_mora,
             )
         )
 
         return self.settlements[-1]
 
-    def pay_installment(self, amount: Money, description: Optional[str] = None) -> Settlement:
+    def pay_installment(
+        self,
+        amount: Money,
+        description: Optional[str] = None,
+        waive_fines: bool = False,
+        waive_mora: bool = False,
+    ) -> Settlement:
         """Pay the next installment.
 
         Interest accrual depends on timing:
@@ -295,6 +308,12 @@ class BillingCycleLoan:
         the schedule's expected ending balance by a small amount (within
         ``payment_tolerance``), a tolerance adjustment CashFlowItem is
         added to the cashflow to prevent rounding drift from compounding.
+
+        Args:
+            amount: Payment amount (must be positive).
+            description: Optional description.
+            waive_fines: If True, forgive accumulated fines.
+            waive_mora: If True, forgive accrued mora interest.
         """
         payment_date = self.now()
 
@@ -308,6 +327,8 @@ class BillingCycleLoan:
                 payment_date=payment_date,
                 interest_date=payment_date,
                 description=description or "Overpayment",
+                waive_fines=waive_fines,
+                waive_mora=waive_mora,
             )
 
         next_due = self._next_unpaid_due_date()
@@ -317,6 +338,8 @@ class BillingCycleLoan:
             payment_date=payment_date,
             interest_date=interest_date,
             description=description,
+            waive_fines=waive_fines,
+            waive_mora=waive_mora,
         )
 
         schedule = self.get_original_schedule()

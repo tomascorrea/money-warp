@@ -3,6 +3,7 @@
 import warnings
 from datetime import date, datetime, tzinfo
 from typing import Dict, List, Optional, Type, Union
+
 from zoneinfo import ZoneInfo
 
 from ..cash_flow import CashFlow, CashFlowItem, CashFlowType
@@ -197,6 +198,8 @@ class Loan:
         interest_date: Optional[datetime] = None,
         processing_date: Optional[datetime] = None,
         description: Optional[str] = None,
+        waive_fines: bool = False,
+        waive_mora: bool = False,
     ) -> Settlement:
         """Record a payment. Just one CashFlowItem -- everything else is derived.
 
@@ -207,6 +210,10 @@ class Loan:
                 Defaults to payment_date.
             processing_date: Unused, kept for API compatibility.
             description: Optional description of the payment.
+            waive_fines: If True, all accumulated fines up to this
+                payment are forgiven.  Future fines can still accrue.
+            waive_mora: If True, all accrued mora interest up to this
+                payment is forgiven.  Future mora can still accrue.
 
         Returns:
             Settlement describing how the payment was allocated.
@@ -225,12 +232,20 @@ class Loan:
                 "payment",
                 time_context=self._time_ctx,
                 interest_date=interest_date,
+                waive_fines=waive_fines,
+                waive_mora=waive_mora,
             )
         )
 
         return self.settlements[-1]
 
-    def pay_installment(self, amount: Money, description: Optional[str] = None) -> Settlement:
+    def pay_installment(
+        self,
+        amount: Money,
+        description: Optional[str] = None,
+        waive_fines: bool = False,
+        waive_mora: bool = False,
+    ) -> Settlement:
         """Pay the next installment.
 
         Interest accrual depends on timing:
@@ -244,6 +259,12 @@ class Loan:
         the schedule's expected ending balance by a small amount (within
         ``payment_tolerance``), a tolerance adjustment CashFlowItem is
         added to the cashflow to prevent rounding drift from compounding.
+
+        Args:
+            amount: Payment amount (must be positive).
+            description: Optional description.
+            waive_fines: If True, forgive accumulated fines.
+            waive_mora: If True, forgive accrued mora interest.
         """
         payment_date = self.now()
 
@@ -257,6 +278,8 @@ class Loan:
                 payment_date=payment_date,
                 interest_date=payment_date,
                 description=description or "Overpayment",
+                waive_fines=waive_fines,
+                waive_mora=waive_mora,
             )
 
         next_due = self._next_unpaid_due_date()
@@ -266,6 +289,8 @@ class Loan:
             payment_date=payment_date,
             interest_date=interest_date,
             description=description,
+            waive_fines=waive_fines,
+            waive_mora=waive_mora,
         )
 
         schedule = self.get_original_schedule()
@@ -290,6 +315,8 @@ class Loan:
         amount: Money,
         installments: Optional[List[int]] = None,
         description: Optional[str] = None,
+        waive_fines: bool = False,
+        waive_mora: bool = False,
     ) -> Settlement:
         """Make an early payment with interest discount.
 
@@ -298,6 +325,13 @@ class Loan:
 
         When *installments* is provided (1-based), the corresponding
         expected cash-flow items are temporally deleted.
+
+        Args:
+            amount: Payment amount (must be positive).
+            installments: 1-based installment numbers to remove.
+            description: Optional description.
+            waive_fines: If True, forgive accumulated fines.
+            waive_mora: If True, forgive accrued mora interest.
         """
         payment_date = self.now()
 
@@ -309,6 +343,8 @@ class Loan:
             payment_date=payment_date,
             interest_date=payment_date,
             description=description,
+            waive_fines=waive_fines,
+            waive_mora=waive_mora,
         )
 
     def calculate_anticipation(self, installments: List[int]) -> AnticipationResult:
