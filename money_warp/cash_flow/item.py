@@ -46,6 +46,8 @@ class CashFlowItem:
         time_context: Optional[TimeContext] = None,
         effective_date: Optional["datetime"] = None,
         interest_date: Optional["datetime"] = None,
+        waive_fines: bool = False,
+        waive_mora: bool = False,
     ) -> None:
         if entry is not None:
             initial = entry
@@ -60,6 +62,8 @@ class CashFlowItem:
                 description=description,
                 category=_normalize_category(category),
                 interest_date=interest_date,
+                waive_fines=waive_fines,
+                waive_mora=waive_mora,
             )
         else:
             raise TypeError(
@@ -67,7 +71,7 @@ class CashFlowItem:
             )
 
         start = effective_date if effective_date is not None else EPOCH
-        self._timeline: List[Tuple["datetime", Optional[CashFlowEntry]]] = [(start, initial)]
+        self._timeline: List[Tuple[datetime, Optional[CashFlowEntry]]] = [(start, initial)]
         self._time_ctx = time_context
 
     # ------------------------------------------------------------------
@@ -128,6 +132,16 @@ class CashFlowItem:
     def interest_date(self) -> Optional["datetime"]:
         entry = self._require_resolved()
         return entry.interest_date
+
+    @property
+    def waive_fines(self) -> bool:
+        entry = self._require_resolved()
+        return entry.waive_fines
+
+    @property
+    def waive_mora(self) -> bool:
+        entry = self._require_resolved()
+        return entry.waive_mora
 
     # ------------------------------------------------------------------
     # Delegated helpers

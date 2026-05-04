@@ -33,6 +33,8 @@ Before this package existed, shared computation lived in `money_warp/loan/engine
 ### `forward_pass.py`
 `LoanState` (frozen dataclass), `compute_state` (unified forward pass), `build_installments`, `covered_due_date_count`, `apply_tolerance_adjustment`. The largest submodule -- orchestrates fines, allocation, and installment snapshots into a single chronological replay. `compute_state` and `build_installments` require a `tz: tzinfo` parameter and a `calendar: WorkingDayCalendar` parameter; all internal `.date()` calls use `to_date(dt, tz)` for correct business-day extraction. The calendar adjusts the mora boundary via `effective_penalty_due_date(next_due, calendar)` before passing to `compute_accrued_interest`.
 
+**Waiver handling in `compute_state`**: When a payment entry has `waive_fines=True`, the forward pass adds the outstanding fine balance to `fines_paid_total` (marking fines as settled) and sets `fine_cap` to zero so no payment amount flows to fines. When `waive_mora=True`, `mora_cap` is set to zero. The waived amounts are recorded in the `Settlement` via `fines_waived` and `mora_waived` fields.
+
 ## Import Patterns
 
 Both products now import shared engine logic from `money_warp.engines`:

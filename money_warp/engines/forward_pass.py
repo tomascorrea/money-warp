@@ -275,13 +275,28 @@ def compute_state(
         if fine_balance.is_negative():
             fine_balance = Money.zero()
 
+        fines_waived = Money.zero()
+        mora_waived = Money.zero()
+        effective_fine_cap = fine_balance
+        effective_mora_cap = mora
+
+        if payment.waive_fines:
+            fines_waived = fine_balance
+            fines_applied = {dd: Money.zero() for dd in fines_applied}
+            fines_paid_total = Money.zero()
+            effective_fine_cap = Money.zero()
+
+        if payment.waive_mora:
+            mora_waived = mora
+            effective_mora_cap = Money.zero()
+
         fine_paid, mora_paid, interest_paid, principal_paid, allocations = allocate_payment_into_installments(
             payment.amount,
             installments,
             running_principal,
-            fine_cap=fine_balance,
+            fine_cap=effective_fine_cap,
             interest_cap=interest_cap,
-            mora_cap=mora,
+            mora_cap=effective_mora_cap,
         )
 
         fines_paid_total = fines_paid_total + fine_paid
@@ -303,6 +318,8 @@ def compute_state(
                 principal_paid=principal_paid,
                 remaining_balance=running_principal,
                 allocations=allocations,
+                fines_waived=fines_waived,
+                mora_waived=mora_waived,
             )
         )
 
