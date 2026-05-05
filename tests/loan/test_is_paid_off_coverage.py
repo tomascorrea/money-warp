@@ -44,9 +44,9 @@ def test_is_paid_off_when_all_installments_fully_covered():
                 interest_date=pay_date,
             )
             for alloc in settlement.allocations:
-                assert alloc.is_fully_covered is True, (
-                    f"Installment #{alloc.installment_number} should be fully covered"
-                )
+                assert (
+                    alloc.is_fully_covered is True
+                ), f"Installment #{alloc.installment_number} should be fully covered"
         loan = w
 
     assert loan.current_balance.is_positive(), "Residual should exist (schedule divergence)"

@@ -520,10 +520,7 @@ class BillingCycleLoan:
         max_residual = self.payment_tolerance * n * n
         if self.current_balance > max_residual:
             return False
-        return all(
-            any(a.is_fully_covered for a in inst.allocations)
-            for inst in installments
-        )
+        return all(any(a.is_fully_covered for a in inst.allocations) for inst in installments)
 
     @property
     def overpaid(self) -> Money:
