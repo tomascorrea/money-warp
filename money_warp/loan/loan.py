@@ -473,7 +473,27 @@ class Loan:
     @property
     def is_paid_off(self) -> bool:
         """Whether the loan is fully paid off."""
-        return self.current_balance.is_zero() or self.current_balance.is_negative()
+        if self.current_balance.is_zero() or self.current_balance.is_negative():
+            return True
+        return self._all_installments_covered()
+
+    def _all_installments_covered(self) -> bool:
+        """True when every installment has at least one fully-covered allocation.
+
+        Handles the case where schedule divergence leaves a small
+        positive balance but all per-installment allocations pass the
+        tolerance-based ``is_fully_covered`` check.
+
+        Guarded by a residual cap proportional to the number of
+        installments so a large balance is never silently accepted.
+        """
+        installments = self.installments
+        if not installments:
+            return False
+        max_residual = self.payment_tolerance * len(self.due_dates) * len(self.due_dates)
+        if self.current_balance > max_residual:
+            return False
+        return all(any(a.is_fully_covered for a in inst.allocations) for inst in installments)
 
     @property
     def overpaid(self) -> Money:
