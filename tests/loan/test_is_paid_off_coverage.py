@@ -1,21 +1,10 @@
 """Tests for is_paid_off when all installments have is_fully_covered=True."""
 
-from datetime import date, datetime
-from zoneinfo import ZoneInfo
+from datetime import date, datetime, timezone
 
 from dateutil.relativedelta import relativedelta
 
-from money_warp import (
-    BillingCycleLoan,
-    BrazilianWorkingDayCalendar,
-    InterestRate,
-    Money,
-    PriceScheduler,
-    Warp,
-)
-from money_warp.billing_cycle import MonthlyBillingCycle
-
-SAO_PAULO = ZoneInfo("America/Sao_Paulo")
+from money_warp import InterestRate, Loan, Money, PriceScheduler, Warp
 
 
 def test_is_paid_off_when_all_installments_fully_covered():
@@ -32,16 +21,12 @@ def test_is_paid_off_when_all_installments_fully_covered():
     base = date(2025, 11, 11)
     due_dates = [(base + relativedelta(months=i)) for i in range(1, 5)]
 
-    loan = BillingCycleLoan(
+    loan = Loan(
         principal=Money("5000.00"),
         interest_rate=InterestRate("3.99% a.m."),
-        billing_cycle=MonthlyBillingCycle(due_dates=due_dates),
-        start_date=datetime(2025, 10, 11, tzinfo=SAO_PAULO),
-        num_installments=4,
-        disbursement_date=datetime(2025, 10, 11, tzinfo=SAO_PAULO),
+        due_dates=due_dates,
+        disbursement_date=datetime(2025, 10, 11, tzinfo=timezone.utc),
         scheduler=PriceScheduler,
-        tz=SAO_PAULO,
-        working_day_calendar=BrazilianWorkingDayCalendar(),
     )
 
     schedule = loan.get_original_schedule()
@@ -50,7 +35,7 @@ def test_is_paid_off_when_all_installments_fully_covered():
             entry.due_date.year,
             entry.due_date.month,
             entry.due_date.day,
-            tzinfo=SAO_PAULO,
+            tzinfo=timezone.utc,
         )
         with Warp(loan, pay_date) as w:
             settlement = w.record_payment(
