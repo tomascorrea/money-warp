@@ -55,12 +55,11 @@ The forward pass merges payment events with fine observation dates into a sorted
 
 External loan origination systems may introduce a small rounding error per installment (typically 1 cent in the PMT calculation). This error **accumulates** across installments -- installment N can be off by up to N times the per-installment error.
 
-The `payment_tolerance` parameter controls the per-installment error unit. The effective tolerance scales with the installment number:
+The `payment_tolerance` parameter controls the per-installment error unit. It is used by `apply_tolerance_adjustment` (called from `pay_installment`) to absorb small balance drift after each payment.
 
-- **`Installment.is_fully_paid`**: `self.balance <= payment_tolerance * self.number`
-- **`Loan.is_paid_off`**: `current_balance <= payment_tolerance * len(due_dates)`
-
-This means installment 1 on a 24-installment loan tolerates 1 cent, while installment 24 tolerates 24 cents (at the default tolerance).
+- **`Installment.is_fully_paid`**: `self.balance.is_zero()` — exact check on the installment balance.
+- **`Allocation.is_fully_covered`**: uses `BALANCE_TOLERANCE` (R$0.01) per installment — tolerance-based.
+- **`Loan.is_paid_off`**: first checks `current_balance.is_zero() or current_balance.is_negative()`, then falls back to checking if all installments have at least one allocation with `is_fully_covered=True`. This handles schedule divergence residuals that exceed `apply_tolerance_adjustment`'s absorption threshold.
 
 The tolerance is threaded through the settlement engine (`compute_state`), where it also controls the principal snap-to-zero threshold and coverage fixup checks.
 
@@ -419,3 +418,15 @@ This aligns the coverage flag with the tolerance-adjustment mechanism: a residua
 **Fix:** After computing `regular` and `mora` interest in the forward pass, added an `is_payment_late` gate: if the payment is within the grace period, mora is reclassified as regular interest (`regular += mora; mora = 0`). Same gate applied in `_build_installments_snapshot` for the display estimate. The mora computation itself stays anchored to the due date — when the grace period is exceeded, full mora accrues from the due date (not from the grace period end).
 
 **Lesson:** When two penalty types (fine and mora) share the same grace period concept, the gate must be applied to both. Implementing it in only one path creates an inconsistency that is hard to spot because the two computations live in different functions.
+
+### is_paid_off returned False when all installments were fully covered (fixed 2026-05-05)
+
+**Symptom:** After paying all scheduled installments, every `Allocation.is_fully_covered` was `True` but `Loan.is_paid_off` returned `False`. Consumer code marked all installments as PAID but the loan status stayed UpToDate instead of SETTLED. Affected 632 production loans with remaining balances of R$1.47--R$3.23.
+
+**Root cause:** `is_paid_off` used an exact-zero balance check (`current_balance.is_zero() or current_balance.is_negative()`), while the allocation engine used `BALANCE_TOLERANCE` (R$0.01) per installment for `is_fully_covered`. Schedule divergence (forward-pass daily interest vs scheduler 2dp interest) accumulated a residual across installments that exceeded both `BALANCE_TOLERANCE` and `apply_tolerance_adjustment`'s maximum absorption (`payment_tolerance * num_installments * 3`). Each individual allocation passed its tolerance check, but the cumulative residual made the exact-zero loan-level check fail.
+
+**Fix:** Added a fallback in `is_paid_off` on both `Loan` and `BillingCycleLoan`: when the exact balance check fails, `_all_installments_covered()` checks whether every installment has at least one allocation with `is_fully_covered=True`. If so, the remaining balance is schedule divergence, not unpaid debt. `current_balance` and `remaining_balance` still report the truthful balance — no money is hidden.
+
+**Scope:** Both `Loan` and `BillingCycleLoan` were affected and fixed.
+
+**Lesson:** When a tolerance-based flag (`is_fully_covered`) at the per-installment level coexists with an exact check (`is_paid_off`) at the loan level, the loan-level check must have a fallback that respects the per-installment tolerance. Otherwise the two levels can disagree, leaving consumers in an inconsistent state.
