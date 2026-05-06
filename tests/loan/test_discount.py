@@ -5,6 +5,8 @@ from datetime import date, datetime, timezone
 import pytest
 
 from money_warp import InterestRate, Loan, Money, Warp
+from money_warp.billing_cycle_loan import BillingCycleLoan
+from money_warp.billing_cycle import MonthlyBillingCycle
 
 
 @pytest.fixture
@@ -365,3 +367,58 @@ def test_discount_redirects_to_principal_like_waive(late_loan):
     assert s_disc.fine_paid == Money.zero()
     assert s_waive.fine_paid == Money.zero()
     assert s_disc.principal_paid == s_waive.principal_paid
+
+
+# --- Edge cases ---
+
+
+def test_discount_exceeding_total_obligation():
+    """Discount larger than all obligations doesn't crash and zeroes the balance."""
+    loan = Loan(
+        Money("1000.00"),
+        InterestRate("12% annual"),
+        [date(2025, 2, 1)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+
+    with Warp(loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as w:
+        s = w.pay_installment(Money("500.00"), discount=Money("5000.00"))
+
+    assert s.remaining_balance == Money.zero()
+    assert s.discount_applied == Money("5000.00")
+
+
+def test_negative_discount_raises_value_error():
+    """Negative discount is rejected."""
+    loan = Loan(
+        Money("1000.00"),
+        InterestRate("12% annual"),
+        [date(2025, 2, 1)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+
+    with pytest.raises(ValueError, match="Discount amount must not be negative"):
+        loan.record_payment(
+            Money("500.00"),
+            datetime(2025, 2, 1, tzinfo=timezone.utc),
+            discount=Money("-10.00"),
+        )
+
+
+def test_negative_discount_rejected_on_bcl():
+    """BillingCycleLoan also rejects negative discount."""
+    loan = BillingCycleLoan(
+        principal=Money("3000.00"),
+        interest_rate=InterestRate("12% a"),
+        billing_cycle=MonthlyBillingCycle(closing_day=28, payment_due_days=15),
+        start_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        num_installments=3,
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+
+    with pytest.raises(ValueError, match="Discount amount must not be negative"):
+        loan.record_payment(
+            Money("500.00"),
+            datetime(2025, 2, 12, tzinfo=timezone.utc),
+            discount=Money("-5.00"),
+        )

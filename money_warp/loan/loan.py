@@ -223,6 +223,8 @@ class Loan:
         """
         if amount.is_negative() or amount.is_zero():
             raise ValueError("Payment amount must be positive")
+        if discount is not None and discount.is_negative():
+            raise ValueError("Discount amount must not be negative")
 
         if interest_date is None:
             interest_date = payment_date

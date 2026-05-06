@@ -12,6 +12,7 @@ from sqlalchemy import Float, String, case, cast, column, func, literal, select
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 
 from money_warp.engines import MoraStrategy
+from money_warp.money import Money
 from money_warp.ext.sa.compat import (
     mw_greatest,
     mw_instr,
@@ -175,7 +176,6 @@ def _resolve_discount(item, s_meta, raw_intention):
 
     json_discount = raw_intention.get("discount")
     if json_discount is not None:
-        from money_warp.money import Money
         return Money(json_discount)
 
     return None
