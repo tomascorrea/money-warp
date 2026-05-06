@@ -52,25 +52,13 @@ def multi_installment_loan():
 
 
 def test_discount_reduces_interest_on_time(on_time_loan):
-    """On-time payment with discount absorbs interest, more goes to principal."""
-    no_discount = Loan(
-        Money("10000.00"),
-        InterestRate("6% a"),
-        [date(2025, 2, 1)],
-        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-    )
+    """On-time R$50 discount absorbs all R$49.61 interest, rest to principal."""
+    with Warp(on_time_loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as w:
+        s = w.pay_installment(Money("10500.00"), discount=Money("50.00"))
 
-    payment = Money("10500.00")
-    payment_dt = datetime(2025, 2, 1, tzinfo=timezone.utc)
-
-    with Warp(on_time_loan, payment_dt) as w:
-        s_disc = w.pay_installment(payment, discount=Money("50.00"))
-
-    with Warp(no_discount, payment_dt) as w:
-        s_plain = w.pay_installment(payment)
-
-    assert s_disc.principal_paid > s_plain.principal_paid
-    assert s_disc.interest_paid < s_plain.interest_paid
+    assert s.interest_paid == Money("0.00")
+    assert s.principal_paid == Money("10500.00")
+    assert s.discount_applied == Money("50.00")
 
 
 def test_discount_applied_field_records_amount(on_time_loan):
@@ -93,10 +81,7 @@ def test_no_discount_has_zero_discount_applied(on_time_loan):
 
 
 def test_discount_absorbs_fines_first(late_loan):
-    """Discount reduces fines before touching mora or interest."""
-    with Warp(late_loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as w:
-        s_plain = w.pay_installment(Money("11000.00"))
-
+    """Discount equal to fine amount zeroes fines, redirects to principal."""
     late_loan_disc = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
@@ -106,19 +91,16 @@ def test_discount_absorbs_fines_first(late_loan):
     )
 
     with Warp(late_loan_disc, datetime(2025, 2, 15, tzinfo=timezone.utc)) as w:
-        s_disc = w.pay_installment(Money("11000.00"), discount=s_plain.fine_paid)
+        s = w.pay_installment(Money("11000.00"), discount=Money("502.48"))
 
-    assert s_disc.fine_paid == Money.zero()
-    assert s_disc.principal_paid > s_plain.principal_paid
+    assert s.fine_paid == Money("0.00")
+    assert s.mora_paid == Money("22.49")
+    assert s.interest_paid == Money("49.61")
+    assert s.principal_paid == Money("10927.90")
 
 
 def test_discount_absorbs_fines_then_mora(late_loan):
-    """Discount larger than fines spills into mora."""
-    with Warp(late_loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as w:
-        s_plain = w.pay_installment(Money("11000.00"))
-
-    fine_plus_mora = s_plain.fine_paid + s_plain.mora_paid
-
+    """Discount equal to fines + mora zeroes both components."""
     late_loan_disc = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
@@ -128,18 +110,16 @@ def test_discount_absorbs_fines_then_mora(late_loan):
     )
 
     with Warp(late_loan_disc, datetime(2025, 2, 15, tzinfo=timezone.utc)) as w:
-        s_disc = w.pay_installment(Money("11000.00"), discount=fine_plus_mora)
+        s = w.pay_installment(Money("11000.00"), discount=Money("524.97"))
 
-    assert s_disc.fine_paid == Money.zero()
-    assert s_disc.mora_paid == Money.zero()
-    assert s_disc.interest_paid > Money.zero()
+    assert s.fine_paid == Money("0.00")
+    assert s.mora_paid == Money("0.00")
+    assert s.interest_paid == Money("49.61")
+    assert s.principal_paid == Money("10950.39")
 
 
 def test_discount_zeroes_fine_balance(late_loan):
     """After discount absorbs all fines, fine_balance is zero."""
-    with Warp(late_loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as w:
-        s_plain = w.pay_installment(Money("11000.00"))
-
     late_loan_disc = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
@@ -149,7 +129,7 @@ def test_discount_zeroes_fine_balance(late_loan):
     )
 
     with Warp(late_loan_disc, datetime(2025, 2, 15, tzinfo=timezone.utc)) as w:
-        w.pay_installment(Money("11000.00"), discount=s_plain.fine_paid)
+        w.pay_installment(Money("11000.00"), discount=Money("502.48"))
         assert w.fine_balance == Money.zero()
 
 
@@ -157,10 +137,7 @@ def test_discount_zeroes_fine_balance(late_loan):
 
 
 def test_discount_with_waive_fines(late_loan):
-    """When fines are waived, discount starts from mora."""
-    with Warp(late_loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as w:
-        s_plain = w.pay_installment(Money("11000.00"))
-
+    """Fines waived, discount absorbs mora. All goes to interest + principal."""
     late_loan_disc = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
@@ -170,19 +147,21 @@ def test_discount_with_waive_fines(late_loan):
     )
 
     with Warp(late_loan_disc, datetime(2025, 2, 15, tzinfo=timezone.utc)) as w:
-        s_disc = w.pay_installment(
+        s = w.pay_installment(
             Money("11000.00"),
             waive_fines=True,
-            discount=s_plain.mora_paid,
+            discount=Money("22.49"),
         )
 
-    assert s_disc.fine_paid == Money.zero()
-    assert s_disc.mora_paid == Money.zero()
-    assert s_disc.fines_waived > Money.zero()
+    assert s.fine_paid == Money("0.00")
+    assert s.mora_paid == Money("0.00")
+    assert s.interest_paid == Money("49.61")
+    assert s.principal_paid == Money("10950.39")
+    assert s.fines_waived == Money("502.48")
 
 
 def test_discount_with_waive_both(late_loan):
-    """With both waivers, discount starts from interest."""
+    """Both waivers active, R$50 discount absorbs interest."""
     late_loan_disc = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
@@ -192,16 +171,18 @@ def test_discount_with_waive_both(late_loan):
     )
 
     with Warp(late_loan_disc, datetime(2025, 2, 15, tzinfo=timezone.utc)) as w:
-        s_disc = w.pay_installment(
+        s = w.pay_installment(
             Money("11000.00"),
             waive_fines=True,
             waive_mora=True,
             discount=Money("50.00"),
         )
 
-    assert s_disc.fine_paid == Money.zero()
-    assert s_disc.mora_paid == Money.zero()
-    assert s_disc.discount_applied == Money("50.00")
+    assert s.fine_paid == Money("0.00")
+    assert s.mora_paid == Money("0.00")
+    assert s.interest_paid == Money("0.00")
+    assert s.principal_paid == Money("11000.00")
+    assert s.discount_applied == Money("50.00")
 
 
 # --- Discount reduces principal ---
@@ -209,12 +190,6 @@ def test_discount_with_waive_both(late_loan):
 
 def test_discount_larger_than_non_principal_reduces_principal():
     """Discount exceeding interest spills into principal reduction."""
-    loan_plain = Loan(
-        Money("10000.00"),
-        InterestRate("6% a"),
-        [date(2025, 2, 1), date(2025, 3, 1)],
-        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-    )
     loan_disc = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
@@ -222,23 +197,16 @@ def test_discount_larger_than_non_principal_reduces_principal():
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    payment = Money("5100.00")
-    payment_dt = datetime(2025, 2, 1, tzinfo=timezone.utc)
+    with Warp(loan_disc, datetime(2025, 2, 1, tzinfo=timezone.utc)) as w:
+        s = w.pay_installment(Money("5100.00"), discount=Money("149.61"))
 
-    with Warp(loan_plain, payment_dt) as w:
-        s_plain = w.pay_installment(payment)
-
-    large_discount = s_plain.interest_paid + Money("100.00")
-
-    with Warp(loan_disc, payment_dt) as w:
-        s_disc = w.pay_installment(payment, discount=large_discount)
-
-    assert s_disc.interest_paid == Money.zero()
-    assert s_disc.remaining_balance < s_plain.remaining_balance
+    assert s.interest_paid == Money("0.00")
+    assert s.principal_paid == Money("5100.00")
+    assert s.remaining_balance == Money("4800.00")
 
 
 def test_discount_pays_off_loan_with_smaller_payment():
-    """Discount + payment together can pay off the loan with less cash."""
+    """R$200 discount + R$809.67 payment covers R$1009.67 scheduled amount."""
     loan = Loan(
         Money("1000.00"),
         InterestRate("12% annual"),
@@ -246,12 +214,8 @@ def test_discount_pays_off_loan_with_smaller_payment():
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
 
-    scheduled = loan.get_expected_payment_amount(date(2025, 2, 1))
-    discount = Money("200.00")
-    reduced_payment = scheduled - discount
-
     with Warp(loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as w:
-        w.pay_installment(reduced_payment, discount=discount)
+        w.pay_installment(Money("809.67"), discount=Money("200.00"))
         assert w.is_paid_off
 
 
@@ -259,7 +223,7 @@ def test_discount_pays_off_loan_with_smaller_payment():
 
 
 def test_zero_discount_is_noop(on_time_loan):
-    """Explicit zero discount behaves identically to no discount."""
+    """Explicit zero discount produces same result as no discount."""
     no_disc = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
@@ -276,8 +240,10 @@ def test_zero_discount_is_noop(on_time_loan):
     with Warp(no_disc, payment_dt) as w:
         s_none = w.pay_installment(payment)
 
-    assert s_zero.interest_paid == s_none.interest_paid
-    assert s_zero.principal_paid == s_none.principal_paid
+    assert s_zero.interest_paid == Money("49.61")
+    assert s_none.interest_paid == Money("49.61")
+    assert s_zero.principal_paid == Money("10450.39")
+    assert s_none.principal_paid == Money("10450.39")
     assert s_zero.discount_applied == Money.zero()
 
 
@@ -293,6 +259,8 @@ def test_record_payment_accepts_discount(on_time_loan):
     )
 
     assert settlement.discount_applied == Money("50.00")
+    assert settlement.interest_paid == Money("0.00")
+    assert settlement.principal_paid == Money("10500.00")
 
 
 def test_anticipate_payment_accepts_discount():
@@ -318,31 +286,27 @@ def test_anticipate_payment_accepts_discount():
 
 
 def test_multiple_payments_with_discount(multi_installment_loan):
-    """Discounts on sequential payments accumulate correctly."""
-    scheduled = multi_installment_loan.get_original_schedule()
-    pmt_1 = scheduled[0].payment_amount
-    pmt_2 = scheduled[1].payment_amount
-
+    """Discounts on sequential payments produce correct allocations."""
     with Warp(multi_installment_loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as w:
-        s1 = w.pay_installment(pmt_1, discount=Money("5.00"))
-
-    with Warp(multi_installment_loan, datetime(2025, 3, 1, tzinfo=timezone.utc)) as w:
-        s2 = w.pay_installment(pmt_2, discount=Money("3.00"))
+        s1 = w.pay_installment(Money("303.62"), discount=Money("5.00"))
 
     assert s1.discount_applied == Money("5.00")
+    assert s1.interest_paid == Money("5.63")
+    assert s1.principal_paid == Money("297.99")
+
+    with Warp(multi_installment_loan, datetime(2025, 3, 1, tzinfo=timezone.utc)) as w:
+        s2 = w.pay_installment(Money("303.62"), discount=Money("3.00"))
+
     assert s2.discount_applied == Money("3.00")
+    assert s2.interest_paid == Money("17.07")
+    assert s2.principal_paid == Money("273.77")
 
 
 # --- Discount redirects payment money to principal ---
 
 
 def test_discount_redirects_to_principal_like_waive(late_loan):
-    """Discount on fines has the same principal-boosting effect as waive_fines."""
-    with Warp(late_loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as w:
-        s_plain = w.pay_installment(Money("11000.00"))
-
-    fine_amount = s_plain.fine_paid
-
+    """Discount on fines produces identical allocation as waive_fines."""
     loan_disc = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
@@ -359,21 +323,22 @@ def test_discount_redirects_to_principal_like_waive(late_loan):
     )
 
     with Warp(loan_disc, datetime(2025, 2, 15, tzinfo=timezone.utc)) as w:
-        s_disc = w.pay_installment(Money("11000.00"), discount=fine_amount)
+        s_disc = w.pay_installment(Money("11000.00"), discount=Money("502.48"))
 
     with Warp(loan_waive, datetime(2025, 2, 15, tzinfo=timezone.utc)) as w:
         s_waive = w.pay_installment(Money("11000.00"), waive_fines=True)
 
-    assert s_disc.fine_paid == Money.zero()
-    assert s_waive.fine_paid == Money.zero()
-    assert s_disc.principal_paid == s_waive.principal_paid
+    assert s_disc.fine_paid == Money("0.00")
+    assert s_waive.fine_paid == Money("0.00")
+    assert s_disc.principal_paid == Money("10927.90")
+    assert s_waive.principal_paid == Money("10927.90")
 
 
 # --- Edge cases ---
 
 
 def test_discount_exceeding_total_obligation():
-    """Discount larger than all obligations doesn't crash and zeroes the balance."""
+    """Discount larger than all obligations zeroes the balance."""
     loan = Loan(
         Money("1000.00"),
         InterestRate("12% annual"),
@@ -384,7 +349,9 @@ def test_discount_exceeding_total_obligation():
     with Warp(loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as w:
         s = w.pay_installment(Money("500.00"), discount=Money("5000.00"))
 
-    assert s.remaining_balance == Money.zero()
+    assert s.remaining_balance == Money("0.00")
+    assert s.interest_paid == Money("0.00")
+    assert s.principal_paid == Money("500.00")
     assert s.discount_applied == Money("5000.00")
 
 

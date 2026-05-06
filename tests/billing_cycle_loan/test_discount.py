@@ -25,42 +25,36 @@ def test_discount_applied_on_record_payment(simple_loan):
         discount=Money("30.00"),
     )
     assert s.discount_applied == Money("30.00")
+    assert s.interest_paid == Money("9.38")
+    assert s.principal_paid == Money("1013.20")
 
 
 def test_discount_reduces_interest_on_time(simple_loan):
-    """On-time discount absorbs interest, redirecting payment to principal."""
-    s_plain = simple_loan.record_payment(
-        Money("1022.58"),
-        datetime(2025, 2, 12, tzinfo=timezone.utc),
-    )
-
+    """On-time R$10 discount reduces interest from R$39.38 to R$29.38."""
     loan_disc = _make_simple_bcl()
-    s_disc = loan_disc.record_payment(
+    s = loan_disc.record_payment(
         Money("1022.58"),
         datetime(2025, 2, 12, tzinfo=timezone.utc),
         discount=Money("10.00"),
     )
 
-    assert s_disc.interest_paid < s_plain.interest_paid
-    assert s_disc.principal_paid > s_plain.principal_paid
+    assert s.interest_paid == Money("29.38")
+    assert s.principal_paid == Money("993.20")
 
 
 def test_discount_absorbs_fines_late_payment(simple_loan):
-    """Late payment discount absorbs fines first."""
-    s_plain = simple_loan.record_payment(
-        Money("1022.58"),
-        datetime(2025, 3, 4, tzinfo=timezone.utc),
-    )
-
+    """Late payment discount of R$20.45 absorbs all fines."""
     loan_disc = _make_simple_bcl()
-    s_disc = loan_disc.record_payment(
+    s = loan_disc.record_payment(
         Money("1022.58"),
         datetime(2025, 3, 4, tzinfo=timezone.utc),
-        discount=s_plain.fine_paid,
+        discount=Money("20.45"),
     )
 
-    assert s_disc.fine_paid == Money.zero()
-    assert s_disc.principal_paid > s_plain.principal_paid
+    assert s.fine_paid == Money("0.00")
+    assert s.mora_paid == Money("18.93")
+    assert s.interest_paid == Money("39.38")
+    assert s.principal_paid == Money("964.27")
 
 
 def test_pay_installment_forwards_discount(simple_loan):
@@ -69,12 +63,16 @@ def test_pay_installment_forwards_discount(simple_loan):
         s = w.pay_installment(Money("1022.58"), discount=Money("20.00"))
 
     assert s.discount_applied == Money("20.00")
+    assert s.interest_paid == Money("19.38")
+    assert s.principal_paid == Money("1003.20")
 
 
 def test_no_discount_has_zero_field(simple_loan):
-    """Without discount, discount_applied is zero."""
+    """Without discount, discount_applied is zero and normal allocation applies."""
     s = simple_loan.record_payment(
         Money("1022.58"),
         datetime(2025, 2, 12, tzinfo=timezone.utc),
     )
     assert s.discount_applied == Money.zero()
+    assert s.interest_paid == Money("39.38")
+    assert s.principal_paid == Money("983.20")
