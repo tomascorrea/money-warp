@@ -5,8 +5,8 @@ from datetime import date, datetime, timezone
 import pytest
 
 from money_warp import InterestRate, Loan, Money, Warp
-from money_warp.billing_cycle_loan import BillingCycleLoan
 from money_warp.billing_cycle import MonthlyBillingCycle
+from money_warp.billing_cycle_loan import BillingCycleLoan
 
 
 @pytest.fixture
