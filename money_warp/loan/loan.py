@@ -199,6 +199,7 @@ class Loan:
         description: Optional[str] = None,
         waive_fines: bool = False,
         waive_mora: bool = False,
+        discount: Optional[Money] = None,
     ) -> Settlement:
         """Record a payment. Just one CashFlowItem -- everything else is derived.
 
@@ -213,12 +214,17 @@ class Loan:
                 payment are forgiven.  Future fines can still accrue.
             waive_mora: If True, all accrued mora interest up to this
                 payment is forgiven.  Future mora can still accrue.
+            discount: Flat amount to forgive from obligations before
+                allocating the payment.  Follows the same priority as
+                payment allocation (fines -> mora -> interest -> principal).
 
         Returns:
             Settlement describing how the payment was allocated.
         """
         if amount.is_negative() or amount.is_zero():
             raise ValueError("Payment amount must be positive")
+        if discount is not None and discount.is_negative():
+            raise ValueError("Discount amount must not be negative")
 
         if interest_date is None:
             interest_date = payment_date
@@ -233,6 +239,7 @@ class Loan:
                 interest_date=interest_date,
                 waive_fines=waive_fines,
                 waive_mora=waive_mora,
+                discount=discount,
             )
         )
 
@@ -244,6 +251,7 @@ class Loan:
         description: Optional[str] = None,
         waive_fines: bool = False,
         waive_mora: bool = False,
+        discount: Optional[Money] = None,
     ) -> Settlement:
         """Pay the next installment.
 
@@ -264,6 +272,7 @@ class Loan:
             description: Optional description.
             waive_fines: If True, forgive accumulated fines.
             waive_mora: If True, forgive accrued mora interest.
+            discount: Flat amount to forgive from obligations.
         """
         payment_date = self.now()
 
@@ -279,6 +288,7 @@ class Loan:
                 description=description or "Overpayment",
                 waive_fines=waive_fines,
                 waive_mora=waive_mora,
+                discount=discount,
             )
 
         next_due = self._next_unpaid_due_date()
@@ -290,6 +300,7 @@ class Loan:
             description=description,
             waive_fines=waive_fines,
             waive_mora=waive_mora,
+            discount=discount,
         )
 
         schedule = self.get_original_schedule()
@@ -316,6 +327,7 @@ class Loan:
         description: Optional[str] = None,
         waive_fines: bool = False,
         waive_mora: bool = False,
+        discount: Optional[Money] = None,
     ) -> Settlement:
         """Make an early payment with interest discount.
 
@@ -331,6 +343,7 @@ class Loan:
             description: Optional description.
             waive_fines: If True, forgive accumulated fines.
             waive_mora: If True, forgive accrued mora interest.
+            discount: Flat amount to forgive from obligations.
         """
         payment_date = self.now()
 
@@ -344,6 +357,7 @@ class Loan:
             description=description,
             waive_fines=waive_fines,
             waive_mora=waive_mora,
+            discount=discount,
         )
 
     def calculate_anticipation(self, installments: List[int]) -> AnticipationResult:

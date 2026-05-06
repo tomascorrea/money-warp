@@ -1,7 +1,7 @@
 """CashFlowEntry hierarchy — abstract base and concrete Expected / Happened types."""
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import FrozenSet, Optional, Set, Union
@@ -55,6 +55,7 @@ class CashFlowEntry(ABC):
     interest_date: Optional[datetime] = None
     waive_fines: bool = False
     waive_mora: bool = False
+    discount: Money = field(default_factory=Money.zero)
 
     @property
     @abstractmethod

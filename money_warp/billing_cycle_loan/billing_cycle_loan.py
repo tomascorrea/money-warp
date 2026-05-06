@@ -253,6 +253,7 @@ class BillingCycleLoan:
         description: Optional[str] = None,
         waive_fines: bool = False,
         waive_mora: bool = False,
+        discount: Optional[Money] = None,
     ) -> Settlement:
         """Record a payment and return the derived settlement.
 
@@ -264,9 +265,13 @@ class BillingCycleLoan:
             description: Optional description.
             waive_fines: If True, forgive accumulated fines.
             waive_mora: If True, forgive accrued mora interest.
+            discount: Flat amount to forgive from obligations before
+                allocating the payment.
         """
         if amount.is_negative() or amount.is_zero():
             raise ValueError("Payment amount must be positive")
+        if discount is not None and discount.is_negative():
+            raise ValueError("Discount amount must not be negative")
 
         if interest_date is None:
             interest_date = payment_date
@@ -281,6 +286,7 @@ class BillingCycleLoan:
                 interest_date=interest_date,
                 waive_fines=waive_fines,
                 waive_mora=waive_mora,
+                discount=discount,
             )
         )
 
@@ -292,6 +298,7 @@ class BillingCycleLoan:
         description: Optional[str] = None,
         waive_fines: bool = False,
         waive_mora: bool = False,
+        discount: Optional[Money] = None,
     ) -> Settlement:
         """Pay the next installment.
 
@@ -313,6 +320,7 @@ class BillingCycleLoan:
             description: Optional description.
             waive_fines: If True, forgive accumulated fines.
             waive_mora: If True, forgive accrued mora interest.
+            discount: Flat amount to forgive from obligations.
         """
         payment_date = self.now()
 
@@ -328,6 +336,7 @@ class BillingCycleLoan:
                 description=description or "Overpayment",
                 waive_fines=waive_fines,
                 waive_mora=waive_mora,
+                discount=discount,
             )
 
         next_due = self._next_unpaid_due_date()
@@ -339,6 +348,7 @@ class BillingCycleLoan:
             description=description,
             waive_fines=waive_fines,
             waive_mora=waive_mora,
+            discount=discount,
         )
 
         schedule = self.get_original_schedule()

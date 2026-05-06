@@ -22,6 +22,7 @@ from money_warp.ext.sa.compat import (
 )
 from money_warp.ext.sa.types import _FREQUENCY_TOKEN
 from money_warp.loan import Loan
+from money_warp.money import Money
 from money_warp.rate import _ABBREV_MAP, CompoundingFrequency
 from money_warp.tz import ensure_aware, get_tz, now, to_date
 from money_warp.warp import Warp, WarpedTime
@@ -43,6 +44,7 @@ def settlement_bridge(
     interest_date: str = "interest_date",
     processing_date: str = "processing_date",
     intention: str = "intention",
+    discount: Optional[str] = None,
 ):
     """Mark a settlement model with column metadata for :func:`loan_bridge`.
 
@@ -76,6 +78,9 @@ def settlement_bridge(
         interest_date: Attribute name for the interest accrual cutoff date.
         processing_date: Attribute name for the audit-trail processing date.
         intention: Attribute name for the payment intention JSON object.
+        discount: Attribute name for the discount amount column.
+            When ``None``, discount is read from the intention JSON
+            (``{"discount": "100.00"}``).
     """
 
     def decorator(cls):
@@ -86,6 +91,7 @@ def settlement_bridge(
             "interest_date": interest_date,
             "processing_date": processing_date,
             "intention": intention,
+            "discount": discount,
         }
         return cls
 
@@ -155,6 +161,26 @@ def _collect_optional_loan_kwargs(instance, meta):
 _DEFAULT_INTENTION = {"method": "record_payment"}
 
 
+def _resolve_discount(item, s_meta, raw_intention):
+    """Extract the discount amount from the settlement item or intention JSON.
+
+    Checks the dedicated ``discount`` column first (via bridge metadata),
+    then falls back to the ``discount`` key in the intention JSON.
+    Returns ``None`` when no discount is present.
+    """
+    discount_attr = s_meta.get("discount")
+    if discount_attr is not None:
+        val = getattr(item, discount_attr, None)
+        if val is not None:
+            return val
+
+    json_discount = raw_intention.get("discount")
+    if json_discount is not None:
+        return Money(json_discount)
+
+    return None
+
+
 def _replay_settlements(loan, items):
     """Replay recorded settlements onto *loan*, warping time per payment.
 
@@ -169,6 +195,9 @@ def _replay_settlements(loan, items):
 
     When the ``intention`` attribute is absent on the model, falls back
     to ``record_payment`` for backward compatibility.
+
+    The ``discount`` is read from a dedicated column (if configured via
+    ``settlement_bridge(discount=...)``) or from the intention JSON.
     """
     if not items:
         return
@@ -181,12 +210,13 @@ def _replay_settlements(loan, items):
         amount = getattr(item, s_meta["amount"])
         raw_intention = getattr(item, s_meta["intention"], _DEFAULT_INTENTION)
         method = raw_intention.get("method", "record_payment")
+        discount = _resolve_discount(item, s_meta, raw_intention)
 
         if method == "pay_installment":
-            loan.pay_installment(amount)
+            loan.pay_installment(amount, discount=discount)
         elif method == "anticipate_payment":
             installments = raw_intention.get("installments")
-            loan.anticipate_payment(amount, installments=installments)
+            loan.anticipate_payment(amount, installments=installments, discount=discount)
         else:
             rp_kwargs: dict = {}
             idate = getattr(item, s_meta["interest_date"], None)
@@ -196,7 +226,7 @@ def _replay_settlements(loan, items):
             if proc_date is not None:
                 rp_kwargs["processing_date"] = proc_date
 
-            loan.record_payment(amount, pdate, **rp_kwargs)
+            loan.record_payment(amount, pdate, discount=discount, **rp_kwargs)
 
 
 def _load_money_warp_loan_impl(self):
