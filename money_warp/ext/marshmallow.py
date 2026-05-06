@@ -1,4 +1,4 @@
-"""Marshmallow custom fields for Money, Rate, and InterestRate.
+"""Marshmallow custom fields for Money, Rate, InterestRate, and Percentage.
 
 Requires the ``marshmallow`` extra::
 
@@ -12,12 +12,14 @@ from marshmallow import fields
 
 from money_warp.interest_rate import InterestRate
 from money_warp.money import Money
+from money_warp.percentage import Percentage
 from money_warp.rate import CompoundingFrequency, Rate, YearSize
 
 __all__ = [
     "MoneyField",
     "RateField",
     "InterestRateField",
+    "PercentageField",
 ]
 
 _VALID_MONEY_REPRESENTATIONS = ("raw", "real", "cents", "float")
@@ -231,3 +233,60 @@ class InterestRateField(RateField):
         **RateField.default_error_messages,
         "invalid": "Not a valid interest rate.",
     }
+
+
+class PercentageField(fields.Field):
+    """Marshmallow field for :class:`~money_warp.percentage.Percentage`.
+
+    Serializes to a canonical string (``"5.00%"``) and deserializes via
+    :class:`Percentage` directly, inheriting all of the constructor's
+    validation (rejects numeric inputs, strings without ``%``, temporal
+    suffixes, and negative values).
+
+    Args:
+        precision: Default ``precision`` for :class:`Percentage` construction
+            on load.
+        rounding: Default ``rounding`` mode for :class:`Percentage`
+            construction on load.
+        str_decimals: Default decimal places for string serialization.
+    """
+
+    default_error_messages = {
+        "invalid": "Not a valid percentage.",
+    }
+
+    def __init__(
+        self,
+        precision: int | None = None,
+        rounding: str = "ROUND_HALF_UP",
+        str_decimals: int = 2,
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.percentage_precision = precision
+        self.percentage_rounding = rounding
+        self.percentage_str_decimals = str_decimals
+
+    def _serialize(self, value, attr, obj, **kwargs):
+        if value is None:
+            return None
+        if not isinstance(value, Percentage):
+            raise self.make_error("invalid")
+
+        decimals = getattr(value, "_str_decimals", self.percentage_str_decimals)
+        return f"{value.as_percentage():.{decimals}f}%"
+
+    def _deserialize(self, value, attr, data, **kwargs):
+        if value is None:
+            return None
+        try:
+            result = Percentage(
+                value,
+                precision=self.percentage_precision,
+                rounding=self.percentage_rounding,
+                str_decimals=self.percentage_str_decimals,
+            )
+        except (TypeError, ValueError) as exc:
+            raise self.make_error("invalid") from exc
+        else:
+            return result

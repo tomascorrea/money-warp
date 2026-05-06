@@ -4,7 +4,7 @@ The `ext` package provides opt-in integrations with third-party serialization li
 
 ## Marshmallow (`ext/marshmallow.py`)
 
-Custom Marshmallow fields for `Money`, `Rate`, and `InterestRate`.
+Custom Marshmallow fields for `Money`, `Rate`, `InterestRate`, and `Percentage`.
 
 **Install:** `pip install money-warp[marshmallow]` (adds `marshmallow >= 3.20`).
 
@@ -36,6 +36,17 @@ Serializes/deserializes `Rate` instances. Configurable `representation` paramete
 
 Inherits from `RateField` with `RATE_CLASS = InterestRate`. Same representations, but constructs `InterestRate` on deserialization (rejects negative values).
 
+### PercentageField
+
+Serializes/deserializes `Percentage` instances (non-temporal flat percentages — see `knowledge/rate.md`).
+
+| Direction | Format | Example |
+|---|---|---|
+| Serialize | string | `"5.00%"` |
+| Deserialize | string | `Percentage(value)` (delegates all validation to the constructor) |
+
+Constructor kwargs (`precision`, `rounding`, `str_decimals`) are field-level defaults applied on load. The field has only one representation — the canonical string — because `Percentage` itself is intentionally minimal (no period, no compounding). Numeric inputs and strings without `%` raise `ValidationError` on load.
+
 ## SQLAlchemy (`ext/sa/`)
 
 Custom SQLAlchemy `TypeDecorator` column types and bridge decorators for loan/settlement models.
@@ -47,7 +58,7 @@ Custom SQLAlchemy `TypeDecorator` column types and bridge decorators for loan/se
 ```
 money_warp/ext/sa/
   __init__.py   -- re-exports for backward compatibility
-  types.py      -- MoneyType, RateType, InterestRateType, DueDatesType
+  types.py      -- MoneyType, RateType, InterestRateType, PercentageType, DueDatesType
   bridge.py     -- settlement_bridge, loan_bridge, _load_money_warp_loan, CTE SQL expression
   compat.py     -- dialect-aware SQL function wrappers (SQLite + PostgreSQL)
 ```
@@ -89,6 +100,17 @@ Same deserialization knobs as the Marshmallow `RateField`: `year_size`, `precisi
 ### InterestRateType
 
 Subclass of `RateType` with `RATE_CLASS = InterestRate`. Same representations, constructs `InterestRate` on load (rejects negative values).
+
+### PercentageType
+
+`TypeDecorator` storing `Percentage` instances (non-temporal flat percentages — see `knowledge/rate.md`). Single representation: `String` column holding the canonical `"5.00%"` form.
+
+| Direction | Format |
+|-----------|--------|
+| Bind (Percentage -> DB) | `"5.00%"` (uses the value's `_str_decimals` if set, else field default) |
+| Result (DB -> Percentage) | `Percentage(value, ...)` — full constructor validation applies |
+
+Constructor kwargs (`precision`, `rounding`, `str_decimals`) are column-level defaults applied on load. Direct DB poisoning (e.g. inserting raw `"5"` or `"5% a.a."`) is caught at load time by `Percentage`'s constructor with a pointed error message. There is no JSON representation because `Percentage` has no compounding/period kwargs to round-trip.
 
 ### DueDatesType
 

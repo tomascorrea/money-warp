@@ -1,6 +1,6 @@
-# Rate vs InterestRate
+# Rate vs InterestRate vs Percentage
 
-MoneyWarp distinguishes between two rate types based on domain semantics.
+MoneyWarp distinguishes between three rate-like types based on domain semantics. The first two model **temporal** rates (rates per unit of time); the third models a **non-temporal** percentage applied flat over a value.
 
 ## Rate (base type, `rate.py`)
 
@@ -56,3 +56,75 @@ The extensions (SQLAlchemy `RateType`/`InterestRateType` and Marshmallow `RateFi
 ## Enums and Shared Constants
 
 `YearSize`, `CompoundingFrequency`, and abbreviation maps are defined in `rate.py` and re-exported from `interest_rate.py` for backward compatibility. Imports from either module work.
+
+## Percentage (non-temporal, `percentage.py`)
+
+`Percentage` is a separate type — **not** a subclass of `Rate` / `InterestRate` — for non-negative percentages applied flat over a value, with no temporal dimension and no compounding. Typical examples: MDR (partner rate), late-payment fines (`fine_rate`), IOF flat components, and similar value-based fees.
+
+**When to use:** any rate where the operation is `valor × taxa` and ends there — no period, no capitalization, no equivalence between monthly and annual.
+
+### Why a separate type (and not `CompoundingFrequency.FLAT`)
+
+The original proposal was to add a `FLAT` member to `CompoundingFrequency` and make `to_daily`/`to_monthly`/`accrue` raise `ValueError` when the period was `FLAT`. That approach was rejected:
+
+- **Liskov violation:** an `InterestRate(period=FLAT)` that rejects `to_daily/to_monthly` is not substitutable for a regular `InterestRate`. Any caller that received `InterestRate` and called `to_*` would crash at runtime.
+- **Footgun in runtime, not compile-time:** the type checker would still offer `to_daily`, `accrue`, etc. on a flat rate. The error would only surface in production.
+- **Comparison ambiguity:** `flat 5%` vs `monthly 5%` via `_to_effective_annual` has no defined semantics.
+- **Conceptual:** "interest rate" is a quantity per unit of time by mathematical definition. A flat percentage is not an interest rate — it is just a percentage applied over a value.
+
+A separate type makes the type checker (mypy/IDE) block `pct.to_daily()`, `pct.accrue(...)`, and `pct.apply(...)` before runtime, with no need for a runtime guard.
+
+### Construction is string-only
+
+`Percentage` accepts **only** strings of the form `"<number>%"`. Numeric inputs and bare strings without `%` are rejected:
+
+```python
+Percentage("5%")          # OK → 0.05
+Percentage("5.5%")        # OK → 0.055
+Percentage("0%")          # OK → 0
+Percentage(5)             # TypeError — numeric not accepted
+Percentage(0.05)          # TypeError — numeric not accepted
+Percentage("5")           # ValueError — missing '%'
+Percentage("0.05")        # ValueError — missing '%'
+Percentage("-5%")         # ValueError — negative not allowed
+Percentage("5% a.a.")     # ValueError — temporal suffix → use Rate/InterestRate
+```
+
+The reason: `Percentage(5)` is ambiguous (is it `5%` or `500%`?). The literal `%` in the string is the only unambiguous contract. This intentionally differs from `Rate`/`InterestRate`, which accept both numeric and string forms via `as_percentage=True`.
+
+### API is intentionally minimal
+
+| Method | Returns | Notes |
+|---|---|---|
+| `as_decimal(precision=None)` | `Decimal` | `Percentage("5%").as_decimal()` → `Decimal("0.05")` |
+| `as_percentage(precision=None)` | `Decimal` | `Percentage("5%").as_percentage()` → `Decimal("5")` |
+
+There is **no** `apply(money)`, `as_float`, `to_daily`, `to_monthly`, `to_annual`, `to_periodic_rate`, `accrue`, or `_to_effective_annual`. Application over `Money` is the consumer's responsibility:
+
+```python
+mdr = Percentage("5%")
+fee = Money(amount.raw_amount * mdr.as_decimal())
+```
+
+This keeps the boundary between "I have a percentage" and "I'm computing a fee in money" visible at every call site.
+
+### Display
+
+- `__str__`: canonical `"5.00%"` (round-trip stable: `Percentage(str(p)) == p`).
+- `__repr__`: `Percentage('5.00%')`.
+- `str_decimals` constructor kwarg controls the number of decimal places in `__str__`. Default is `2` (matches typical financial display); use `4` or more for high-precision percentages.
+
+### Comparisons
+
+`Percentage` supports `==`, `<`, `<=`, `>`, `>=`, `__hash__` between two `Percentage` instances. Cross-comparison with `Rate` / `InterestRate` returns `NotImplemented` from the `Percentage` side (so `==` is `False`); ordering then falls through to `Rate.__gt__` etc. and currently raises `AttributeError` because `Rate` does not type-check its operand. The net effect is the desired one — they cannot be compared — but the exact exception is not specified.
+
+### Quick decision table
+
+| Case | Type | Justification |
+|---|---|---|
+| MDR (partner rate) | `Percentage` | Applied once over the operation amount. No capitalization, no period. |
+| Fine (`fine_rate`) | `Percentage` | Applied once over the overdue amount. No capitalization. |
+| IOF flat component | `Percentage` | Percentage applied once over the value. |
+| Contractual interest rate | `InterestRate` | Has a temporal dimension, capitalizes, ≥ 0. |
+| Late-payment interest rate | `InterestRate` | Capitalizes over days of delay. |
+| IRR / MIRR | `Rate` | Computed metric, may be negative, has a temporal dimension. |

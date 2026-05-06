@@ -18,6 +18,13 @@ MoneyWarp provides a comprehensive set of classes for financial calculations and
       show_source: false
       heading_level: 4
 
+### Percentage
+::: money_warp.Percentage
+    options:
+      show_root_heading: true
+      show_source: false
+      heading_level: 4
+
 ### CashFlow
 ::: money_warp.CashFlow
     options:

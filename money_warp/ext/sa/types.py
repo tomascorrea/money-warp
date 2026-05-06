@@ -1,4 +1,4 @@
-"""SQLAlchemy TypeDecorators for Money, Rate, InterestRate, and DueDates."""
+"""SQLAlchemy TypeDecorators for Money, Rate, InterestRate, Percentage, and DueDates."""
 
 from datetime import date
 from decimal import Decimal
@@ -9,6 +9,7 @@ from sqlalchemy.types import TypeDecorator
 
 from money_warp.interest_rate import InterestRate
 from money_warp.money import Money
+from money_warp.percentage import Percentage
 from money_warp.rate import CompoundingFrequency, Rate, YearSize
 
 _VALID_MONEY_REPRESENTATIONS = ("raw", "real", "cents")
@@ -207,6 +208,56 @@ class InterestRateType(RateType):
 
     RATE_CLASS = InterestRate
     cache_ok = True
+
+
+class PercentageType(TypeDecorator):
+    """SQLAlchemy column type for :class:`~money_warp.percentage.Percentage`.
+
+    Stores percentages as canonical strings (``"5.00%"``) in a ``String``
+    column. Bind/result delegates to :class:`Percentage` directly so all of
+    the constructor's validation (numeric rejection, temporal-suffix
+    rejection, non-negativity) applies on read.
+
+    Args:
+        precision: Default ``precision`` passed to :class:`Percentage` on
+            load.
+        rounding: Default ``rounding`` mode passed to :class:`Percentage` on
+            load.
+        str_decimals: Default decimal places for serialization.
+    """
+
+    impl = String
+    cache_ok = True
+
+    def __init__(
+        self,
+        precision: int | None = None,
+        rounding: str = "ROUND_HALF_UP",
+        str_decimals: int = 2,
+    ) -> None:
+        self.percentage_precision = precision
+        self.percentage_rounding = rounding
+        self.percentage_str_decimals = str_decimals
+        super().__init__()
+
+    def load_dialect_impl(self, dialect):
+        return dialect.type_descriptor(String())
+
+    def process_bind_param(self, value: Optional[Percentage], dialect) -> Any:
+        if value is None:
+            return None
+        decimals = getattr(value, "_str_decimals", self.percentage_str_decimals)
+        return f"{value.as_percentage():.{decimals}f}%"
+
+    def process_result_value(self, value: Any, dialect) -> Optional[Percentage]:
+        if value is None:
+            return None
+        return Percentage(
+            value,
+            precision=self.percentage_precision,
+            rounding=self.percentage_rounding,
+            str_decimals=self.percentage_str_decimals,
+        )
 
 
 class DueDatesType(TypeDecorator):

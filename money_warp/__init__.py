@@ -25,6 +25,7 @@ from money_warp.interest_rate import CompoundingFrequency, InterestRate, YearSiz
 from money_warp.loan import Loan
 from money_warp.models import Allocation, AnticipationResult, BillingCycleLoanStatement, Installment, Settlement
 from money_warp.money import Money
+from money_warp.percentage import Percentage
 from money_warp.present_value import (
     discount_factor,
     internal_rate_of_return,
@@ -100,6 +101,7 @@ __all__ = [
     "NestedWarpError",
     "PaymentSchedule",
     "PaymentScheduleEntry",
+    "Percentage",
     "PriceScheduler",
     "Rate",
     "Settlement",
