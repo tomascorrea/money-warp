@@ -35,6 +35,7 @@ def test_settlement_bridge_defaults():
         "interest_date": "interest_date",
         "processing_date": "processing_date",
         "intention": "intention",
+        "discount": None,
     }
 
 
@@ -58,6 +59,7 @@ def test_settlement_bridge_custom_names():
         "interest_date": "int_dt",
         "processing_date": "proc_dt",
         "intention": "intent",
+        "discount": None,
     }
 
 

@@ -300,6 +300,21 @@ def compute_state(
             mora_waived = mora
             effective_mora_cap = Money.zero()
 
+        discount_remaining = payment.discount
+        fine_discounted = Money(min(effective_fine_cap.raw_amount, discount_remaining.raw_amount))
+        discount_remaining = discount_remaining - fine_discounted
+        effective_fine_cap = effective_fine_cap - fine_discounted
+
+        mora_discounted = Money(min(effective_mora_cap.raw_amount, discount_remaining.raw_amount))
+        discount_remaining = discount_remaining - mora_discounted
+        effective_mora_cap = effective_mora_cap - mora_discounted
+
+        interest_discounted = Money(min(interest_cap.raw_amount, discount_remaining.raw_amount))
+        discount_remaining = discount_remaining - interest_discounted
+        interest_cap = interest_cap - interest_discounted
+
+        principal_discounted = discount_remaining
+
         fine_paid, mora_paid, interest_paid, principal_paid, allocations = allocate_payment_into_installments(
             payment.amount,
             installments,
@@ -309,8 +324,8 @@ def compute_state(
             mora_cap=effective_mora_cap,
         )
 
-        fines_paid_total = fines_paid_total + fine_paid
-        running_principal = running_principal - principal_paid
+        fines_paid_total = fines_paid_total + fine_paid + fine_discounted
+        running_principal = running_principal - principal_paid - principal_discounted
         if running_principal.is_negative():
             overpaid = overpaid + Money(-running_principal.raw_amount)
             running_principal = Money.zero()
@@ -330,6 +345,7 @@ def compute_state(
                 allocations=allocations,
                 fines_waived=fines_waived,
                 mora_waived=mora_waived,
+                discount_applied=payment.discount,
             )
         )
 

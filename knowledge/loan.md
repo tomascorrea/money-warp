@@ -83,14 +83,14 @@ The **interest_date** controls how many days of interest are charged. Fewer days
 
 Neither method takes a date parameter — they use `self.now()` (which respects `Warp` context for time travel).
 
-- **`pay_installment(amount, description=None, waive_fines=False, waive_mora=False)`** — the common case. Records payment at `self.now()` and calculates interest up to `max(self.now(), next_due_date)`. Works correctly for all three timing scenarios:
+- **`pay_installment(amount, description=None, waive_fines=False, waive_mora=False, discount=None)`** — the common case. Records payment at `self.now()` and calculates interest up to `max(self.now(), next_due_date)`. Works correctly for all three timing scenarios:
   - **Early payment** (before due date): interest accrues up to the due date. The borrower pays the full scheduled interest — no discount. The installment is fully covered if the amount is sufficient.
   - **On-time payment**: interest matches the scheduled amount exactly.
   - **Late payment**: interest accrues up to `self.now()`, so the borrower pays extra interest (mora) for the days beyond the due date. Late fines are also applied automatically.
 
   A large payment naturally covers the current installment **and** eats into future installments — the per-installment allocation and `covered_due_date_count()` handle this without special-casing.
 
-- **`anticipate_payment(amount, installments=None, description=None, waive_fines=False, waive_mora=False)`** — early payment **with interest discount**. Records payment at `self.now()` and calculates interest only up to `self.now()` (fewer days = less interest charged). When `installments` is provided (1-based numbers), the corresponding expected cash-flow items are temporally deleted via `CashFlowItem.delete()`.
+- **`anticipate_payment(amount, installments=None, description=None, waive_fines=False, waive_mora=False, discount=None)`** — early payment **with interest discount**. Records payment at `self.now()` and calculates interest only up to `self.now()` (fewer days = less interest charged). When `installments` is provided (1-based numbers), the corresponding expected cash-flow items are temporally deleted via `CashFlowItem.delete()`.
 
 ### Early Payment vs Anticipation
 
@@ -106,7 +106,7 @@ Neither method takes a date parameter — they use `self.now()` (which respects 
 
 ### Explicit-Date Method
 
-- **`record_payment(amount, payment_date, interest_date=None, processing_date=None, description=None, waive_fines=False, waive_mora=False)`** — full control over all dates. Appends one `CashFlowItem` to `self.cashflow` and returns the latest derived `Settlement`.
+- **`record_payment(amount, payment_date, interest_date=None, processing_date=None, description=None, waive_fines=False, waive_mora=False, discount=None)`** — full control over all dates. Appends one `CashFlowItem` to `self.cashflow` and returns the latest derived `Settlement`.
 
 ### Payment Allocation
 
@@ -138,6 +138,31 @@ The flags are stored on `CashFlowEntry` (via `waive_fines` and `waive_mora` fiel
 ### Settlement Fields
 
 `Settlement` includes `fines_waived: Money` and `mora_waived: Money` (default `Money.zero()`). These record the amounts forgiven at each payment for audit and reporting. Existing code that creates Settlements without these fields continues to work via defaults.
+
+## Discount
+
+All payment methods (`record_payment`, `pay_installment`, `anticipate_payment`) accept an optional `discount: Money` parameter. The discount reduces the borrower's obligation by a flat amount before the payment is allocated.
+
+### Behavior
+
+The discount follows the same allocation priority as payments: fines first, then mora, then interest, then principal. For example, with a R$100 discount on a late payment owing R$50 fines, R$30 mora, R$100 interest, and R$500 principal:
+
+1. R$50 absorbed from fines (fines owed drops to R$0)
+2. R$30 absorbed from mora (mora owed drops to R$0)
+3. R$20 absorbed from interest (interest owed drops to R$80)
+4. The payment is then allocated against the reduced obligations
+
+### Interaction with Waivers
+
+Waivers are applied first. When `waive_fines=True` and a discount is also provided, fines are zeroed by the waiver (free), and the discount starts from mora. This avoids double-counting: the waiver handles its components, then the discount acts on whatever remains.
+
+### Implementation
+
+The discount amount is stored on `CashFlowEntry` (via the `discount: Money` field, default `Money.zero()`) and read by the forward pass during payment processing. After computing effective caps and applying waivers, the forward pass reduces each cap in priority order by the discount amount. Fines absorbed by the discount are added to `fines_paid_total` so `fine_balance` correctly reaches zero. Principal absorbed by the discount reduces `running_principal` directly.
+
+### Settlement Fields
+
+`Settlement` includes `discount_applied: Money` (default `Money.zero()`). This records the total discount amount given for the payment. The per-component breakdown (how much was absorbed from fines, mora, interest, principal) stays internal to the forward pass.
 
 ## Forward Pass: `compute_state`
 
@@ -259,7 +284,7 @@ Per-installment allocation is a reporting view produced by `engines.distribute_i
 
 A frozen dataclass capturing how a single payment was allocated. Derived by the forward pass.
 
-Fields: `payment_amount`, `payment_date`, `fine_paid`, `interest_paid`, `mora_paid`, `principal_paid`, `remaining_balance`, `allocations`, `fines_waived`, `mora_waived`.
+Fields: `payment_amount`, `payment_date`, `fine_paid`, `interest_paid`, `mora_paid`, `principal_paid`, `remaining_balance`, `allocations`, `fines_waived`, `mora_waived`, `discount_applied`.
 
 ### Allocation
 
