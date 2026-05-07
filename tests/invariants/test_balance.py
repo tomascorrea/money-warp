@@ -8,6 +8,7 @@ These invariants must hold for any loan, any payment amounts, and any timing:
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -25,6 +26,7 @@ from .strategies import (
 )
 
 
+@pytest.mark.filterwarnings("ignore:All installments already paid.*:UserWarning")
 @given(
     principal=principal_st,
     annual_rate=annual_rate_st,
