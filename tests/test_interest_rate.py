@@ -4,8 +4,8 @@ from decimal import Decimal
 
 import pytest
 
-from money_warp.interest_rate import CompoundingFrequency, InterestRate, YearSize
-from money_warp.money import Money
+from money_warp.types.interest_rate import CompoundingFrequency, InterestRate, YearSize
+from money_warp.types.money import Money
 
 
 # String parsing tests

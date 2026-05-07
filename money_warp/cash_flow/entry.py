@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import FrozenSet, Optional, Set, Union
 
-from ..money import Money
+from ..types.money import Money
 
 CategoryInput = Union[str, Set[str], FrozenSet[str], None]
 

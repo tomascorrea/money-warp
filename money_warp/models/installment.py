@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import List
 
-from ..money import Money
 from ..scheduler import PaymentScheduleEntry
+from ..types.money import Money
 from .allocation import Allocation
 
 

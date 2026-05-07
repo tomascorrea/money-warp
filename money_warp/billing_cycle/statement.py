@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from ..money import Money
+from ..types.money import Money
 
 
 @dataclass(frozen=True)

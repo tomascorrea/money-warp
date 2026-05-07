@@ -3,9 +3,9 @@
 from datetime import date, datetime, timedelta, tzinfo
 from typing import Dict, List, Optional
 
-from ..interest_rate import InterestRate
-from ..money import Money
 from ..scheduler import PaymentSchedule
+from ..types.interest_rate import InterestRate
+from ..types.money import Money
 from ..tz import to_date, to_datetime
 from ..working_day import WorkingDayCalendar, effective_penalty_due_date
 from .constants import BALANCE_TOLERANCE

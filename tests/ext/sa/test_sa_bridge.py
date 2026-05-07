@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session, relationship
 
 from money_warp import Loan, Warp
 from money_warp.ext.sa import MoneyType, loan_bridge, settlement_bridge
-from money_warp.interest_rate import InterestRate
-from money_warp.money import Money
+from money_warp.types.interest_rate import InterestRate
+from money_warp.types.money import Money
 from money_warp.warp import WarpedTime
 
 from .conftest import (

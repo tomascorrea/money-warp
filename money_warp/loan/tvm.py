@@ -8,11 +8,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
 from ..cash_flow import CashFlow, CashFlowItem
-from ..interest_rate import InterestRate
 from ..models import AnticipationResult
-from ..money import Money
 from ..present_value import internal_rate_of_return, present_value
-from ..rate import Rate
+from ..types.interest_rate import InterestRate
+from ..types.money import Money
+from ..types.rate import Rate
 from ..tz import tz_aware
 
 if TYPE_CHECKING:

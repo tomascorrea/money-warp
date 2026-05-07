@@ -4,8 +4,8 @@ from datetime import date, datetime, tzinfo
 from decimal import Decimal
 from typing import List
 
-from ..interest_rate import InterestRate
-from ..money import Money
+from ..types.interest_rate import InterestRate
+from ..types.money import Money
 from ..tz import to_date
 from .base import BaseScheduler
 from .schedule import PaymentSchedule, PaymentScheduleEntry

@@ -12,8 +12,8 @@ from sqlalchemy import select
 
 from money_warp import Loan, MoraStrategy, Warp
 from money_warp.ext.sa.types import DueDatesType
-from money_warp.interest_rate import InterestRate
-from money_warp.money import Money
+from money_warp.types.interest_rate import InterestRate
+from money_warp.types.money import Money
 
 from .conftest import (
     _LATE_PAYMENT_DUE_DATES,

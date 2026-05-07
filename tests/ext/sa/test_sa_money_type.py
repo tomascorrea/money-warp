@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import Integer
 
 from money_warp.ext.sa import MoneyType
-from money_warp.money import Money
+from money_warp.types.money import Money
 
 from .conftest import MoneyCentsModel, MoneyCustomPrecisionModel, MoneyRawModel, MoneyRealModel
 

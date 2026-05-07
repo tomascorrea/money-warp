@@ -11,11 +11,11 @@ from datetime import date, datetime, tzinfo
 from typing import Dict, List, Optional, Tuple
 
 from ..cash_flow import CashFlow, CashFlowItem
-from ..interest_rate import InterestRate
 from ..models import Allocation, Installment, Settlement
-from ..money import Money
 from ..scheduler import PaymentSchedule, PaymentScheduleEntry
 from ..time_context import TimeContext
+from ..types.interest_rate import InterestRate
+from ..types.money import Money
 from ..tz import to_date, to_datetime
 from ..working_day import EveryDayCalendar, WorkingDayCalendar, effective_penalty_due_date
 from .allocation import allocate_payment_into_installments

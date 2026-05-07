@@ -15,7 +15,7 @@ from money_warp import (
     internal_rate_of_return,
     irr,
 )
-from money_warp.rate import CompoundingFrequency
+from money_warp.types.rate import CompoundingFrequency
 
 
 # ---------------------------------------------------------------------------

@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Optional, Tuple, Union
 
-from ..money import Money
 from ..time_context import TimeContext
+from ..types.money import Money
 from ..tz import default_time_source, tz_aware
 from .entry import (
     CashFlowEntry,

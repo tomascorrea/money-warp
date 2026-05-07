@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Protocol, runtime_checkable
 
-from ..interest_rate import InterestRate
+from ..types.interest_rate import InterestRate
 
 
 @runtime_checkable

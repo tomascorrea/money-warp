@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Iterator, List, Optional, Union
 
-from ..money import Money
+from ..types.money import Money
 from .entry import CashFlowEntry, CashFlowType, CategoryInput
 from .item import CashFlowItem
 from .query import CashFlowQuery

@@ -5,10 +5,11 @@ from decimal import Decimal
 import pytest
 from marshmallow import Schema, ValidationError
 
-from money_warp.ext.marshmallow import InterestRateField, MoneyField, RateField
-from money_warp.interest_rate import InterestRate
-from money_warp.money import Money
-from money_warp.rate import CompoundingFrequency, Rate, YearSize
+from money_warp.ext.marshmallow import InterestRateField, MoneyField, PercentageField, RateField
+from money_warp.types.interest_rate import InterestRate
+from money_warp.types.money import Money
+from money_warp.types.percentage import Percentage
+from money_warp.types.rate import CompoundingFrequency, Rate, YearSize
 
 # ---------------------------------------------------------------------------
 # Helper schemas
@@ -45,6 +46,26 @@ class StringInterestRateSchema(Schema):
 
 class DictInterestRateSchema(Schema):
     rate = InterestRateField(representation="dict")
+
+
+class PercentageSchema(Schema):
+    pct = PercentageField()
+
+
+class PercentageAllowNoneSchema(Schema):
+    pct = PercentageField(allow_none=True)
+
+
+class PercentageStrDecimals4Schema(Schema):
+    pct = PercentageField(str_decimals=4)
+
+
+class PercentagePrecision2Schema(Schema):
+    pct = PercentageField(precision=2)
+
+
+class PercentageRoundDownSchema(Schema):
+    pct = PercentageField(precision=2, rounding="ROUND_DOWN")
 
 
 # ===========================================================================
@@ -664,3 +685,107 @@ def test_interest_rate_field_roundtrip_dict_with_formatting():
     loaded = DictInterestRateSchema().load(serialized)
     assert isinstance(loaded["rate"], InterestRate)
     assert str(loaded["rate"]) == "5.25% a.a"
+
+
+# ===========================================================================
+# PercentageField — serialization
+# ===========================================================================
+
+
+def test_percentage_field_serialize_basic():
+    result = PercentageSchema().dump({"pct": Percentage("5%")})
+    assert result["pct"] == "5.00%"
+
+
+def test_percentage_field_serialize_with_str_decimals_on_value():
+    result = PercentageSchema().dump({"pct": Percentage("5%", str_decimals=4)})
+    assert result["pct"] == "5.0000%"
+
+
+def test_percentage_field_serialize_none():
+    result = PercentageSchema().dump({"pct": None})
+    assert result["pct"] is None
+
+
+def test_percentage_field_serialize_invalid_type_raises():
+    with pytest.raises(ValidationError):
+        PercentageSchema().dump({"pct": "5%"})
+
+
+# ===========================================================================
+# PercentageField — deserialization (delegates to Percentage validation)
+# ===========================================================================
+
+
+def test_percentage_field_deserialize_basic():
+    result = PercentageSchema().load({"pct": "5%"})
+    assert result["pct"] == Percentage("5%")
+
+
+def test_percentage_field_deserialize_canonical_form():
+    result = PercentageSchema().load({"pct": "5.00%"})
+    assert result["pct"] == Percentage("5%")
+
+
+def test_percentage_field_deserialize_none():
+    """When the field allows None, the value passes through untouched."""
+    result = PercentageAllowNoneSchema().load({"pct": None})
+    assert result["pct"] is None
+
+
+@pytest.mark.parametrize(
+    "invalid_value",
+    ["5", "0.05", "abc", "", "5% a.a.", "5% monthly", "-5%"],
+    ids=["bare_int", "decimal", "garbage", "empty", "annual_suffix", "monthly_suffix", "negative"],
+)
+def test_percentage_field_deserialize_invalid_raises(invalid_value):
+    with pytest.raises(ValidationError):
+        PercentageSchema().load({"pct": invalid_value})
+
+
+def test_percentage_field_deserialize_numeric_input_raises():
+    """Numeric inputs at the JSON layer should fail — Percentage is string-only."""
+    with pytest.raises(ValidationError):
+        PercentageSchema().load({"pct": 5})
+
+
+# ===========================================================================
+# PercentageField — round-trip
+# ===========================================================================
+
+
+def test_percentage_field_roundtrip_simple():
+    original = Percentage("5%")
+    serialized = PercentageSchema().dump({"pct": original})
+    loaded = PercentageSchema().load(serialized)
+    assert loaded["pct"] == original
+
+
+def test_percentage_field_roundtrip_high_precision_with_field_str_decimals():
+    """For lossless round-trip of high-precision values, configure str_decimals on the field."""
+    original = Percentage("6.1230%", str_decimals=4)
+    serialized = PercentageStrDecimals4Schema().dump({"pct": original})
+    loaded = PercentageStrDecimals4Schema().load(serialized)
+    assert loaded["pct"] == original
+
+
+def test_percentage_field_field_str_decimals_used_on_load():
+    result = PercentageStrDecimals4Schema().load({"pct": "5%"})
+    assert str(result["pct"]) == "5.0000%"
+
+
+# ===========================================================================
+# PercentageField — precision / rounding propagate from field to constructor
+# ===========================================================================
+
+
+def test_percentage_field_field_precision_used_on_load():
+    """Field-level `precision` flows into the loaded Percentage."""
+    result = PercentagePrecision2Schema().load({"pct": "6.123%"})
+    assert result["pct"].as_decimal() == Decimal("0.06")
+
+
+def test_percentage_field_field_rounding_used_on_load():
+    """Field-level `rounding` flows into the loaded Percentage (here: ROUND_DOWN)."""
+    result = PercentageRoundDownSchema().load({"pct": "6.129%"})
+    assert result["pct"].as_decimal() == Decimal("0.06")

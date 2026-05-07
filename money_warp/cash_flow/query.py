@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Iterator, List, Optional, Union
 
-from ..money import Money
+from ..types.money import Money
 from ..tz import ensure_aware
 from .entry import CashFlowEntry, CashFlowType
 from .item import CashFlowItem

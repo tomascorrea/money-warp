@@ -6,8 +6,8 @@ import pytest
 from sqlalchemy import text
 
 from money_warp.ext.sa import RateType
-from money_warp.interest_rate import InterestRate
-from money_warp.rate import CompoundingFrequency, Rate, YearSize
+from money_warp.types.interest_rate import InterestRate
+from money_warp.types.rate import CompoundingFrequency, Rate, YearSize
 
 from .conftest import (
     InterestRateJsonModel,

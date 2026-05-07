@@ -2,13 +2,13 @@
 
 MoneyWarp distinguishes between two rate types based on domain semantics.
 
-## Rate (base type, `rate.py`)
+## Rate (base type, `types/rate.py`)
 
 `Rate` is a signed, general-purpose financial rate. It supports positive, negative, and zero values, making it the correct type for computed metrics like IRR and MIRR where the result may be negative (e.g., when fees erode the effective return below zero).
 
 **When to use:** return values from `irr()`, `internal_rate_of_return()`, `modified_internal_rate_of_return()`, discount rates passed to `present_value()` and `discount_factor()`, or any context where the rate is a computed output rather than a contractual input.
 
-## InterestRate (refinement, `interest_rate.py`)
+## InterestRate (refinement, `types/interest_rate.py`)
 
 `InterestRate` inherits from `Rate` and adds a single constraint: the rate must be non-negative. This models the domain truth that a contractual interest rate — the cost a lender charges for lending money — cannot be negative.
 
@@ -55,4 +55,4 @@ The extensions (SQLAlchemy `RateType`/`InterestRateType` and Marshmallow `RateFi
 
 ## Enums and Shared Constants
 
-`YearSize`, `CompoundingFrequency`, and abbreviation maps are defined in `rate.py` and re-exported from `interest_rate.py` for backward compatibility. Imports from either module work.
+`YearSize`, `CompoundingFrequency`, and abbreviation maps are defined in `types/rate.py` and re-exported from `types/interest_rate.py` for backward compatibility. Imports from either module work.

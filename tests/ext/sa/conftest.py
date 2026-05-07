@@ -16,12 +16,13 @@ from money_warp.ext.sa import (
     DueDatesType,
     InterestRateType,
     MoneyType,
+    PercentageType,
     RateType,
     loan_bridge,
     settlement_bridge,
 )
-from money_warp.interest_rate import InterestRate
-from money_warp.money import Money
+from money_warp.types.interest_rate import InterestRate
+from money_warp.types.money import Money
 
 # ---------------------------------------------------------------------------
 # Base & models
@@ -84,6 +85,12 @@ class DueDatesModel(Base):
     __tablename__ = "due_dates"
     id = Column(Integer, primary_key=True)
     dates = Column(DueDatesType())
+
+
+class PercentageModel(Base):
+    __tablename__ = "percentages"
+    id = Column(Integer, primary_key=True)
+    pct = Column(PercentageType(), nullable=True)
 
 
 @settlement_bridge()

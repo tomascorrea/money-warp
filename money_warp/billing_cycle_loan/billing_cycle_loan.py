@@ -16,11 +16,11 @@ from ..engines import (
     covered_due_date_count,
     is_payment_late,
 )
-from ..interest_rate import InterestRate
 from ..models import BillingCycleLoanStatement, Installment, Settlement
-from ..money import Money
 from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
 from ..time_context import TimeContext
+from ..types.interest_rate import InterestRate
+from ..types.money import Money
 from ..tz import ensure_aware, get_tz, tz_aware
 from ..working_day import EveryDayCalendar, WorkingDayCalendar, effective_penalty_due_date
 from .engines import build_statements, compute_state, resolve_mora_rate

@@ -12,6 +12,7 @@ nav:
     - Quick Start: examples/quickstart.md
     - Money & Precision: examples/money.md
     - Interest Rates: examples/interest_rates.md
+    - Percentages (MDR, fees): examples/percentages.md
     - Cash Flow Analysis: examples/cash_flow.md
     - Date Generation: examples/date_generation.md
     - Time Machine (Warp): examples/time_machine.md
