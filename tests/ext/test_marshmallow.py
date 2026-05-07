@@ -52,6 +52,22 @@ class PercentageSchema(Schema):
     pct = PercentageField()
 
 
+class PercentageAllowNoneSchema(Schema):
+    pct = PercentageField(allow_none=True)
+
+
+class PercentageStrDecimals4Schema(Schema):
+    pct = PercentageField(str_decimals=4)
+
+
+class PercentagePrecision2Schema(Schema):
+    pct = PercentageField(precision=2)
+
+
+class PercentageRoundDownSchema(Schema):
+    pct = PercentageField(precision=2, rounding="ROUND_DOWN")
+
+
 # ===========================================================================
 # MoneyField — construction
 # ===========================================================================
@@ -713,8 +729,7 @@ def test_percentage_field_deserialize_canonical_form():
 
 def test_percentage_field_deserialize_none():
     """When the field allows None, the value passes through untouched."""
-    schema_class = type("S", (Schema,), {"pct": PercentageField(allow_none=True)})
-    result = schema_class().load({"pct": None})
+    result = PercentageAllowNoneSchema().load({"pct": None})
     assert result["pct"] is None
 
 
@@ -748,14 +763,29 @@ def test_percentage_field_roundtrip_simple():
 
 def test_percentage_field_roundtrip_high_precision_with_field_str_decimals():
     """For lossless round-trip of high-precision values, configure str_decimals on the field."""
-    schema_class = type("S", (Schema,), {"pct": PercentageField(str_decimals=4)})
     original = Percentage("6.1230%", str_decimals=4)
-    serialized = schema_class().dump({"pct": original})
-    loaded = schema_class().load(serialized)
+    serialized = PercentageStrDecimals4Schema().dump({"pct": original})
+    loaded = PercentageStrDecimals4Schema().load(serialized)
     assert loaded["pct"] == original
 
 
 def test_percentage_field_field_str_decimals_used_on_load():
-    schema_class = type("S", (Schema,), {"pct": PercentageField(str_decimals=4)})
-    result = schema_class().load({"pct": "5%"})
+    result = PercentageStrDecimals4Schema().load({"pct": "5%"})
     assert str(result["pct"]) == "5.0000%"
+
+
+# ===========================================================================
+# PercentageField — precision / rounding propagate from field to constructor
+# ===========================================================================
+
+
+def test_percentage_field_field_precision_used_on_load():
+    """Field-level `precision` flows into the loaded Percentage."""
+    result = PercentagePrecision2Schema().load({"pct": "6.123%"})
+    assert result["pct"].as_decimal() == Decimal("0.06")
+
+
+def test_percentage_field_field_rounding_used_on_load():
+    """Field-level `rounding` flows into the loaded Percentage (here: ROUND_DOWN)."""
+    result = PercentageRoundDownSchema().load({"pct": "6.129%"})
+    assert result["pct"].as_decimal() == Decimal("0.06")

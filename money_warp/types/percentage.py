@@ -32,9 +32,10 @@ _STRING_PATTERN = re.compile(r"^([0-9]+(?:\.[0-9]+)?)%$")
 
 # Common temporal suffixes used by Rate/InterestRate. We detect them in the
 # parser to surface a pointed error message instead of a generic "invalid
-# format" — those rates belong to a different type.
+# format" — those rates belong to a different type. Whitespace before the
+# suffix is optional so '5%a.a.' (no space) still triggers the helpful error.
 _TEMPORAL_SUFFIX_PATTERN = re.compile(
-    r"\s+(a|annual|m|monthly|d|daily|q|quarterly|s|semi-annual|a\.[amdts]\.)\s*$",
+    r"\s*(a|annual|m|monthly|d|daily|q|quarterly|s|semi-annual|a\.[amdts]\.)\s*$",
     re.IGNORECASE,
 )
 

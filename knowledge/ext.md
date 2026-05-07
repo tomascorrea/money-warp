@@ -38,7 +38,7 @@ Inherits from `RateField` with `RATE_CLASS = InterestRate`. Same representations
 
 ### PercentageField
 
-Serializes/deserializes `Percentage` instances (non-temporal flat percentages — see `knowledge/rate.md`).
+Serializes/deserializes `Percentage` instances (non-temporal flat percentages — see `knowledge/percentage.md`).
 
 | Direction | Format | Example |
 |---|---|---|
@@ -103,14 +103,14 @@ Subclass of `RateType` with `RATE_CLASS = InterestRate`. Same representations, c
 
 ### PercentageType
 
-`TypeDecorator` storing `Percentage` instances (non-temporal flat percentages — see `knowledge/rate.md`). Single representation: `String` column holding the canonical `"5.00%"` form.
+`TypeDecorator` storing `Percentage` instances (non-temporal flat percentages — see `knowledge/percentage.md`). Single representation: `String(length)` column holding the canonical `"5.00%"` form.
 
 | Direction | Format |
 |-----------|--------|
-| Bind (Percentage -> DB) | `"5.00%"` (uses the value's `_str_decimals` if set, else field default) |
+| Bind (Percentage -> DB) | `"5.00%"` (uses the value's `_str_decimals`) |
 | Result (DB -> Percentage) | `Percentage(value, ...)` — full constructor validation applies |
 
-Constructor kwargs (`precision`, `rounding`, `str_decimals`) are column-level defaults applied on load. Direct DB poisoning (e.g. inserting raw `"5"` or `"5% a.a."`) is caught at load time by `Percentage`'s constructor with a pointed error message. There is no JSON representation because `Percentage` has no compounding/period kwargs to round-trip.
+Constructor kwargs (`precision`, `rounding`, `str_decimals`) are column-level defaults applied on load. The `length` kwarg (default `32`) controls the underlying `String` column length, since canonical percentage strings are short. Direct DB poisoning (e.g. inserting raw `"5"` or `"5% a.a."`) is caught at load time by `Percentage`'s constructor with a pointed error message. There is no JSON representation because `Percentage` has no compounding/period kwargs to round-trip.
 
 ### DueDatesType
 

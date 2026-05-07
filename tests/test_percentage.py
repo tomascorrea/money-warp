@@ -4,8 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from money_warp import InterestRate, Money, Percentage, Rate
-from money_warp.types.rate import CompoundingFrequency
+from money_warp import CompoundingFrequency, InterestRate, Money, Percentage, Rate
 
 
 # ===========================================================================

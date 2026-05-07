@@ -224,6 +224,10 @@ class PercentageType(TypeDecorator):
         rounding: Default ``rounding`` mode passed to :class:`Percentage` on
             load.
         str_decimals: Default decimal places for serialization.
+        length: Length of the underlying ``String`` column. Defaults to
+            ``32`` — canonical percentage strings are short (``"100.00%"``
+            is 7 chars, with plenty of headroom for high ``str_decimals``).
+            Pass an explicit value when you need a different column width.
     """
 
     impl = String
@@ -231,23 +235,24 @@ class PercentageType(TypeDecorator):
 
     def __init__(
         self,
-        precision: int | None = None,
+        precision: Optional[int] = None,
         rounding: str = "ROUND_HALF_UP",
         str_decimals: int = 2,
+        length: int = 32,
     ) -> None:
         self.percentage_precision = precision
         self.percentage_rounding = rounding
         self.percentage_str_decimals = str_decimals
+        self.length = length
         super().__init__()
 
     def load_dialect_impl(self, dialect):
-        return dialect.type_descriptor(String())
+        return dialect.type_descriptor(String(length=self.length))
 
     def process_bind_param(self, value: Optional[Percentage], dialect) -> Any:
         if value is None:
             return None
-        decimals = getattr(value, "_str_decimals", self.percentage_str_decimals)
-        return f"{value.as_percentage():.{decimals}f}%"
+        return f"{value.as_percentage():.{value._str_decimals}f}%"
 
     def process_result_value(self, value: Any, dialect) -> Optional[Percentage]:
         if value is None:

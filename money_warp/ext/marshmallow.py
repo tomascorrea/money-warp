@@ -257,7 +257,7 @@ class PercentageField(fields.Field):
 
     def __init__(
         self,
-        precision: int | None = None,
+        precision: Optional[int] = None,
         rounding: str = "ROUND_HALF_UP",
         str_decimals: int = 2,
         **kwargs,
@@ -273,8 +273,7 @@ class PercentageField(fields.Field):
         if not isinstance(value, Percentage):
             raise self.make_error("invalid")
 
-        decimals = getattr(value, "_str_decimals", self.percentage_str_decimals)
-        return f"{value.as_percentage():.{decimals}f}%"
+        return f"{value.as_percentage():.{value._str_decimals}f}%"
 
     def _deserialize(self, value, attr, data, **kwargs):
         if value is None:
