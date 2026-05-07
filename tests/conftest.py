@@ -76,9 +76,7 @@ def multi_bcl():
     return BillingCycleLoan(
         principal=Money("10000"),
         interest_rate=InterestRate("5% a.m."),
-        billing_cycle=MonthlyBillingCycle(
-            due_dates=[date(2025, 12, 20), date(2026, 1, 20), date(2026, 2, 20)]
-        ),
+        billing_cycle=MonthlyBillingCycle(due_dates=[date(2025, 12, 20), date(2026, 1, 20), date(2026, 2, 20)]),
         start_date=datetime(2025, 11, 20, tzinfo=SAO_PAULO),
         num_installments=3,
         disbursement_date=datetime(2025, 11, 20, tzinfo=SAO_PAULO),
