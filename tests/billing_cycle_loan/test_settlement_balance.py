@@ -55,9 +55,7 @@ def test_bcl_single_components_sum(single_bcl):
     sched = single_bcl.get_original_schedule()
     with Warp(single_bcl, datetime(2025, 11, 10, tzinfo=SAO_PAULO)) as w:
         expected_principal = sched.entries[0].principal_payment
-        interest_component = Money(
-            w.settlement_balance.raw_amount - expected_principal.raw_amount
-        )
+        interest_component = Money(w.settlement_balance.raw_amount - expected_principal.raw_amount)
         assert interest_component == sched.entries[0].interest_payment
 
 

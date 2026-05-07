@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from datetime import date, datetime
 from typing import Dict, List, Optional, Tuple, Type
 
-from .cash_flow import CashFlow, CashFlowItem
+from .cash_flow import CashFlow
 from .engines import (
     InterestCalculator,
     LoanState,
@@ -22,7 +22,7 @@ from .engines import (
     is_payment_late,
 )
 from .models import Installment, Settlement
-from .scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
+from .scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry
 from .time_context import TimeContext
 from .types.interest_rate import InterestRate
 from .types.money import Money

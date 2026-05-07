@@ -47,9 +47,7 @@ def test_loan_multi_early_settlement_covers_next_installment(loan_multi):
     with Warp(loan_multi, datetime(2025, 12, 10, tzinfo=timezone.utc)) as w:
         w.pay_installment(w.settlement_balance)
         inst = w.installments[0]
-        assert any(
-            a.is_fully_covered for a in inst.allocations
-        ), f"Installment 1 not covered: balance={inst.balance}"
+        assert any(a.is_fully_covered for a in inst.allocations), f"Installment 1 not covered: balance={inst.balance}"
 
 
 def test_bcl_single_early_settlement_pays_off(bcl_single):
@@ -71,9 +69,7 @@ def test_bcl_multi_early_settlement_covers_next_installment(bcl_multi):
     with Warp(bcl_multi, datetime(2025, 12, 10, tzinfo=SAO_PAULO)) as w:
         w.pay_installment(w.settlement_balance)
         inst = w.installments[0]
-        assert any(
-            a.is_fully_covered for a in inst.allocations
-        ), f"Installment 1 not covered: balance={inst.balance}"
+        assert any(a.is_fully_covered for a in inst.allocations), f"Installment 1 not covered: balance={inst.balance}"
 
 
 # ------------------------------------------------------------------
@@ -84,30 +80,30 @@ def test_bcl_multi_early_settlement_covers_next_installment(bcl_multi):
 def test_loan_multi_early_settlement_less_than_current(loan_multi):
     """Multi-installment, early: settlement_balance < current_balance."""
     with Warp(loan_multi, datetime(2025, 12, 10, tzinfo=timezone.utc)) as w:
-        assert w.settlement_balance < w.current_balance, (
-            f"settlement={w.settlement_balance} should be < current={w.current_balance}"
-        )
+        assert (
+            w.settlement_balance < w.current_balance
+        ), f"settlement={w.settlement_balance} should be < current={w.current_balance}"
 
 
 def test_loan_single_early_settlement_gte_current(loan_single):
     """Single-installment, early: settlement_balance >= current_balance."""
     with Warp(loan_single, datetime(2025, 12, 10, tzinfo=timezone.utc)) as w:
-        assert w.settlement_balance >= w.current_balance, (
-            f"settlement={w.settlement_balance} should be >= current={w.current_balance}"
-        )
+        assert (
+            w.settlement_balance >= w.current_balance
+        ), f"settlement={w.settlement_balance} should be >= current={w.current_balance}"
 
 
 def test_loan_single_late_settlement_equals_current(loan_single):
     """Single-installment, late: settlement_balance == current_balance."""
     with Warp(loan_single, datetime(2025, 12, 25, tzinfo=timezone.utc)) as w:
-        assert w.settlement_balance == w.current_balance, (
-            f"settlement={w.settlement_balance} should == current={w.current_balance}"
-        )
+        assert (
+            w.settlement_balance == w.current_balance
+        ), f"settlement={w.settlement_balance} should == current={w.current_balance}"
 
 
 def test_bcl_multi_early_settlement_less_than_current(bcl_multi):
     """Multi-installment BCL, early: settlement_balance < current_balance."""
     with Warp(bcl_multi, datetime(2025, 12, 10, tzinfo=SAO_PAULO)) as w:
-        assert w.settlement_balance < w.current_balance, (
-            f"settlement={w.settlement_balance} should be < current={w.current_balance}"
-        )
+        assert (
+            w.settlement_balance < w.current_balance
+        ), f"settlement={w.settlement_balance} should be < current={w.current_balance}"

@@ -592,9 +592,7 @@ def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
                 else_=sett_mora_simple,
             ).label("mora_interest"),
         )
-        .select_from(
-            loan_state.join(daily_rates, literal(True)).join(settlement_day_split, literal(True))
-        )
+        .select_from(loan_state.join(daily_rates, literal(True)).join(settlement_day_split, literal(True)))
         .correlate(cls)
         .cte("settlement_accrued", nesting=True)
     )
@@ -682,8 +680,7 @@ def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
     target_expr = _component_expr[component]
 
     settlement_tables = (
-        loan_state
-        .join(accrued, literal(True))
+        loan_state.join(accrued, literal(True))
         .join(late_fines, literal(True))
         .join(settlement_accrued, literal(True))
         .join(settlement_pmt, literal(True))
@@ -692,12 +689,7 @@ def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
 
     from_tables = settlement_tables if component == _COMPONENT_SETTLEMENT else standard_tables
 
-    full_sq = (
-        select(target_expr.label("result"))
-        .select_from(from_tables)
-        .correlate(cls)
-        .scalar_subquery()
-    )
+    full_sq = select(target_expr.label("result")).select_from(from_tables).correlate(cls).scalar_subquery()
 
     # -- Fallback when rate is NULL ----------------------------------------
     simple_fallback = (
@@ -832,7 +824,11 @@ def loan_bridge(
 
         # -- settlement balance (next installment payoff via pay_installment)
         _attach_balance_hybrid(
-            cls, _meta, "settlement_balance", "settlement_balance", _COMPONENT_SETTLEMENT,
+            cls,
+            _meta,
+            "settlement_balance",
+            "settlement_balance",
+            _COMPONENT_SETTLEMENT,
         )
 
         # -- component balances --------------------------------------------

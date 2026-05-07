@@ -13,8 +13,8 @@ from ..engines import (
     compute_state,
     covered_due_date_count,
 )
-from ..models import AnticipationResult, Installment, Settlement
-from ..scheduler import BaseScheduler, PaymentSchedule, PriceScheduler
+from ..models import AnticipationResult, Settlement
+from ..scheduler import BaseScheduler, PriceScheduler
 from ..tax.base import BaseTax, TaxResult
 from ..time_context import TimeContext
 from ..types.interest_rate import InterestRate

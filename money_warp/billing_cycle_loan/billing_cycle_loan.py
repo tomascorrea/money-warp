@@ -1,7 +1,7 @@
 """BillingCycleLoan -- fixed amortization with billing-cycle payment timing."""
 
 from datetime import date, datetime, tzinfo
-from typing import Dict, List, Optional, Tuple, Type, Union
+from typing import List, Optional, Tuple, Type, Union
 from zoneinfo import ZoneInfo
 
 from ..base_loan import BaseLoan

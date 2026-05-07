@@ -101,7 +101,5 @@ def test_multi_components_sum(multi_installment_loan):
     sched = multi_installment_loan.get_original_schedule()
     with Warp(multi_installment_loan, datetime(2025, 12, 10, tzinfo=timezone.utc)) as w:
         expected_principal = sched.entries[0].principal_payment
-        interest_component = Money(
-            w.settlement_balance.raw_amount - expected_principal.raw_amount
-        )
+        interest_component = Money(w.settlement_balance.raw_amount - expected_principal.raw_amount)
         assert interest_component == sched.entries[0].interest_payment
