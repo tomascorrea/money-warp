@@ -485,6 +485,48 @@ class Loan:
         return self.principal_balance + self.interest_balance + self.mora_interest_balance + self.fine_balance
 
     @property
+    def settlement_balance(self) -> Money:
+        """Amount needed to cover the next installment via ``pay_installment``.
+
+        Computes fines + mora + interest (accrued to ``max(now, next_due)``)
+        + the next installment's scheduled principal.  Matches the interest
+        cutoff that ``pay_installment`` uses internally.
+
+        For single-installment or last-installment loans this equals the
+        full payoff amount.  For multi-installment loans with more than one
+        installment remaining, this is less than ``current_balance``.
+        """
+        state = self._compute_state()
+        if not state.principal_balance.is_positive():
+            return Money.zero()
+
+        schedule = self.get_original_schedule()
+        covered = covered_due_date_count(state.principal_balance, schedule)
+        if covered >= len(self.due_dates):
+            return Money.zero()
+
+        next_due = self.due_dates[covered]
+        next_entry = schedule.entries[covered]
+
+        now_date = self._time_ctx.to_date(self.now())
+        interest_cutoff = max(now_date, next_due)
+        days = (interest_cutoff - self._time_ctx.to_date(state.last_accrual_end)).days
+
+        if days > 0:
+            penalty_next_due = effective_penalty_due_date(next_due, self.working_day_calendar)
+            regular, mora = self._interest.compute_accrued_interest(
+                days,
+                state.principal_balance,
+                self._time_ctx.tz,
+                penalty_next_due,
+                state.last_accrual_end,
+            )
+        else:
+            regular, mora = Money.zero(), Money.zero()
+
+        return self.fine_balance + mora + regular + next_entry.principal_payment
+
+    @property
     def is_paid_off(self) -> bool:
         """Whether the loan is fully paid off."""
         if self.current_balance.is_zero() or self.current_balance.is_negative():
