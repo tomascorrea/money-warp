@@ -82,6 +82,10 @@ Statements are a reporting view — they don't affect the financial computation.
 - **`record_payment(amount, payment_date, interest_date=None)`** — full control, same as `Loan`.
 - **`pay_installment(amount)`** — sugar method using `now()`. Interest accrual depends on timing (early/on-time/late), same semantics as `Loan.pay_installment`.
 
+## Balance Properties
+
+Same four-component `current_balance` as `Loan` (principal + interest + mora + fines), plus `settlement_balance` — the amount to cover the next installment via `pay_installment`. Uses the per-cycle mora rate from `resolve_mora_rate` when a resolver is configured. See `knowledge/loan.md` for the full `settlement_balance` vs `current_balance` discussion.
+
 ## Warp Integration
 
 `BillingCycleLoan` has `_time_ctx` and `_on_warp`, so `Warp` works out of the box. Warping materialises fines at the target date.

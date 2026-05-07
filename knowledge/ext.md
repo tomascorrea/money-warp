@@ -193,6 +193,14 @@ Stores `_money_warp_bridge_meta` on the loan class with all field mappings.
 - **Python side:** delegates to `self.balance_at(now())`.
 - **SQL side:** delegates to `cls.balance_at(func.now())`.
 
+**`settlement_balance_at(date)`** (hybrid_method):
+- **Python side:** Calls `self._load_money_warp_loan()`, uses `Warp(loan, as_of)`, reads `warped.settlement_balance`. Returns the amount needed to cover the next installment via `pay_installment`.
+- **SQL side:** CTE-based expression using `max(as_of, next_due)` as the interest cutoff plus the estimated next installment's scheduled principal (PMT minus one period's interest). Falls back to `0` when interest rate is NULL.
+
+**`settlement_balance`** (hybrid_property):
+- **Python side:** delegates to `self.settlement_balance_at(now())`.
+- **SQL side:** delegates to `cls.settlement_balance_at(func.now())`.
+
 The settlement model must be decorated with `@settlement_bridge` — `@loan_bridge` reads `_money_warp_bridge_meta` from the relationship target at query time. Raises `TypeError` if missing.
 
 ### Dialect compatibility layer (`compat.py`)

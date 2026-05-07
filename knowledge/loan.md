@@ -248,8 +248,17 @@ All derived from `_compute_state()`:
 | `interest_balance` | `Money` | Regular accrued interest since last payment |
 | `mora_interest_balance` | `Money` | Mora accrued interest (days beyond due date) |
 | `fine_balance` | `Money` | Unpaid fines (total applied minus fines paid) |
-| `current_balance` | `Money` | Sum of all four components |
+| `current_balance` | `Money` | Sum of all four components (point-in-time snapshot, interest accrued to `now()`) |
+| `settlement_balance` | `Money` | Amount to cover the next installment via `pay_installment` |
 | `overpaid` | `Money` | Total amount paid beyond the loan's obligations |
+
+### `settlement_balance` vs `current_balance`
+
+`current_balance` is a point-in-time snapshot — interest accrues up to `now()`. `settlement_balance` matches what `pay_installment` charges — interest accrues up to `max(now(), next_due_date)`. The difference matters for early payments, where `pay_installment` charges the full period's interest.
+
+`settlement_balance` computes: `fine_balance + mora + interest_to_max(now, next_due) + next_installment_scheduled_principal`. For multi-installment loans with more than one remaining, `settlement_balance < current_balance` (one installment vs all remaining principal). For single/last installment, `settlement_balance >= current_balance`.
+
+**Invariant:** `pay_installment(settlement_balance)` fully covers the next installment.
 
 ## Overpayment
 
