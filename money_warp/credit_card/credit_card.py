@@ -7,9 +7,9 @@ from typing import List, Optional
 
 from ..billing_cycle import BaseBillingCycle, MonthlyBillingCycle, Statement
 from ..cash_flow import CashFlow, CashFlowEntry, CashFlowItem
-from ..interest_rate import InterestRate
-from ..money import Money
 from ..time_context import TimeContext
+from ..types.interest_rate import InterestRate
+from ..types.money import Money
 from ..tz import tz_aware
 
 _DEBIT_CATEGORIES = frozenset({"purchase", "interest_charge", "fine_charge"})

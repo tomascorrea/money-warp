@@ -7,10 +7,10 @@ from typing import Any, Dict, List, Optional, Type
 from sqlalchemy import JSON, Integer, Numeric, String
 from sqlalchemy.types import TypeDecorator
 
-from money_warp.interest_rate import InterestRate
-from money_warp.money import Money
-from money_warp.percentage import Percentage
-from money_warp.rate import CompoundingFrequency, Rate, YearSize
+from money_warp.types.interest_rate import InterestRate
+from money_warp.types.money import Money
+from money_warp.types.percentage import Percentage
+from money_warp.types.rate import CompoundingFrequency, Rate, YearSize
 
 _VALID_MONEY_REPRESENTATIONS = ("raw", "real", "cents")
 _VALID_RATE_REPRESENTATIONS = ("string", "json")
@@ -25,7 +25,7 @@ _FREQUENCY_TOKEN = {
 
 
 class MoneyType(TypeDecorator):
-    """SQLAlchemy column type for :class:`~money_warp.money.Money`.
+    """SQLAlchemy column type for :class:`~money_warp.types.money.Money`.
 
     Args:
         precision: Total number of digits for the ``Numeric`` column
@@ -81,7 +81,7 @@ class MoneyType(TypeDecorator):
 
 
 class RateType(TypeDecorator):
-    """SQLAlchemy column type for :class:`~money_warp.rate.Rate`.
+    """SQLAlchemy column type for :class:`~money_warp.types.rate.Rate`.
 
     Args:
         representation: Controls storage format.
@@ -200,7 +200,7 @@ class RateType(TypeDecorator):
 
 
 class InterestRateType(RateType):
-    """SQLAlchemy column type for :class:`~money_warp.interest_rate.InterestRate`.
+    """SQLAlchemy column type for :class:`~money_warp.types.interest_rate.InterestRate`.
 
     Identical to :class:`RateType` but constructs ``InterestRate`` instances,
     which reject negative values.
@@ -211,7 +211,7 @@ class InterestRateType(RateType):
 
 
 class PercentageType(TypeDecorator):
-    """SQLAlchemy column type for :class:`~money_warp.percentage.Percentage`.
+    """SQLAlchemy column type for :class:`~money_warp.types.percentage.Percentage`.
 
     Stores percentages as canonical strings (``"5.00%"``) in a ``String``
     column. Bind/result delegates to :class:`Percentage` directly so all of

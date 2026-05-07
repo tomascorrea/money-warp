@@ -3,8 +3,8 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from ..interest_rate import InterestRate
-from ..money import Money
+from ..types.interest_rate import InterestRate
+from ..types.money import Money
 
 
 @dataclass(frozen=True)

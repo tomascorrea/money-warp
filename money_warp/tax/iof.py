@@ -5,8 +5,8 @@ from decimal import Decimal
 from enum import Enum
 from typing import List, Union
 
-from ..money import Money
 from ..scheduler.schedule import PaymentSchedule
+from ..types.money import Money
 from ..tz import to_date
 from .base import BaseTax, TaxInstallmentDetail, TaxResult
 

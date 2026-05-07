@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 from ..cash_flow import CashFlow
-from ..money import Money
+from ..types.money import Money
 from ..tz import to_date
 from .statement import Statement
 

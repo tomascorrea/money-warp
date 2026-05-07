@@ -9,8 +9,8 @@ from datetime import date, datetime, tzinfo
 from enum import Enum
 from typing import Callable, Optional, Tuple
 
-from ..interest_rate import InterestRate
-from ..money import Money
+from ..types.interest_rate import InterestRate
+from ..types.money import Money
 from ..tz import to_date
 
 

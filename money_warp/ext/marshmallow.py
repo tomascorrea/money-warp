@@ -10,10 +10,10 @@ from typing import Dict, Optional
 
 from marshmallow import fields
 
-from money_warp.interest_rate import InterestRate
-from money_warp.money import Money
-from money_warp.percentage import Percentage
-from money_warp.rate import CompoundingFrequency, Rate, YearSize
+from money_warp.types.interest_rate import InterestRate
+from money_warp.types.money import Money
+from money_warp.types.percentage import Percentage
+from money_warp.types.rate import CompoundingFrequency, Rate, YearSize
 
 __all__ = [
     "MoneyField",
@@ -35,7 +35,7 @@ _FREQUENCY_TOKEN = {
 
 
 class MoneyField(fields.Field):
-    """Marshmallow field for :class:`~money_warp.money.Money`.
+    """Marshmallow field for :class:`~money_warp.types.money.Money`.
 
     Args:
         representation: Controls serialization format.
@@ -88,7 +88,7 @@ class MoneyField(fields.Field):
 
 
 class RateField(fields.Field):
-    """Marshmallow field for :class:`~money_warp.rate.Rate`.
+    """Marshmallow field for :class:`~money_warp.types.rate.Rate`.
 
     Args:
         representation: Controls serialization format.
@@ -221,7 +221,7 @@ class RateField(fields.Field):
 
 
 class InterestRateField(RateField):
-    """Marshmallow field for :class:`~money_warp.interest_rate.InterestRate`.
+    """Marshmallow field for :class:`~money_warp.types.interest_rate.InterestRate`.
 
     Identical to :class:`RateField` but constructs ``InterestRate`` instances,
     which reject negative values.
@@ -236,7 +236,7 @@ class InterestRateField(RateField):
 
 
 class PercentageField(fields.Field):
-    """Marshmallow field for :class:`~money_warp.percentage.Percentage`.
+    """Marshmallow field for :class:`~money_warp.types.percentage.Percentage`.
 
     Serializes to a canonical string (``"5.00%"``) and deserializes via
     :class:`Percentage` directly, inheriting all of the constructor's

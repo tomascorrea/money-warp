@@ -21,8 +21,8 @@ from money_warp.ext.sa import (
     loan_bridge,
     settlement_bridge,
 )
-from money_warp.interest_rate import InterestRate
-from money_warp.money import Money
+from money_warp.types.interest_rate import InterestRate
+from money_warp.types.money import Money
 
 # ---------------------------------------------------------------------------
 # Base & models

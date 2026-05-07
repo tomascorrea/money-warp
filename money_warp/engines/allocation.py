@@ -3,7 +3,7 @@
 from typing import List, Tuple
 
 from ..models import Allocation, Installment
-from ..money import Money
+from ..types.money import Money
 from .constants import BALANCE_TOLERANCE
 
 

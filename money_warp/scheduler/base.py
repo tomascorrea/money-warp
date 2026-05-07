@@ -4,8 +4,8 @@ from abc import ABC, abstractmethod
 from datetime import date, datetime, tzinfo
 from typing import List
 
-from ..interest_rate import InterestRate
-from ..money import Money
+from ..types.interest_rate import InterestRate
+from ..types.money import Money
 from .schedule import PaymentSchedule
 
 

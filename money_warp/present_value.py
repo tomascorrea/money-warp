@@ -7,9 +7,9 @@ from typing import Callable, Optional, Tuple, Union
 from scipy.optimize import brentq, fsolve  # type: ignore[import]
 
 from .cash_flow import CashFlow
-from .interest_rate import InterestRate
-from .money import Money
-from .rate import Rate, YearSize
+from .types.interest_rate import InterestRate
+from .types.money import Money
+from .types.rate import Rate, YearSize
 from .tz import tz_aware
 
 

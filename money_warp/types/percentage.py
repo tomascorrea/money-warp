@@ -6,7 +6,7 @@ are MDR (partner rate), late-payment fines/multas, and similar value-based
 fees.
 
 :class:`Percentage` is intentionally **not** related to
-:class:`~money_warp.rate.Rate` or :class:`~money_warp.interest_rate.InterestRate`:
+:class:`~money_warp.types.rate.Rate` or :class:`~money_warp.types.interest_rate.InterestRate`:
 those types model temporal rates with period conversions
 (``to_daily``, ``to_monthly``, ...). A percentage has no period to convert
 *to*, so the absence of those methods is part of the contract — it forces
@@ -120,8 +120,8 @@ class Percentage:
         Rejects:
         - Strings without a literal ``%`` suffix.
         - Strings with temporal suffixes (``annual``, ``monthly``, ``a.a.``,
-          ...) — those belong to :class:`~money_warp.rate.Rate` /
-          :class:`~money_warp.interest_rate.InterestRate`.
+          ...) — those belong to :class:`~money_warp.types.rate.Rate` /
+          :class:`~money_warp.types.interest_rate.InterestRate`.
         - Negative values (no leading ``-`` allowed).
         """
         cleaned = rate_string.strip()

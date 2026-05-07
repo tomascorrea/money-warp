@@ -19,9 +19,11 @@ money_warp/
 │   ├── allocation.py      # allocate_payment, distribute_into_installments
 │   ├── fines.py           # is_payment_late, compute_fines_at
 │   └── forward_pass.py    # LoanState, compute_state, build_installments, tolerance
-├── money.py               # Money (high-precision currency)
-├── rate.py                # Rate (signed base) + CompoundingFrequency + YearSize
-├── interest_rate.py       # InterestRate (non-negative refinement of Rate)
+├── types/
+│   ├── money.py           # Money (high-precision currency)
+│   ├── rate.py            # Rate (signed base) + CompoundingFrequency + YearSize
+│   ├── interest_rate.py   # InterestRate (non-negative refinement of Rate)
+│   └── percentage.py      # Percentage (non-temporal, non-compounding flat percentage)
 ├── time_context.py        # TimeContext (shared Warp-compatible time source)
 ├── cash_flow/
 │   ├── entry.py           # CashFlowEntry (abstract base), Expected/HappenedCashFlowEntry
@@ -68,9 +70,9 @@ Money is registered as `numbers.Real` (via `numbers.Real.register(Money)`) so it
 
 The library uses two rate types to model the domain distinction between computed metrics and contractual parameters:
 
-- **`Rate`** (`rate.py`) — signed, general-purpose base type. Stores a decimal rate plus a `CompoundingFrequency` enum (`DAILY`, `MONTHLY`, `QUARTERLY`, `SEMI_ANNUALLY`, `ANNUALLY`, `CONTINUOUS`). Supports positive, negative, and zero values. All conversions go through an effective annual rate as the canonical intermediate form. Used as the return type for IRR and MIRR, and accepted by `present_value()` and `discount_factor()`.
+- **`Rate`** (`types/rate.py`) — signed, general-purpose base type. Stores a decimal rate plus a `CompoundingFrequency` enum (`DAILY`, `MONTHLY`, `QUARTERLY`, `SEMI_ANNUALLY`, `ANNUALLY`, `CONTINUOUS`). Supports positive, negative, and zero values. All conversions go through an effective annual rate as the canonical intermediate form. Used as the return type for IRR and MIRR, and accepted by `present_value()` and `discount_factor()`.
 
-- **`InterestRate`** (`interest_rate.py`) — non-negative refinement of `Rate`. Adds a validation that rejects negative rates at construction time (both string and numeric). Also provides the `accrue(principal, days)` method for computing compound interest, which belongs exclusively to contractual rates. Used for loan terms, scheduler inputs, and annuity/perpetuity calculations.
+- **`InterestRate`** (`types/interest_rate.py`) — non-negative refinement of `Rate`. Adds a validation that rejects negative rates at construction time (both string and numeric). Also provides the `accrue(principal, days)` method for computing compound interest, which belongs exclusively to contractual rates. Used for loan terms, scheduler inputs, and annuity/perpetuity calculations.
 
 Conversion methods (`to_daily()`, `to_monthly()`, `to_annual()`) use `self.__class__(...)` so subclass identity is preserved.
 

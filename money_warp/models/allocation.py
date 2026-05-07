@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from ..money import Money
+from ..types.money import Money
 
 
 @dataclass(frozen=True)

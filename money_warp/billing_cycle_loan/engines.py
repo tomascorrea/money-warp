@@ -12,10 +12,10 @@ from typing import Dict, List, Optional
 from ..billing_cycle import BaseBillingCycle
 from ..engines import InterestCalculator, LoanState, MoraRateCallback
 from ..engines import compute_state as _compute_state
-from ..interest_rate import InterestRate
 from ..models import BillingCycleLoanStatement, Settlement
-from ..money import Money
 from ..scheduler import PaymentSchedule
+from ..types.interest_rate import InterestRate
+from ..types.money import Money
 from ..tz import to_date
 from ..working_day import EveryDayCalendar, WorkingDayCalendar
 from .mora_rate_resolver import MoraRateResolver

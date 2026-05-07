@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import text
 
 from money_warp.ext.sa import PercentageType
-from money_warp.percentage import Percentage
+from money_warp.types.percentage import Percentage
 
 from .conftest import PercentageModel
 

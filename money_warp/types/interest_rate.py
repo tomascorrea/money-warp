@@ -9,8 +9,8 @@ like IRR and MIRR, use Rate instead.
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Dict, Optional, Union
 
-from money_warp.money import Money
-from money_warp.rate import (
+from money_warp.types.money import Money
+from money_warp.types.rate import (
     _ABBREV_MAP,
     _ABBREV_TOKENS,
     _VALID_STR_STYLES,

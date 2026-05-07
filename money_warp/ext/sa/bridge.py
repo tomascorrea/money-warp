@@ -22,8 +22,8 @@ from money_warp.ext.sa.compat import (
 )
 from money_warp.ext.sa.types import _FREQUENCY_TOKEN
 from money_warp.loan import Loan
-from money_warp.money import Money
-from money_warp.rate import _ABBREV_MAP, CompoundingFrequency
+from money_warp.types.money import Money
+from money_warp.types.rate import _ABBREV_MAP, CompoundingFrequency
 from money_warp.tz import ensure_aware, get_tz, now, to_date
 from money_warp.warp import Warp, WarpedTime
 

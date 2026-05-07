@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, tzinfo
 from typing import List
 
-from ..money import Money
 from ..scheduler.schedule import PaymentSchedule
+from ..types.money import Money
 
 
 @dataclass

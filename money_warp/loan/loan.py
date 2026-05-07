@@ -16,13 +16,13 @@ from ..engines import (
     covered_due_date_count,
     is_payment_late,
 )
-from ..interest_rate import InterestRate
 from ..models import AnticipationResult, Installment, Settlement
-from ..money import Money
-from ..rate import Rate
 from ..scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry, PriceScheduler
 from ..tax.base import BaseTax, TaxResult
 from ..time_context import TimeContext
+from ..types.interest_rate import InterestRate
+from ..types.money import Money
+from ..types.rate import Rate
 from ..tz import ensure_aware, get_tz, tz_aware
 from ..working_day import EveryDayCalendar, WorkingDayCalendar, effective_penalty_due_date
 from .tvm import loan_calculate_anticipation, loan_irr, loan_present_value

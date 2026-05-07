@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING, Any
 
 from scipy.optimize import brentq  # type: ignore[import]
 
-from ..interest_rate import InterestRate
-from ..money import Money
 from ..scheduler.base import BaseScheduler
+from ..types.interest_rate import InterestRate
+from ..types.money import Money
 from .base import BaseTax
 
 if TYPE_CHECKING:

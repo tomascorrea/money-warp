@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, List
 
-from ..money import Money
+from ..types.money import Money
 from .allocation import Allocation
 
 if TYPE_CHECKING:

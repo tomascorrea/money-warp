@@ -6,10 +6,10 @@ import pytest
 from marshmallow import Schema, ValidationError
 
 from money_warp.ext.marshmallow import InterestRateField, MoneyField, PercentageField, RateField
-from money_warp.interest_rate import InterestRate
-from money_warp.money import Money
-from money_warp.percentage import Percentage
-from money_warp.rate import CompoundingFrequency, Rate, YearSize
+from money_warp.types.interest_rate import InterestRate
+from money_warp.types.money import Money
+from money_warp.types.percentage import Percentage
+from money_warp.types.rate import CompoundingFrequency, Rate, YearSize
 
 # ---------------------------------------------------------------------------
 # Helper schemas
