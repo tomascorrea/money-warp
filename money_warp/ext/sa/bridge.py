@@ -645,7 +645,10 @@ def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
     # period is approximated as principal * periodic_rate.  This mirrors the
     # same PMT estimation already used for fines.
     period_interest = loan_state.c.principal_balance * periodic_rate
-    next_principal = mw_greatest(0, pmt - period_interest)
+    next_principal = case(
+        (loan_state.c.principal_balance <= 0, literal(0.0)),
+        else_=mw_greatest(0, pmt - period_interest),
+    )
 
     settlement_pmt = (
         select(

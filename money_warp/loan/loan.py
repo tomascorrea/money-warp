@@ -524,7 +524,14 @@ class Loan:
         else:
             regular, mora = Money.zero(), Money.zero()
 
-        return self.fine_balance + mora + regular + next_entry.principal_payment
+        total_fines = (
+            Money(sum(f.raw_amount for f in state.fines_applied.values())) if state.fines_applied else Money.zero()
+        )
+        fine = total_fines - state.fines_paid_total
+        if fine.is_negative():
+            fine = Money.zero()
+
+        return fine + mora + regular + next_entry.principal_payment
 
     @property
     def is_paid_off(self) -> bool:

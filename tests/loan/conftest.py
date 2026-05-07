@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-from money_warp import InterestRate, Loan, Money
+from money_warp import InterestRate, Loan, Money, PriceScheduler
 
 
 @pytest.fixture
@@ -45,3 +45,27 @@ def partial_payment_loan():
     loan.record_payment(Money("500.00"), payment_date)
 
     return loan, principal, payment_date
+
+
+@pytest.fixture
+def single_installment_loan():
+    """Single-installment Loan: 10k principal, 10% a.m., due Dec 20."""
+    return Loan(
+        principal=Money("10000"),
+        interest_rate=InterestRate("10% a.m."),
+        due_dates=[date(2025, 12, 20)],
+        disbursement_date=datetime(2025, 11, 20, tzinfo=timezone.utc),
+        scheduler=PriceScheduler,
+    )
+
+
+@pytest.fixture
+def multi_installment_loan():
+    """3-installment Loan: 10k principal, 5% a.m., due Dec/Jan/Feb 20."""
+    return Loan(
+        principal=Money("10000"),
+        interest_rate=InterestRate("5% a.m."),
+        due_dates=[date(2025, 12, 20), date(2026, 1, 20), date(2026, 2, 20)],
+        disbursement_date=datetime(2025, 11, 20, tzinfo=timezone.utc),
+        scheduler=PriceScheduler,
+    )
