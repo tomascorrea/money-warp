@@ -1,7 +1,7 @@
 """Loan class -- everything emerges from the CashFlow."""
 
 from datetime import date, datetime, tzinfo
-from typing import Dict, List, Optional, Tuple, Type, Union
+from typing import Dict, List, Optional, Type, Union
 from zoneinfo import ZoneInfo
 
 from ..base_loan import BaseLoan
@@ -11,7 +11,6 @@ from ..engines import (
     LoanState,
     MoraStrategy,
     compute_state,
-    covered_due_date_count,
 )
 from ..models import AnticipationResult, Settlement
 from ..scheduler import BaseScheduler, PriceScheduler
@@ -21,7 +20,7 @@ from ..types.interest_rate import InterestRate
 from ..types.money import Money
 from ..types.rate import Rate
 from ..tz import ensure_aware, get_tz, tz_aware
-from ..working_day import EveryDayCalendar, WorkingDayCalendar, effective_penalty_due_date
+from ..working_day import EveryDayCalendar, WorkingDayCalendar
 from .tvm import loan_calculate_anticipation, loan_irr, loan_present_value
 
 
@@ -254,74 +253,6 @@ class Loan(BaseLoan):
             fine_observation_dates=self._fine_observation_dates,
             calendar=self.working_day_calendar,
         )
-
-    def _accrued_interest_components(self) -> Tuple[Money, Money]:
-        """Return (regular, mora) accrued interest since last payment."""
-        state = self._compute_state()
-        days = (self._time_ctx.to_date(self.now()) - self._time_ctx.to_date(state.last_accrual_end)).days
-
-        if state.principal_balance.is_positive() and days > 0:
-            covered = covered_due_date_count(state.principal_balance, self.get_original_schedule())
-            next_due = self.due_dates[covered] if covered < len(self.due_dates) else None
-            penalty_next_due = effective_penalty_due_date(next_due, self.working_day_calendar) if next_due else None
-            return self._interest.compute_accrued_interest(
-                days,
-                state.principal_balance,
-                self._time_ctx.tz,
-                penalty_next_due,
-                state.last_accrual_end,
-            )
-
-        return Money.zero(), Money.zero()
-
-    @property
-    def settlement_balance(self) -> Money:
-        """Amount needed to cover the next installment via ``pay_installment``.
-
-        Computes fines + mora + interest (accrued to ``max(now, next_due)``)
-        + the next installment's scheduled principal.  Matches the interest
-        cutoff that ``pay_installment`` uses internally.
-
-        For single-installment or last-installment loans this equals the
-        full payoff amount.  For multi-installment loans with more than one
-        installment remaining, this is less than ``current_balance``.
-        """
-        state = self._compute_state()
-        if not state.principal_balance.is_positive():
-            return Money.zero()
-
-        schedule = self.get_original_schedule()
-        covered = covered_due_date_count(state.principal_balance, schedule)
-        if covered >= len(self.due_dates):
-            return Money.zero()
-
-        next_due = self.due_dates[covered]
-        next_entry = schedule.entries[covered]
-
-        now_date = self._time_ctx.to_date(self.now())
-        interest_cutoff = max(now_date, next_due)
-        days = (interest_cutoff - self._time_ctx.to_date(state.last_accrual_end)).days
-
-        if days > 0:
-            penalty_next_due = effective_penalty_due_date(next_due, self.working_day_calendar)
-            regular, mora = self._interest.compute_accrued_interest(
-                days,
-                state.principal_balance,
-                self._time_ctx.tz,
-                penalty_next_due,
-                state.last_accrual_end,
-            )
-        else:
-            regular, mora = Money.zero(), Money.zero()
-
-        total_fines = (
-            Money(sum(f.raw_amount for f in state.fines_applied.values())) if state.fines_applied else Money.zero()
-        )
-        fine = total_fines - state.fines_paid_total
-        if fine.is_negative():
-            fine = Money.zero()
-
-        return fine + mora + regular + next_entry.principal_payment
 
     # ------------------------------------------------------------------
     # Loan-specific: fines_applied setter

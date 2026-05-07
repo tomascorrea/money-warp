@@ -2,8 +2,9 @@
 
 All balance properties, payment methods (except ``record_payment``),
 settlement logic, fine tracking, schedule queries, and Warp hooks live
-here.  Subclasses provide ``_compute_state``, ``_accrued_interest_components``,
-``_build_initial_cashflow``, ``settlement_balance``, and ``record_payment``.
+here.  Subclasses provide ``_compute_state``, ``_build_initial_cashflow``,
+and ``record_payment``.  Per-cycle mora rate resolution is handled via the
+``_resolve_mora_rate_for_due`` hook.
 """
 
 import warnings
@@ -27,7 +28,7 @@ from .time_context import TimeContext
 from .types.interest_rate import InterestRate
 from .types.money import Money
 from .tz import tz_aware
-from .working_day import WorkingDayCalendar
+from .working_day import WorkingDayCalendar, effective_penalty_due_date
 
 
 class BaseLoan(ABC):
@@ -77,17 +78,8 @@ class BaseLoan(ABC):
         """Run the forward pass and return derived loan state."""
 
     @abstractmethod
-    def _accrued_interest_components(self) -> Tuple[Money, Money]:
-        """Return ``(regular, mora)`` accrued interest since last payment."""
-
-    @abstractmethod
     def _build_initial_cashflow(self) -> CashFlow:
         """Build the initial CashFlow with expected items from the schedule."""
-
-    @property
-    @abstractmethod
-    def settlement_balance(self) -> Money:
-        """Amount needed to cover the next installment via ``pay_installment``."""
 
     @abstractmethod
     def record_payment(
@@ -95,9 +87,29 @@ class BaseLoan(ABC):
         amount: Money,
         payment_date: datetime,
         interest_date: Optional[datetime] = None,
-        **kwargs: object,
+        description: Optional[str] = None,
+        waive_fines: bool = False,
+        waive_mora: bool = False,
+        discount: Optional[Money] = None,
     ) -> Settlement:
-        """Record a payment and return the derived settlement."""
+        """Record a payment and return the derived settlement.
+
+        Subclasses may extend the signature (e.g. ``Loan`` adds
+        ``processing_date``).
+        """
+
+    # ------------------------------------------------------------------
+    # Mora rate hook (override in subclasses with per-cycle resolution)
+    # ------------------------------------------------------------------
+
+    def _resolve_mora_rate_for_due(self, next_due: Optional[date]) -> Optional[InterestRate]:
+        """Return the mora rate override for *next_due*, or ``None`` for the default.
+
+        ``Loan`` returns ``None`` (uses the calculator's fixed rate).
+        ``BillingCycleLoan`` overrides this to call ``resolve_mora_rate``
+        with the per-cycle resolver.
+        """
+        return None
 
     # ------------------------------------------------------------------
     # Payment methods
@@ -216,6 +228,32 @@ class BaseLoan(ABC):
         """Outstanding principal (derived from CashFlow)."""
         return self._compute_state().principal_balance
 
+    def _accrued_interest_components(self) -> Tuple[Money, Money]:
+        """Return ``(regular, mora)`` accrued interest since last payment.
+
+        Uses ``_resolve_mora_rate_for_due`` to obtain the per-cycle
+        mora rate override (``None`` for ``Loan``, resolved rate for
+        ``BillingCycleLoan``).
+        """
+        state = self._compute_state()
+        days = (self._time_ctx.to_date(self.now()) - self._time_ctx.to_date(state.last_accrual_end)).days
+
+        if state.principal_balance.is_positive() and days > 0:
+            covered = covered_due_date_count(state.principal_balance, self.get_original_schedule())
+            next_due = self.due_dates[covered] if covered < len(self.due_dates) else None
+            penalty_next_due = effective_penalty_due_date(next_due, self.working_day_calendar) if next_due else None
+            mora_rate = self._resolve_mora_rate_for_due(next_due)
+            return self._interest.compute_accrued_interest(
+                days,
+                state.principal_balance,
+                self._time_ctx.tz,
+                penalty_next_due,
+                state.last_accrual_end,
+                mora_rate_override=mora_rate,
+            )
+
+        return Money.zero(), Money.zero()
+
     @property
     def interest_balance(self) -> Money:
         """Regular (non-mora) accrued interest since last payment."""
@@ -240,6 +278,57 @@ class BaseLoan(ABC):
     def current_balance(self) -> Money:
         """Total outstanding balance (principal + interest + mora + fines)."""
         return self.principal_balance + self.interest_balance + self.mora_interest_balance + self.fine_balance
+
+    @property
+    def settlement_balance(self) -> Money:
+        """Amount needed to cover the next installment via ``pay_installment``.
+
+        Computes fines + mora + interest (accrued to ``max(now, next_due)``)
+        + the next installment's scheduled principal.  Matches the interest
+        cutoff that ``pay_installment`` uses internally.
+
+        For single-installment or last-installment loans this equals the
+        full payoff amount.  For multi-installment loans with more than one
+        installment remaining, this is less than ``current_balance``.
+        """
+        state = self._compute_state()
+        if not state.principal_balance.is_positive():
+            return Money.zero()
+
+        schedule = self.get_original_schedule()
+        covered = covered_due_date_count(state.principal_balance, schedule)
+        if covered >= len(self.due_dates):
+            return Money.zero()
+
+        next_due = self.due_dates[covered]
+        next_entry = schedule.entries[covered]
+
+        now_date = self._time_ctx.to_date(self.now())
+        interest_cutoff = max(now_date, next_due)
+        days = (interest_cutoff - self._time_ctx.to_date(state.last_accrual_end)).days
+
+        if days > 0:
+            penalty_next_due = effective_penalty_due_date(next_due, self.working_day_calendar)
+            mora_rate = self._resolve_mora_rate_for_due(next_due)
+            regular, mora = self._interest.compute_accrued_interest(
+                days,
+                state.principal_balance,
+                self._time_ctx.tz,
+                penalty_next_due,
+                state.last_accrual_end,
+                mora_rate_override=mora_rate,
+            )
+        else:
+            regular, mora = Money.zero(), Money.zero()
+
+        total_fines = (
+            Money(sum(f.raw_amount for f in state.fines_applied.values())) if state.fines_applied else Money.zero()
+        )
+        fine = total_fines - state.fines_paid_total
+        if fine.is_negative():
+            fine = Money.zero()
+
+        return fine + mora + regular + next_entry.principal_payment
 
     @property
     def is_paid_off(self) -> bool:

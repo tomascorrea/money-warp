@@ -1,6 +1,6 @@
 """Tests for BillingCycleLoan.settlement_balance with explicit expected values."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from money_warp import Money, Warp
@@ -114,3 +114,13 @@ def test_bcl_multi_fully_paid_is_zero(multi_bcl):
 
     with Warp(w3, datetime(2026, 3, 1, tzinfo=SAO_PAULO)) as w:
         assert w.settlement_balance == Money("0.00")
+
+
+def test_bcl_variable_mora_late_settlement_covers_installment(variable_mora_loan):
+    """Late payment with variable mora resolver: settlement_balance covers next installment."""
+    with Warp(variable_mora_loan, datetime(2025, 4, 20, tzinfo=timezone.utc)) as w:
+        w.pay_installment(w.settlement_balance)
+        inst = w.installments[0]
+        assert any(
+            a.is_fully_covered for a in inst.allocations
+        ), f"Installment 1 not covered after paying settlement_balance: balance={inst.balance}"

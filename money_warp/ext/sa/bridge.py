@@ -640,8 +640,13 @@ def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
     #
     # For a Price schedule the PMT is constant.  The next installment's
     # principal portion = PMT - interest_for_one_period.  Interest for one
-    # period is approximated as principal * periodic_rate.  This mirrors the
-    # same PMT estimation already used for fines.
+    # period is approximated as principal * periodic_rate (where periodic_rate
+    # uses avg_period -- the arithmetic mean of all periods).  This mirrors
+    # the same PMT estimation already used for fines.
+    #
+    # For schedules with irregular periods (e.g. first period of 45 days,
+    # rest 30), the SQL value may diverge slightly from the Python-side
+    # settlement_balance which uses the exact schedule entry.
     period_interest = loan_state.c.principal_balance * periodic_rate
     next_principal = case(
         (loan_state.c.principal_balance <= 0, literal(0.0)),
