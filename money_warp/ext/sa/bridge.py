@@ -402,6 +402,7 @@ _COMPONENT_PRINCIPAL = "principal"
 _COMPONENT_INTEREST = "interest"
 _COMPONENT_MORA = "mora_interest"
 _COMPONENT_FINES = "fines"
+_COMPONENT_SETTLEMENT = "settlement"
 
 
 def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
@@ -418,7 +419,8 @@ def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
         meta: Bridge metadata dict mapping logical names to column names.
         component: Which balance component to return.  One of
             ``_COMPONENT_ALL`` (sum, default), ``_COMPONENT_PRINCIPAL``,
-            ``_COMPONENT_INTEREST``, ``_COMPONENT_MORA``, ``_COMPONENT_FINES``.
+            ``_COMPONENT_INTEREST``, ``_COMPONENT_MORA``,
+            ``_COMPONENT_FINES``, ``_COMPONENT_SETTLEMENT``.
     """
     info = _resolve_settlement_info(cls, meta["settlements"])
     pr_col = getattr(cls, meta["principal"])
@@ -480,14 +482,21 @@ def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
         .scalar_subquery()
     )
 
+    settlement_cutoff = mw_greatest(mw_julianday(as_of), func.coalesce(mw_julianday(next_due_sq), mw_julianday(as_of)))
+
     total_days_expr = mw_greatest(
         0,
         mw_julianday(as_of) - mw_julianday(loan_state.c.last_pay_date),
+    )
+    settlement_days_expr = mw_greatest(
+        0,
+        settlement_cutoff - mw_julianday(loan_state.c.last_pay_date),
     )
 
     time_split = (
         select(
             total_days_expr.label("total_days"),
+            settlement_days_expr.label("settlement_days"),
             next_due_sq.label("next_due"),
             loan_state.c.last_pay_date,
         )
@@ -517,6 +526,28 @@ def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
         .cte("day_split", nesting=True)
     )
 
+    # -- CTE 4b: settlement_day_split (uses max(as_of, next_due) cutoff) ---
+    sett_regular_days_expr = case(
+        (time_split.c.next_due.is_(None), time_split.c.settlement_days),
+        (
+            mw_julianday(time_split.c.next_due) >= mw_julianday(as_of),
+            time_split.c.settlement_days,
+        ),
+        else_=mw_greatest(
+            0,
+            mw_julianday(time_split.c.next_due) - mw_julianday(time_split.c.last_pay_date),
+        ),
+    )
+
+    settlement_day_split = (
+        select(
+            sett_regular_days_expr.label("regular_days"),
+            mw_greatest(0, time_split.c.settlement_days - sett_regular_days_expr).label("mora_days"),
+        )
+        .correlate(cls)
+        .cte("settlement_day_split", nesting=True)
+    )
+
     # -- CTE 5: accrued ----------------------------------------------------
     reg_interest = loan_state.c.principal_balance * (
         func.pow(1.0 + daily_rates.c.daily_rate, day_split.c.regular_days) - 1.0
@@ -540,6 +571,30 @@ def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
         .select_from(loan_state.join(daily_rates, literal(True)).join(day_split, literal(True)))
         .correlate(cls)
         .cte("accrued", nesting=True)
+    )
+
+    # -- CTE 5b: settlement_accrued (interest to max(as_of, next_due)) -----
+    sett_reg = loan_state.c.principal_balance * (
+        func.pow(1.0 + daily_rates.c.daily_rate, settlement_day_split.c.regular_days) - 1.0
+    )
+    sett_mora_compound = (loan_state.c.principal_balance + sett_reg) * (
+        func.pow(1.0 + daily_rates.c.mora_daily_rate, settlement_day_split.c.mora_days) - 1.0
+    )
+    sett_mora_simple = loan_state.c.principal_balance * (
+        func.pow(1.0 + daily_rates.c.mora_daily_rate, settlement_day_split.c.mora_days) - 1.0
+    )
+
+    settlement_accrued = (
+        select(
+            sett_reg.label("regular_interest"),
+            case(
+                (ms_col == "COMPOUND", sett_mora_compound),
+                else_=sett_mora_simple,
+            ).label("mora_interest"),
+        )
+        .select_from(loan_state.join(daily_rates, literal(True)).join(settlement_day_split, literal(True)))
+        .correlate(cls)
+        .cte("settlement_accrued", nesting=True)
     )
 
     # -- CTE 6: late_fines -------------------------------------------------
@@ -581,6 +636,32 @@ def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
         .cte("late_fines", nesting=True)
     )
 
+    # -- CTE 7: settlement_pmt (next installment's scheduled principal) ----
+    #
+    # For a Price schedule the PMT is constant.  The next installment's
+    # principal portion = PMT - interest_for_one_period.  Interest for one
+    # period is approximated as principal * periodic_rate (where periodic_rate
+    # uses avg_period -- the arithmetic mean of all periods).  This mirrors
+    # the same PMT estimation already used for fines.
+    #
+    # For schedules with irregular periods (e.g. first period of 45 days,
+    # rest 30), the SQL value may diverge slightly from the Python-side
+    # settlement_balance which uses the exact schedule entry.
+    period_interest = loan_state.c.principal_balance * periodic_rate
+    next_principal = case(
+        (loan_state.c.principal_balance <= 0, literal(0.0)),
+        else_=mw_greatest(0, pmt - period_interest),
+    )
+
+    settlement_pmt = (
+        select(
+            next_principal.label("next_principal"),
+        )
+        .select_from(loan_state.join(daily_rates, literal(True)))
+        .correlate(cls)
+        .cte("settlement_pmt", nesting=True)
+    )
+
     # -- Final SELECT: pick requested component ----------------------------
     _component_expr = {
         _COMPONENT_PRINCIPAL: loan_state.c.principal_balance,
@@ -593,16 +674,27 @@ def _build_sql_balance_expression(cls, as_of, meta, component=_COMPONENT_ALL):
             + accrued.c.mora_interest
             + late_fines.c.total_fines
         ),
+        _COMPONENT_SETTLEMENT: (
+            late_fines.c.total_fines
+            + settlement_accrued.c.mora_interest
+            + settlement_accrued.c.regular_interest
+            + settlement_pmt.c.next_principal
+        ),
     }
 
     target_expr = _component_expr[component]
 
-    full_sq = (
-        select(target_expr.label("result"))
-        .select_from(loan_state.join(accrued, literal(True)).join(late_fines, literal(True)))
-        .correlate(cls)
-        .scalar_subquery()
+    settlement_tables = (
+        loan_state.join(accrued, literal(True))
+        .join(late_fines, literal(True))
+        .join(settlement_accrued, literal(True))
+        .join(settlement_pmt, literal(True))
     )
+    standard_tables = loan_state.join(accrued, literal(True)).join(late_fines, literal(True))
+
+    from_tables = settlement_tables if component == _COMPONENT_SETTLEMENT else standard_tables
+
+    full_sq = select(target_expr.label("result")).select_from(from_tables).correlate(cls).scalar_subquery()
 
     # -- Fallback when rate is NULL ----------------------------------------
     simple_fallback = (
@@ -681,6 +773,13 @@ def loan_bridge(
     - ``balance_at(date)`` -- total outstanding balance at *date*.
     - ``balance`` -- convenience property for ``balance_at(now())``.
 
+    **Settlement balance:**
+
+    - ``settlement_balance_at(date)`` -- amount to cover next installment
+      via ``pay_installment`` at *date*.
+    - ``settlement_balance`` -- convenience property for
+      ``settlement_balance_at(now())``.
+
     **Component balances (each has an ``_at(date)`` method and a property):**
 
     - ``principal_balance_at`` / ``principal_balance``
@@ -727,6 +826,15 @@ def loan_bridge(
 
         # -- total balance (special: reads current_balance) ----------------
         _attach_balance_hybrid(cls, _meta, "balance", "current_balance", _COMPONENT_ALL)
+
+        # -- settlement balance (next installment payoff via pay_installment)
+        _attach_balance_hybrid(
+            cls,
+            _meta,
+            "settlement_balance",
+            "settlement_balance",
+            _COMPONENT_SETTLEMENT,
+        )
 
         # -- component balances --------------------------------------------
         _COMPONENTS = [

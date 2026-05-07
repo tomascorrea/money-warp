@@ -1,4 +1,4 @@
-"""Shared fixtures for loan tests."""
+"""Shared fixtures for loan tests (Loan-specific only; common fixtures in tests/conftest.py)."""
 
 from datetime import date, datetime, timezone
 

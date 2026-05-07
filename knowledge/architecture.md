@@ -33,15 +33,16 @@ money_warp/
 ├── billing_cycle/
 │   ├── base.py            # BaseBillingCycle (abstract)
 │   └── monthly.py         # MonthlyBillingCycle (fixed calendar day)
+├── base_loan.py              # BaseLoan ABC (shared implementation for Loan + BCL)
 ├── billing_cycle_loan/
-│   ├── billing_cycle_loan.py  # BillingCycleLoan facade
+│   ├── billing_cycle_loan.py  # BillingCycleLoan facade (extends BaseLoan)
 │   ├── engines.py             # BCL-specific: mora rate resolution + statements
 │   └── mora_rate_resolver.py  # MoraRateResolver protocol
 ├── credit_card/
 │   ├── credit_card.py     # CreditCard state machine
 │   └── statement.py       # Statement (frozen derived view)
 ├── loan/
-│   ├── loan.py            # Loan facade
+│   ├── loan.py            # Loan facade (extends BaseLoan)
 │   ├── engines.py         # Backward-compatible re-exports from money_warp.engines
 │   └── tvm.py             # TVM standalone functions (PV, IRR, anticipation)
 ├── scheduler/

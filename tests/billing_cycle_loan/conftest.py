@@ -1,4 +1,4 @@
-"""Shared fixtures for billing-cycle loan tests."""
+"""Shared fixtures for billing-cycle loan tests (BCL-specific only; common fixtures in tests/conftest.py)."""
 
 from datetime import date, datetime, timezone
 
