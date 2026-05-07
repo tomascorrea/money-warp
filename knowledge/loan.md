@@ -4,6 +4,8 @@ The `Loan` class models a personal loan where **everything emerges from the Cash
 
 ## Architecture
 
+`Loan` extends `BaseLoan` (ABC in `money_warp/base_loan.py`), which holds all shared implementation: balance properties, `pay_installment`, schedule queries, fine tracking, Warp hooks, and settlement logic. `Loan` provides the abstract hook implementations (`_compute_state`, `_accrued_interest_components`, `_build_initial_cashflow`, `settlement_balance`, `record_payment`) plus Loan-specific features (taxes, TVM, anticipation).
+
 The Loan delegates computation to two focused components in `engines.py`:
 
 - **`InterestCalculator`** — stateless interest math (regular + mora split). Holds `interest_rate`, `mora_interest_rate`, `mora_strategy`.

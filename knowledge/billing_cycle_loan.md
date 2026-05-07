@@ -4,11 +4,13 @@ The `BillingCycleLoan` models a personal loan where principal is amortized on a 
 
 ## Architecture
 
+`BillingCycleLoan` extends `BaseLoan` (ABC in `money_warp/base_loan.py`), inheriting all shared implementation (balance properties, `pay_installment`, schedule queries, fine tracking, Warp hooks). It provides the abstract hook implementations plus BCL-specific features (billing cycle date derivation, per-cycle mora rate resolution, statements).
+
 `BillingCycleLoan` follows the same CashFlow-emergence philosophy as `Loan`: a single `CashFlow` is the source of truth, and all financial state (settlements, installments, balances, fines, statements) is derived on demand by a forward pass.
 
 ### Components
 
-- **`BillingCycleLoan`** (facade) — wires billing cycle, scheduler, interest calculator, and mora rate resolver. Provides payment methods and property views.
+- **`BillingCycleLoan`** (facade) — wires billing cycle, scheduler, interest calculator, and mora rate resolver. Extends `BaseLoan` with billing-cycle-specific hooks.
 - **`BaseBillingCycle`** — existing factory that generates closing dates and due dates. Enhanced with optional explicit `due_dates` and a `due_dates_between()` method.
 - **`MoraRateResolver`** (protocol) — callable `(date, InterestRate) -> InterestRate` that adjusts the mora rate per cycle. The first argument is the cycle's closing date; the second is the base mora rate.
 - **`engines.py`** (root) — shared building blocks (`InterestCalculator`, `MoraStrategy`, `MoraRateCallback`) used by both `Loan` and `BillingCycleLoan`. No dependency on domain objects.
