@@ -337,7 +337,7 @@ def internal_rate_of_return(
             solution = fsolve(npv_function, initial_guess, full_output=True)
             irr_decimal = solution[0][0]
         except Exception as e:
-            raise ValueError(f"IRR calculation failed: {str(e)}") from e
+            raise ValueError(f"IRR calculation failed: {e!s}") from e
 
     # Ensure we have a valid solution
     if irr_decimal is None:

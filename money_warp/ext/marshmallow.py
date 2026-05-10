@@ -16,10 +16,10 @@ from money_warp.types.percentage import Percentage
 from money_warp.types.rate import CompoundingFrequency, Rate, YearSize
 
 __all__ = [
-    "MoneyField",
-    "RateField",
     "InterestRateField",
+    "MoneyField",
     "PercentageField",
+    "RateField",
 ]
 
 _VALID_MONEY_REPRESENTATIONS = ("raw", "real", "cents", "float")

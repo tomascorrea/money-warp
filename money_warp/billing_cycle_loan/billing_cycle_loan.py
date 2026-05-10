@@ -2,6 +2,7 @@
 
 from datetime import date, datetime, tzinfo
 from typing import List, Optional, Type, Union
+
 from zoneinfo import ZoneInfo
 
 from ..base_loan import BaseLoan
@@ -239,6 +240,7 @@ class BillingCycleLoan(BaseLoan):
         description: Optional[str] = None,
         waive_fines: bool = False,
         waive_mora: bool = False,
+        waive_overdue_interest: bool = False,
         discount: Optional[Money] = None,
     ) -> Settlement:
         """Record a payment and return the derived settlement."""
@@ -260,6 +262,7 @@ class BillingCycleLoan(BaseLoan):
                 interest_date=interest_date,
                 waive_fines=waive_fines,
                 waive_mora=waive_mora,
+                waive_overdue_interest=waive_overdue_interest,
                 discount=discount,
             )
         )

@@ -264,6 +264,16 @@ def compute_state(
             regular = regular + mora
             mora = Money.zero()
 
+        overdue_interest_waived = Money.zero()
+        if payment.waive_overdue_interest and next_due:
+            due_days = max(0, (next_due - to_date(last_accrual_end, tz)).days)
+            if due_days < days:
+                capped_interest = interest_calc.interest_rate.accrue(running_principal, due_days)
+                excess = regular - capped_interest
+                if excess.is_positive():
+                    overdue_interest_waived = excess
+                    regular = capped_interest
+
         installments = _build_installments_snapshot(
             allocs_by_number,
             running_principal,
@@ -345,6 +355,7 @@ def compute_state(
                 allocations=allocations,
                 fines_waived=fines_waived,
                 mora_waived=mora_waived,
+                overdue_interest_waived=overdue_interest_waived,
                 discount_applied=payment.discount,
             )
         )

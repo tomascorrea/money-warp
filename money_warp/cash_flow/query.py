@@ -160,7 +160,7 @@ class CashFlowQuery:
     def get_all(self) -> List[FlowElement]:
         return list(self._items)
 
-    def all(self) -> List[FlowElement]:  # noqa: A003
+    def all(self) -> List[FlowElement]:
         return self.get_all()
 
     def to_cash_flow(self) -> "CashFlow":
