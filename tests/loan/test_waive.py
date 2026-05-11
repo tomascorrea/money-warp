@@ -425,3 +425,200 @@ def test_late_with_waive_covers_more_installments(late_loan):
         covered_normal = [a for a in warped.settlements[-1].allocations if a.is_fully_covered]
 
     assert len(covered_waived) >= len(covered_normal)
+
+
+# --- Overdue interest waiver ---
+
+
+def _make_single_loan(grace_period_days: int = 30):
+    """Single-installment loan for overdue interest tests.
+
+    Uses a grace period so that post-due interest is reclassified from
+    mora to regular — the scenario where waive_overdue_interest matters.
+    """
+    return Loan(
+        Money("10000.00"),
+        InterestRate("6% a"),
+        [date(2025, 2, 1)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        grace_period_days=grace_period_days,
+    )
+
+
+def test_waive_overdue_interest_late_payment_pays_off():
+    """Scheduled amount late with waive_overdue_interest=True pays off the loan."""
+    loan = _make_single_loan()
+    scheduled = loan.get_expected_payment_amount(date(2025, 2, 1))
+
+    with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        warped.pay_installment(scheduled, waive_overdue_interest=True)
+        assert warped.is_paid_off
+
+
+def test_waive_overdue_interest_settlement_records_waived_amount():
+    """Settlement.overdue_interest_waived should reflect the forgiven interest."""
+    loan = _make_single_loan()
+    scheduled = loan.get_expected_payment_amount(date(2025, 2, 1))
+
+    with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        settlement = warped.pay_installment(scheduled, waive_overdue_interest=True)
+
+    assert settlement.overdue_interest_waived > Money.zero()
+
+
+def test_waive_overdue_interest_interest_matches_scheduled():
+    """With overdue interest waived, interest paid should match the on-time amount."""
+    loan_waived = _make_single_loan()
+    loan_on_time = _make_single_loan()
+
+    scheduled = loan_waived.get_expected_payment_amount(date(2025, 2, 1))
+
+    with Warp(loan_on_time, datetime(2025, 2, 1, tzinfo=timezone.utc)) as warped:
+        s_on_time = warped.pay_installment(scheduled)
+
+    with Warp(loan_waived, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        s_waived = warped.pay_installment(scheduled, waive_overdue_interest=True)
+
+    assert s_waived.interest_paid == s_on_time.interest_paid
+
+
+def test_waive_overdue_interest_early_payment_no_effect():
+    """Early payment with waive_overdue_interest=True has no effect."""
+    loan = _make_single_loan()
+
+    with Warp(loan, datetime(2025, 1, 20, tzinfo=timezone.utc)) as warped:
+        settlement = warped.pay_installment(Money("11000.00"), waive_overdue_interest=True)
+
+    assert settlement.overdue_interest_waived == Money.zero()
+
+
+def test_waive_overdue_interest_on_time_payment_no_effect():
+    """On-time payment with waive_overdue_interest=True has no effect."""
+    loan = _make_single_loan()
+
+    with Warp(loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as warped:
+        settlement = warped.pay_installment(Money("11000.00"), waive_overdue_interest=True)
+
+    assert settlement.overdue_interest_waived == Money.zero()
+
+
+def test_waive_overdue_interest_default_false_preserves_behavior():
+    """Default False should not change the settlement."""
+    loan_default = _make_single_loan()
+    loan_explicit = _make_single_loan()
+    scheduled = loan_default.get_expected_payment_amount(date(2025, 2, 1))
+
+    with Warp(loan_default, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        s_default = warped.pay_installment(scheduled)
+
+    with Warp(loan_explicit, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        s_explicit = warped.pay_installment(scheduled, waive_overdue_interest=False)
+
+    assert s_default.interest_paid == s_explicit.interest_paid
+    assert s_default.principal_paid == s_explicit.principal_paid
+    assert s_default.overdue_interest_waived == Money.zero()
+
+
+def test_waive_all_three_flags_combined():
+    """Combining waive_fines + waive_mora + waive_overdue_interest should pay off the loan."""
+    loan = Loan(
+        Money("10000.00"),
+        InterestRate("6% a"),
+        [date(2025, 2, 1)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        fine_rate=InterestRate("5% annual"),
+        grace_period_days=30,
+    )
+    scheduled = loan.get_expected_payment_amount(date(2025, 2, 1))
+
+    with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        settlement = warped.pay_installment(
+            scheduled,
+            waive_fines=True,
+            waive_mora=True,
+            waive_overdue_interest=True,
+        )
+        assert warped.is_paid_off
+
+    assert settlement.fine_paid == Money.zero()
+    assert settlement.mora_paid == Money.zero()
+    assert settlement.overdue_interest_waived > Money.zero()
+
+
+def test_waive_overdue_interest_multi_installment():
+    """Overdue interest waiver affects only the current installment."""
+    loan = Loan(
+        Money("10000.00"),
+        InterestRate("6% a"),
+        [date(2025, 2, 1), date(2025, 3, 1), date(2025, 4, 1)],
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        grace_period_days=30,
+    )
+    scheduled_1 = loan.get_expected_payment_amount(date(2025, 2, 1))
+
+    with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        s1 = warped.pay_installment(scheduled_1, waive_overdue_interest=True)
+        assert s1.overdue_interest_waived > Money.zero()
+        inst_1 = warped.installments[0]
+        assert inst_1.allocations[0].is_fully_covered
+
+
+def test_waive_overdue_interest_via_record_payment():
+    """record_payment should accept and honor waive_overdue_interest."""
+    loan = _make_single_loan()
+    scheduled = loan.get_expected_payment_amount(date(2025, 2, 1))
+
+    settlement = loan.record_payment(
+        scheduled,
+        datetime(2025, 2, 15, tzinfo=timezone.utc),
+        interest_date=datetime(2025, 2, 15, tzinfo=timezone.utc),
+        waive_overdue_interest=True,
+    )
+
+    assert settlement.overdue_interest_waived > Money.zero()
+
+
+# --- Overdue interest balance ---
+
+
+def test_overdue_interest_balance_positive_when_late():
+    """overdue_interest_balance should be positive when past the due date."""
+    loan = _make_single_loan()
+
+    with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        assert warped.overdue_interest_balance > Money.zero()
+
+
+def test_overdue_interest_balance_zero_when_early():
+    """overdue_interest_balance should be zero when before the due date."""
+    loan = _make_single_loan()
+
+    with Warp(loan, datetime(2025, 1, 20, tzinfo=timezone.utc)) as warped:
+        assert warped.overdue_interest_balance == Money.zero()
+
+
+def test_overdue_interest_balance_zero_when_on_time():
+    """overdue_interest_balance should be zero on the due date."""
+    loan = _make_single_loan()
+
+    with Warp(loan, datetime(2025, 2, 1, tzinfo=timezone.utc)) as warped:
+        assert warped.overdue_interest_balance == Money.zero()
+
+
+def test_overdue_interest_balance_is_subset_of_interest_balance():
+    """overdue_interest_balance should always be <= interest_balance."""
+    loan = _make_single_loan()
+
+    with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        assert warped.overdue_interest_balance <= warped.interest_balance
+
+
+def test_current_balance_does_not_double_count_overdue():
+    """current_balance should not include overdue interest as a separate component."""
+    loan = _make_single_loan()
+
+    with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
+        expected = (
+            warped.principal_balance + warped.interest_balance + warped.mora_interest_balance + warped.fine_balance
+        )
+        assert warped.current_balance == expected

@@ -90,6 +90,7 @@ class BaseLoan(ABC):
         description: Optional[str] = None,
         waive_fines: bool = False,
         waive_mora: bool = False,
+        waive_overdue_interest: bool = False,
         discount: Optional[Money] = None,
     ) -> Settlement:
         """Record a payment and return the derived settlement.
@@ -121,6 +122,7 @@ class BaseLoan(ABC):
         description: Optional[str] = None,
         waive_fines: bool = False,
         waive_mora: bool = False,
+        waive_overdue_interest: bool = False,
         discount: Optional[Money] = None,
     ) -> Settlement:
         """Pay the next installment.
@@ -152,6 +154,7 @@ class BaseLoan(ABC):
                 description=description or "Overpayment",
                 waive_fines=waive_fines,
                 waive_mora=waive_mora,
+                waive_overdue_interest=waive_overdue_interest,
                 discount=discount,
             )
 
@@ -164,6 +167,7 @@ class BaseLoan(ABC):
             description=description,
             waive_fines=waive_fines,
             waive_mora=waive_mora,
+            waive_overdue_interest=waive_overdue_interest,
             discount=discount,
         )
 
@@ -228,12 +232,16 @@ class BaseLoan(ABC):
         """Outstanding principal (derived from CashFlow)."""
         return self._compute_state().principal_balance
 
-    def _accrued_interest_components(self) -> Tuple[Money, Money]:
-        """Return ``(regular, mora)`` accrued interest since last payment.
+    def _accrued_interest_components(self) -> Tuple[Money, Money, Money]:
+        """Return ``(regular, mora, overdue)`` accrued interest since last payment.
 
         Uses ``_resolve_mora_rate_for_due`` to obtain the per-cycle
         mora rate override (``None`` for ``Loan``, resolved rate for
         ``BillingCycleLoan``).
+
+        The *overdue* component is the portion of *regular* that accrued
+        past the contract due date.  It is a subset of *regular*, not an
+        additional charge.
         """
         state = self._compute_state()
         days = (self._time_ctx.to_date(self.now()) - self._time_ctx.to_date(state.last_accrual_end)).days
@@ -243,7 +251,7 @@ class BaseLoan(ABC):
             next_due = self.due_dates[covered] if covered < len(self.due_dates) else None
             penalty_next_due = effective_penalty_due_date(next_due, self.working_day_calendar) if next_due else None
             mora_rate = self._resolve_mora_rate_for_due(next_due)
-            return self._interest.compute_accrued_interest(
+            regular, mora = self._interest.compute_accrued_interest(
                 days,
                 state.principal_balance,
                 self._time_ctx.tz,
@@ -252,7 +260,24 @@ class BaseLoan(ABC):
                 mora_rate_override=mora_rate,
             )
 
-        return Money.zero(), Money.zero()
+            if next_due and not is_payment_late(
+                next_due, self.grace_period_days, self.now(), self._time_ctx.tz, self.working_day_calendar
+            ):
+                regular = regular + mora
+                mora = Money.zero()
+
+            overdue = Money.zero()
+            if next_due:
+                due_days = max(0, (next_due - self._time_ctx.to_date(state.last_accrual_end)).days)
+                if due_days < days:
+                    capped = self._interest.interest_rate.accrue(state.principal_balance, due_days)
+                    excess = regular - capped
+                    if excess.is_positive():
+                        overdue = excess
+
+            return regular, mora, overdue
+
+        return Money.zero(), Money.zero(), Money.zero()
 
     @property
     def interest_balance(self) -> Money:
@@ -263,6 +288,11 @@ class BaseLoan(ABC):
     def mora_interest_balance(self) -> Money:
         """Mora accrued interest since last payment."""
         return self._accrued_interest_components()[1]
+
+    @property
+    def overdue_interest_balance(self) -> Money:
+        """Regular interest accrued past the contract due date (subset of interest_balance)."""
+        return self._accrued_interest_components()[2]
 
     @property
     def fine_balance(self) -> Money:

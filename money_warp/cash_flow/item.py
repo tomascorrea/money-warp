@@ -48,6 +48,7 @@ class CashFlowItem:
         interest_date: Optional["datetime"] = None,
         waive_fines: bool = False,
         waive_mora: bool = False,
+        waive_overdue_interest: bool = False,
         discount: Optional[Money] = None,
     ) -> None:
         if entry is not None:
@@ -65,6 +66,7 @@ class CashFlowItem:
                 interest_date=interest_date,
                 waive_fines=waive_fines,
                 waive_mora=waive_mora,
+                waive_overdue_interest=waive_overdue_interest,
                 discount=discount if discount is not None else Money.zero(),
             )
         else:
@@ -144,6 +146,11 @@ class CashFlowItem:
     def waive_mora(self) -> bool:
         entry = self._require_resolved()
         return entry.waive_mora
+
+    @property
+    def waive_overdue_interest(self) -> bool:
+        entry = self._require_resolved()
+        return entry.waive_overdue_interest
 
     @property
     def discount(self) -> Money:

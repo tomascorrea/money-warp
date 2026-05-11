@@ -5,14 +5,14 @@ from .grossup import GrossupResult, grossup, grossup_loan
 from .iof import IOF, CorporateIOF, IndividualIOF, IOFRounding
 
 __all__ = [
-    "BaseTax",
-    "TaxResult",
-    "TaxInstallmentDetail",
     "IOF",
+    "BaseTax",
+    "CorporateIOF",
+    "GrossupResult",
     "IOFRounding",
     "IndividualIOF",
-    "CorporateIOF",
+    "TaxInstallmentDetail",
+    "TaxResult",
     "grossup",
     "grossup_loan",
-    "GrossupResult",
 ]

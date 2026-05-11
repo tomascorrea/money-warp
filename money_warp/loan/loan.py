@@ -2,6 +2,7 @@
 
 from datetime import date, datetime, tzinfo
 from typing import Dict, List, Optional, Type, Union
+
 from zoneinfo import ZoneInfo
 
 from ..base_loan import BaseLoan
@@ -191,6 +192,7 @@ class Loan(BaseLoan):
         description: Optional[str] = None,
         waive_fines: bool = False,
         waive_mora: bool = False,
+        waive_overdue_interest: bool = False,
         discount: Optional[Money] = None,
     ) -> Settlement:
         """Record a payment. Just one CashFlowItem -- everything else is derived.
@@ -206,6 +208,8 @@ class Loan(BaseLoan):
                 payment are forgiven.  Future fines can still accrue.
             waive_mora: If True, all accrued mora interest up to this
                 payment is forgiven.  Future mora can still accrue.
+            waive_overdue_interest: If True, regular interest accrued
+                between the due date and the payment date is forgiven.
             discount: Flat amount to forgive from obligations before
                 allocating the payment.  Follows the same priority as
                 payment allocation (fines -> mora -> interest -> principal).
@@ -231,6 +235,7 @@ class Loan(BaseLoan):
                 interest_date=interest_date,
                 waive_fines=waive_fines,
                 waive_mora=waive_mora,
+                waive_overdue_interest=waive_overdue_interest,
                 discount=discount,
             )
         )
@@ -273,6 +278,7 @@ class Loan(BaseLoan):
         description: Optional[str] = None,
         waive_fines: bool = False,
         waive_mora: bool = False,
+        waive_overdue_interest: bool = False,
         discount: Optional[Money] = None,
     ) -> Settlement:
         """Make an early payment with interest discount.
@@ -295,6 +301,7 @@ class Loan(BaseLoan):
             description=description,
             waive_fines=waive_fines,
             waive_mora=waive_mora,
+            waive_overdue_interest=waive_overdue_interest,
             discount=discount,
         )
 

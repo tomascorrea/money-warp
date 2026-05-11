@@ -1,4 +1,3 @@
-# ruff: noqa: A003
 """Shared models, fixtures, and factories for SQLAlchemy extension tests."""
 
 from datetime import date, datetime, timezone
@@ -8,8 +7,8 @@ import factory.alchemy
 import pytest
 from pytest_postgresql import factories as pg_factories
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, create_engine
-from sqlalchemy.types import JSON
 from sqlalchemy.orm import DeclarativeBase, Session, relationship
+from sqlalchemy.types import JSON
 
 from money_warp import Loan, MoraStrategy
 from money_warp.ext.sa import (

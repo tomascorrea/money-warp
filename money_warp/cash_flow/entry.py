@@ -55,6 +55,7 @@ class CashFlowEntry(ABC):
     interest_date: Optional[datetime] = None
     waive_fines: bool = False
     waive_mora: bool = False
+    waive_overdue_interest: bool = False
     discount: Money = field(default_factory=Money.zero)
 
     @property

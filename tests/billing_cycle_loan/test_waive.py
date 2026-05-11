@@ -2,7 +2,8 @@
 
 from datetime import datetime, timezone
 
-from money_warp import Money, Warp
+from money_warp import BillingCycleLoan, InterestRate, Money, Warp
+from money_warp.billing_cycle import MonthlyBillingCycle
 
 
 def test_waive_fines_zeroes_fine_balance(simple_loan):
@@ -82,3 +83,39 @@ def test_pay_installment_waive_flags(simple_loan):
     assert s.mora_paid == Money.zero()
     assert s.fines_waived > Money.zero()
     assert s.mora_waived > Money.zero()
+
+
+def test_pay_installment_waive_overdue_interest():
+    """pay_installment with waive_overdue_interest=True should waive post-due regular interest."""
+    bcl = BillingCycleLoan(
+        principal=Money("3000.00"),
+        interest_rate=InterestRate("12% a"),
+        billing_cycle=MonthlyBillingCycle(closing_day=28, payment_due_days=15),
+        start_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        num_installments=3,
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        grace_period_days=30,
+    )
+    scheduled = bcl.get_original_schedule().entries[0].payment_amount
+
+    with Warp(bcl, datetime(2025, 3, 4, tzinfo=timezone.utc)) as warped:
+        s = warped.pay_installment(scheduled, waive_overdue_interest=True)
+
+    assert s.overdue_interest_waived > Money.zero()
+
+
+def test_overdue_interest_balance_on_bcl():
+    """overdue_interest_balance should work on BillingCycleLoan."""
+    bcl = BillingCycleLoan(
+        principal=Money("3000.00"),
+        interest_rate=InterestRate("12% a"),
+        billing_cycle=MonthlyBillingCycle(closing_day=28, payment_due_days=15),
+        start_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        num_installments=3,
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        grace_period_days=30,
+    )
+
+    with Warp(bcl, datetime(2025, 3, 4, tzinfo=timezone.utc)) as warped:
+        assert warped.overdue_interest_balance > Money.zero()
+        assert warped.overdue_interest_balance <= warped.interest_balance

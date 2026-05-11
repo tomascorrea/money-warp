@@ -85,14 +85,14 @@ The **interest_date** controls how many days of interest are charged. Fewer days
 
 Neither method takes a date parameter — they use `self.now()` (which respects `Warp` context for time travel).
 
-- **`pay_installment(amount, description=None, waive_fines=False, waive_mora=False, discount=None)`** — the common case. Records payment at `self.now()` and calculates interest up to `max(self.now(), next_due_date)`. Works correctly for all three timing scenarios:
+- **`pay_installment(amount, description=None, waive_fines=False, waive_mora=False, waive_overdue_interest=False, discount=None)`** — the common case. Records payment at `self.now()` and calculates interest up to `max(self.now(), next_due_date)`. Works correctly for all three timing scenarios:
   - **Early payment** (before due date): interest accrues up to the due date. The borrower pays the full scheduled interest — no discount. The installment is fully covered if the amount is sufficient.
   - **On-time payment**: interest matches the scheduled amount exactly.
   - **Late payment**: interest accrues up to `self.now()`, so the borrower pays extra interest (mora) for the days beyond the due date. Late fines are also applied automatically.
 
   A large payment naturally covers the current installment **and** eats into future installments — the per-installment allocation and `covered_due_date_count()` handle this without special-casing.
 
-- **`anticipate_payment(amount, installments=None, description=None, waive_fines=False, waive_mora=False, discount=None)`** — early payment **with interest discount**. Records payment at `self.now()` and calculates interest only up to `self.now()` (fewer days = less interest charged). When `installments` is provided (1-based numbers), the corresponding expected cash-flow items are temporally deleted via `CashFlowItem.delete()`.
+- **`anticipate_payment(amount, installments=None, description=None, waive_fines=False, waive_mora=False, waive_overdue_interest=False, discount=None)`** — early payment **with interest discount**. Records payment at `self.now()` and calculates interest only up to `self.now()` (fewer days = less interest charged). When `installments` is provided (1-based numbers), the corresponding expected cash-flow items are temporally deleted via `CashFlowItem.delete()`.
 
 ### Early Payment vs Anticipation
 
@@ -108,7 +108,7 @@ Neither method takes a date parameter — they use `self.now()` (which respects 
 
 ### Explicit-Date Method
 
-- **`record_payment(amount, payment_date, interest_date=None, processing_date=None, description=None, waive_fines=False, waive_mora=False, discount=None)`** — full control over all dates. Appends one `CashFlowItem` to `self.cashflow` and returns the latest derived `Settlement`.
+- **`record_payment(amount, payment_date, interest_date=None, processing_date=None, description=None, waive_fines=False, waive_mora=False, waive_overdue_interest=False, discount=None)`** — full control over all dates. Appends one `CashFlowItem` to `self.cashflow` and returns the latest derived `Settlement`.
 
 ### Payment Allocation
 
@@ -119,27 +119,42 @@ Payment allocation uses a two-step process:
 
 This means all fines across all installments are paid before any mora, all mora before any interest, and all interest before any principal. Within each component, installments are filled in order.
 
-## Waiving Fines and Mora
+## Waiving Fines, Mora, and Overdue Interest
 
-All payment methods (`record_payment`, `pay_installment`, `anticipate_payment`) accept `waive_fines: bool` and `waive_mora: bool` flags.
+All payment methods (`record_payment`, `pay_installment`, `anticipate_payment`) accept three independent waiver flags:
+
+| Flag | What it suppresses | Tracked on Settlement | Balance property |
+|---|---|---|---|
+| `waive_fines` | Fine (multa) — fixed penalty for late payment | `fines_waived` | `fine_balance` |
+| `waive_mora` | Mora interest — penalty interest rate for late days | `mora_waived` | `mora_interest_balance` |
+| `waive_overdue_interest` | Regular interest accrued between `due_date` and `payment_date` | `overdue_interest_waived` | `overdue_interest_balance` |
 
 ### Behavior
 
 - **`waive_fines=True`**: All accumulated fines up to this payment are forgiven. The fine balance is zeroed without spending any of the payment amount. The waived amount is recorded in `Settlement.fines_waived` for audit purposes.
 - **`waive_mora=True`**: All accrued mora interest up to this payment is forgiven. No payment amount is allocated to mora. The waived amount is recorded in `Settlement.mora_waived`.
-- Both flags can be used together.
+- **`waive_overdue_interest=True`**: Regular interest that accrued past the contract due date is forgiven. Interest is computed only up to the due date, not the payment date. The waived amount is recorded in `Settlement.overdue_interest_waived`. This is the semantic of "settle this installment as if the payment arrived on the due date" (for regular interest only).
+- All three flags are independent and composable.
+
+### When does overdue interest exist?
+
+Overdue interest is the portion of regular interest that accrued for days past the contract due date. It appears when:
+- The grace period reclassifies mora as regular interest (payment is within grace period, so mora becomes regular, but interest still accrues past the due date).
+- Working-day calendar adjustment pushes the penalty due date past the contract due date.
+
+Without a grace period and without working-day adjustment, post-due interest is classified as mora (not regular), so `waive_overdue_interest` has no effect — use `waive_mora` instead.
 
 ### Snapshot Semantics
 
-Waivers are snapshots — they forgive what has accumulated **so far** but do not prevent future accrual. If the borrower misses the next due date, new fines and mora will accrue normally.
+Waivers are snapshots — they forgive what has accumulated **so far** but do not prevent future accrual. If the borrower misses the next due date, new fines, mora, and overdue interest will accrue normally.
 
 ### Implementation
 
-The flags are stored on `CashFlowEntry` (via `waive_fines` and `waive_mora` fields) and read by the forward pass during payment processing. When `waive_fines` is True, `fines_paid_total` is incremented by the outstanding fine balance and `fine_cap` is set to zero. When `waive_mora` is True, `mora_cap` is set to zero. The allocation engine receives zero caps and allocates nothing to those components.
+The flags are stored on `CashFlowEntry` (via `waive_fines`, `waive_mora`, and `waive_overdue_interest` fields) and read by the forward pass during payment processing. When `waive_fines` is True, `fines_paid_total` is incremented by the outstanding fine balance and `fine_cap` is set to zero. When `waive_mora` is True, `mora_cap` is set to zero. When `waive_overdue_interest` is True, the forward pass computes interest capped at the contract due date (`interest_rate.accrue(principal, due_days)`) and subtracts the excess from `regular`. The allocation engine receives the reduced caps and allocates nothing to those components.
 
 ### Settlement Fields
 
-`Settlement` includes `fines_waived: Money` and `mora_waived: Money` (default `Money.zero()`). These record the amounts forgiven at each payment for audit and reporting. Existing code that creates Settlements without these fields continues to work via defaults.
+`Settlement` includes `fines_waived: Money`, `mora_waived: Money`, and `overdue_interest_waived: Money` (all default `Money.zero()`). These record the amounts forgiven at each payment for audit and reporting. Existing code that creates Settlements without these fields continues to work via defaults.
 
 ## Discount
 
@@ -244,15 +259,16 @@ When `pay_installment` is called after the due date, `interest_date = max(self.n
 
 All derived from `_compute_state()`:
 
-| Property | Type | Meaning |
-|---|---|---|
-| `principal_balance` | `Money` | Outstanding principal |
-| `interest_balance` | `Money` | Regular accrued interest since last payment |
-| `mora_interest_balance` | `Money` | Mora accrued interest (days beyond due date) |
-| `fine_balance` | `Money` | Unpaid fines (total applied minus fines paid) |
-| `current_balance` | `Money` | Sum of all four components (point-in-time snapshot, interest accrued to `now()`) |
-| `settlement_balance` | `Money` | Amount to cover the next installment via `pay_installment` |
-| `overpaid` | `Money` | Total amount paid beyond the loan's obligations |
+| Property | Type | Meaning | Subset of |
+|---|---|---|---|
+| `principal_balance` | `Money` | Outstanding principal | -- |
+| `interest_balance` | `Money` | Regular accrued interest since last payment | -- |
+| `mora_interest_balance` | `Money` | Mora accrued interest (days beyond due date) | -- |
+| `fine_balance` | `Money` | Unpaid fines (total applied minus fines paid) | -- |
+| `overdue_interest_balance` | `Money` | Regular interest accrued past the contract due date | `interest_balance` |
+| `current_balance` | `Money` | Sum of principal + interest + mora + fines (unchanged) | -- |
+| `settlement_balance` | `Money` | Amount to cover the next installment via `pay_installment` | -- |
+| `overpaid` | `Money` | Total amount paid beyond the loan's obligations | -- |
 
 ### `settlement_balance` vs `current_balance`
 
@@ -295,7 +311,7 @@ Per-installment allocation is a reporting view produced by `engines.distribute_i
 
 A frozen dataclass capturing how a single payment was allocated. Derived by the forward pass.
 
-Fields: `payment_amount`, `payment_date`, `fine_paid`, `interest_paid`, `mora_paid`, `principal_paid`, `remaining_balance`, `allocations`, `fines_waived`, `mora_waived`, `discount_applied`.
+Fields: `payment_amount`, `payment_date`, `fine_paid`, `interest_paid`, `mora_paid`, `principal_paid`, `remaining_balance`, `allocations`, `fines_waived`, `mora_waived`, `overdue_interest_waived`, `discount_applied`.
 
 ### Allocation
 

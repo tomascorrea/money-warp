@@ -34,6 +34,7 @@ class Settlement:
     allocations: List[Allocation]
     fines_waived: Money = field(default_factory=_zero)
     mora_waived: Money = field(default_factory=_zero)
+    overdue_interest_waived: Money = field(default_factory=_zero)
     discount_applied: Money = field(default_factory=_zero)
 
     @property

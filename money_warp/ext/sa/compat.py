@@ -1,4 +1,3 @@
-# ruff: noqa: A003
 """Dialect-aware SQL function wrappers for SQLite and PostgreSQL.
 
 Each wrapper is a :class:`~sqlalchemy.sql.expression.FunctionElement` subclass

@@ -1,4 +1,3 @@
-# ruff: noqa: A003
 """Tests for settlement_bridge, loan_bridge, balance, and balance_at."""
 
 from datetime import date, datetime, timezone
