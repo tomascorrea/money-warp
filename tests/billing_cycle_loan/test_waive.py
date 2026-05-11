@@ -137,6 +137,46 @@ def test_waive_overdue_interest_multi_installment_past_next_due():
     assert multi_interest == single_interest
 
 
+def test_waive_all_late_payment_is_fully_covered():
+    """Late payment with all waivers active must mark the allocation as fully covered."""
+    loan = BillingCycleLoan(
+        principal=Money("1000"),
+        interest_rate=InterestRate("1.99% a.m."),
+        billing_cycle=MonthlyBillingCycle(due_dates=[date(2025, 3, 26), date(2025, 4, 26)]),
+        start_date=datetime(2025, 2, 25, tzinfo=timezone.utc),
+        num_installments=2,
+        disbursement_date=datetime(2025, 2, 25, tzinfo=timezone.utc),
+    )
+    scheduled_amount = loan.get_original_schedule().entries[0].payment_amount
+
+    with Warp(loan, datetime(2025, 3, 26, tzinfo=timezone.utc)) as w:
+        on_time = w.pay_installment(scheduled_amount)
+    on_time_alloc = on_time.allocations[0]
+    assert on_time_alloc.is_fully_covered is True
+
+    loan_late = BillingCycleLoan(
+        principal=Money("1000"),
+        interest_rate=InterestRate("1.99% a.m."),
+        billing_cycle=MonthlyBillingCycle(due_dates=[date(2025, 3, 26), date(2025, 4, 26)]),
+        start_date=datetime(2025, 2, 25, tzinfo=timezone.utc),
+        num_installments=2,
+        disbursement_date=datetime(2025, 2, 25, tzinfo=timezone.utc),
+    )
+
+    with Warp(loan_late, datetime(2025, 4, 28, tzinfo=timezone.utc)) as w:
+        late = w.pay_installment(
+            scheduled_amount,
+            waive_overdue_interest=True,
+            waive_fines=True,
+            waive_mora=True,
+        )
+    late_alloc = late.allocations[0]
+
+    assert late_alloc.interest_allocated == on_time_alloc.interest_allocated
+    assert late_alloc.principal_allocated == on_time_alloc.principal_allocated
+    assert late_alloc.is_fully_covered is True
+
+
 def test_overdue_interest_balance_on_bcl():
     """overdue_interest_balance should work on BillingCycleLoan."""
     bcl = BillingCycleLoan(
