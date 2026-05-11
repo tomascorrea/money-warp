@@ -7,7 +7,7 @@
 [![codecov](https://codecov.io/gh/tomascorrea/money-warp/branch/main/graph/badge.svg)](https://codecov.io/gh/tomascorrea/money-warp)
 [![License](https://img.shields.io/github/license/tomascorrea/money-warp)](https://img.shields.io/github/license/tomascorrea/money-warp)
 
-> **Development Stage Notice** -- MoneyWarp is in active development (alpha). Core classes are stable and covered by 1200+ tests, but the API may evolve.
+> **Development Stage Notice** -- MoneyWarp is in active development (alpha). Core classes are stable and covered by 5700+ tests, but the API may evolve.
 
 MoneyWarp is a Python library for working with the time value of money. It treats loans, annuities, and investments as cash flows through time -- and gives you the tools to warp them back and forth between present, future, and everything in between.
 

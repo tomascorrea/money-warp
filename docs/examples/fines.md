@@ -230,7 +230,7 @@ with Warp(loan, datetime(2024, 3, 15)) as warped:
 When `waive_overdue_interest=True`, interest that accrued past the last contractual due date is not charged. This is useful for loans that have matured (all installments past due) where the lender agrees to forgive the overdue interest.
 
 ```python
-# Waive overdue interest on a late payment
+# Using the loan from the previous example
 with Warp(loan, datetime(2024, 3, 15)) as warped:
     settlement = warped.pay_installment(
         Money("856.07"),
@@ -240,7 +240,7 @@ with Warp(loan, datetime(2024, 3, 15)) as warped:
 
 ## Flat-Amount Discount
 
-All three payment methods accept a `discount` parameter — a flat `Money` amount subtracted from the interest portion before allocation. This reduces the interest the borrower pays without affecting fines or principal.
+All three payment methods accept a `discount` parameter — a flat `Money` amount that reduces the borrower's obligation. The discount is applied in the same priority order as payment allocation: fines first, then mora, then interest, then principal. Any excess cascades to the next component.
 
 ```python
 from datetime import datetime
@@ -254,7 +254,7 @@ loan = Loan(
     [to_date(d) for d in generate_monthly_dates(datetime(2024, 2, 1), 12)],
 )
 
-# Apply a R$10 discount on interest
+# Apply a R$10 discount
 with Warp(loan, datetime(2024, 2, 1)) as warped:
     settlement = warped.pay_installment(
         Money("846.07"),
@@ -360,7 +360,7 @@ Settlements are not stored as separate state — they are reconstructed by query
 | `fine_balance` | `Money` | Unpaid fines (total minus what's been paid off) |
 | `fines_applied` | `Dict[datetime, Money]` | Fine amount applied per due date |
 | `overdue_interest_balance` | `Money` | Regular interest accrued past the contract due date (subset of `interest_balance`) |
-| `settlement_balance` | `Money` | Amount needed to cover the next installment via `pay_installment` (fines + mora + interest + next principal) |
+| `settlement_balance` | `Money` | Amount needed to cover the next installment via `pay_installment` — fines + mora + interest (accrued to `max(now, next_due)`) + next principal |
 | `is_paid_off` | `bool` | True only when principal **and** fines are zero |
 | `installments` | `List[Installment]` | Repayment plan with expected/actual amounts (Warp-aware) |
 | `settlements` | `List[Settlement]` | Payment allocation history (Warp-aware) |
