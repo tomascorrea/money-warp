@@ -388,6 +388,8 @@ def compute_state(
         )
 
         skipped = _skipped_contractual_interest(installments, next_due, to_date(interest_date, tz))
+        if payment.waive_overdue_interest:
+            skipped = Money.zero()
         interest_cap = Money(regular.raw_amount + skipped.raw_amount)
 
         total_fines_amount = Money(sum(f.raw_amount for f in fines_applied.values())) if fines_applied else Money.zero()
