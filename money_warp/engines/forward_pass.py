@@ -102,8 +102,17 @@ def _build_installments_snapshot(
     last_payment_date: Optional[datetime] = None,
     calendar: WorkingDayCalendar = _DEFAULT_CALENDAR,
     grace_period_days: int = 0,
+    waive_fines: bool = False,
+    waive_mora: bool = False,
 ) -> List[Installment]:
-    """Build Installment objects from pre-computed allocation data."""
+    """Build Installment objects from pre-computed allocation data.
+
+    When *waive_fines* or *waive_mora* is ``True`` the corresponding
+    expectation is capped at what was already paid by prior allocations,
+    so ``Installment.balance`` reflects the effective obligation after
+    waivers and the coverage check in ``distribute_into_installments``
+    produces the correct ``is_fully_covered`` flag.
+    """
     covered = covered_due_date_count(principal_balance, schedule)
 
     result: List[Installment] = []
@@ -111,10 +120,12 @@ def _build_installments_snapshot(
         installment_num = i + 1
         allocs = allocs_by_number.get(installment_num, [])
 
-        expected_fine = fines_applied.get(entry.due_date, Money.zero())
+        prior_fine = Money(sum(a.fine_allocated.raw_amount for a in allocs))
+        expected_fine = prior_fine if waive_fines else fines_applied.get(entry.due_date, Money.zero())
+
         prior_mora = Money(sum(a.mora_allocated.raw_amount for a in allocs))
 
-        if i < covered:
+        if waive_mora or i < covered:
             expected_mora = prior_mora
         elif i == covered and entry.due_date < to_date(as_of_date, tz):
             within_grace = not is_payment_late(entry.due_date, grace_period_days, as_of_date, tz, calendar)
@@ -385,6 +396,8 @@ def compute_state(
             last_payment_date=last_accrual_end,
             calendar=calendar,
             grace_period_days=grace_period_days,
+            waive_fines=payment.waive_fines,
+            waive_mora=payment.waive_mora,
         )
 
         skipped = _skipped_contractual_interest(installments, next_due, to_date(interest_date, tz))
