@@ -44,6 +44,30 @@ Additional constructor parameters (`year_size`, `precision`, `rounding`, `str_st
 
 Subclass of `RateType` with `RATE_CLASS = InterestRate`. Same representations, but constructs `InterestRate` on load (rejects negative values).
 
+### PercentageType
+
+Stores `Percentage` instances as canonical strings (`"5.00%"`) in a `String` column. Validation delegates to the `Percentage` constructor, so invalid inputs (numeric, missing `%`, temporal suffix, negative) raise on load.
+
+```python
+from money_warp.ext.sa import PercentageType
+from sqlalchemy import Column, Integer
+from sqlalchemy.orm import DeclarativeBase
+
+class Base(DeclarativeBase): ...
+
+class PartnerFee(Base):
+    __tablename__ = "partner_fees"
+    id = Column(Integer, primary_key=True)
+    mdr = Column(PercentageType())  # stored as "5.00%"
+```
+
+| Parameter | Default | Effect |
+|---|---|---|
+| `precision` | `None` | Default precision for `Percentage` construction on load |
+| `rounding` | `None` | Default rounding mode for `Percentage` construction on load |
+| `str_decimals` | `None` | Decimal places for serialization |
+| `length` | `32` | Length of the underlying `String` column |
+
 ## Bridge Decorators
 
 The bridge system connects SQLAlchemy models to money-warp's Loan engine, providing both Python-side and SQL-side balance calculations.

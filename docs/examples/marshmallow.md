@@ -116,6 +116,37 @@ result = schema.load(data)
 # {"amount": Money("123.45")}
 ```
 
+### PercentageField
+
+Serializes `Percentage` instances to canonical strings (`"5.00%"`) and deserializes via the `Percentage` constructor, inheriting all its validation (rejects numeric inputs, strings without `%`, temporal suffixes, and negative values).
+
+```python
+from marshmallow import Schema
+from money_warp import Percentage
+from money_warp.ext.marshmallow import PercentageField
+
+class FeeSchema(Schema):
+    mdr = PercentageField()
+
+schema = FeeSchema()
+
+# Serialize
+data = schema.dump({"mdr": Percentage("5%")})
+# {"mdr": "5.00%"}
+
+# Deserialize
+result = schema.load({"mdr": "5.00%"})
+# {"mdr": Percentage('5.00%')}
+```
+
+Optional constructor parameters:
+
+| Parameter | Default | Effect |
+|---|---|---|
+| `precision` | `None` | Default precision for `Percentage` construction on load |
+| `rounding` | `None` | Default rounding mode for `Percentage` construction on load |
+| `str_decimals` | `None` | Decimal places for string serialization |
+
 ## Notes
 
 - All fields pass `None` through in both directions.
