@@ -20,7 +20,10 @@ MoneyWarp is a Python library for working with the time value of money. It treat
 - **Amortization schedules** -- French (Price) and SAC (Inverted Price)
 - **Flexible dates** -- irregular due dates, smart month-end handling
 - **Type-safe interest rates** -- explicit percentage handling, frequency conversions
+- **Percentage type** -- non-temporal flat percentages for fees, fines, MDR
 - **Installments and Settlements** -- first-class repayment plan and payment allocation
+- **Payment waivers** -- waive fines, mora, or overdue interest per payment
+- **Working day calendars** -- business day awareness for penalty deadlines
 - **Tax module** -- Brazilian IOF, grossup, pluggable tax strategy
 - **Timezone-aware** -- UTC by default, configurable globally
 - **Marshmallow extension** -- custom fields for serialization
@@ -57,6 +60,7 @@ Explore the comprehensive examples and API reference:
 - **[Quick Start](examples/quickstart.md)** -- get up and running quickly
 - **[Money](examples/money.md)** -- high-precision monetary amounts
 - **[Interest Rates](examples/interest_rates.md)** -- type-safe rate handling and conversions
+- **[Percentages](examples/percentages.md)** -- non-temporal flat percentages for fees, fines, MDR
 - **[Date Generation](examples/date_generation.md)** -- smart payment date utilities
 - **[Present Value & IRR](examples/present_value_irr.md)** -- TVM functions and analysis
 - **[Time Machine](examples/time_machine.md)** -- travel through time with loans

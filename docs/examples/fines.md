@@ -2,7 +2,7 @@
 
 MoneyWarp models late payments realistically: overdue installments incur **fines** (a flat percentage of the missed amount) and **mora interest** (extra daily-compounded interest for the days beyond the due date). Payments are always allocated in strict priority: fines first, then interest, then principal.
 
-All payment methods return a **Settlement** object showing exactly how the payment was allocated (see [Installments & Settlements](#installments--settlements) below).
+All payment methods return a **Settlement** object showing exactly how the payment was allocated (see [Installments & Settlements](#installments-settlements) below).
 
 ## Payment Methods
 
@@ -192,7 +192,76 @@ print(loan.is_payment_late(date(2024, 2, 1), datetime(2024, 2, 5)))  # False
 print(loan.is_payment_late(date(2024, 2, 1), datetime(2024, 2, 9)))  # True
 ```
 
-Note: the grace period only affects **fines**. Mora interest always accrues for every day past the due date, regardless of the grace period.
+The grace period acts as a forgiveness threshold: payments within the grace window incur **neither fine nor mora**. Once the grace period expires, full mora accrues from the **original due date** (not from the grace period end).
+
+## Payment Waivers
+
+All three payment methods (`record_payment`, `pay_installment`, `anticipate_payment`) accept waiver flags that let you forgive specific penalty components on a per-payment basis.
+
+### `waive_fines` and `waive_mora`
+
+When `waive_fines=True`, outstanding fines are not allocated from the payment. When `waive_mora=True`, mora interest is not charged for the overdue period.
+
+```python
+from datetime import datetime
+
+from money_warp import Loan, Money, InterestRate, Warp, generate_monthly_dates
+from money_warp.tz import to_date
+
+loan = Loan(
+    Money("10000"),
+    InterestRate("5% a"),
+    [to_date(d) for d in generate_monthly_dates(datetime(2024, 2, 1), 12)],
+)
+
+# Pay late but waive both fines and mora
+with Warp(loan, datetime(2024, 3, 15)) as warped:
+    settlement = warped.pay_installment(
+        Money("856.07"),
+        waive_fines=True,
+        waive_mora=True,
+    )
+    print(f"Fine paid: {settlement.fine_paid}")  # 0.00
+    print(f"Mora paid: {settlement.mora_paid}")  # 0.00
+```
+
+### `waive_overdue_interest`
+
+When `waive_overdue_interest=True`, interest that accrued past the last contractual due date is not charged. This is useful for loans that have matured (all installments past due) where the lender agrees to forgive the overdue interest.
+
+```python
+# Waive overdue interest on a late payment
+with Warp(loan, datetime(2024, 3, 15)) as warped:
+    settlement = warped.pay_installment(
+        Money("856.07"),
+        waive_overdue_interest=True,
+    )
+```
+
+## Flat-Amount Discount
+
+All three payment methods accept a `discount` parameter — a flat `Money` amount subtracted from the interest portion before allocation. This reduces the interest the borrower pays without affecting fines or principal.
+
+```python
+from datetime import datetime
+
+from money_warp import Loan, Money, InterestRate, Warp, generate_monthly_dates
+from money_warp.tz import to_date
+
+loan = Loan(
+    Money("10000"),
+    InterestRate("5% a"),
+    [to_date(d) for d in generate_monthly_dates(datetime(2024, 2, 1), 12)],
+)
+
+# Apply a R$10 discount on interest
+with Warp(loan, datetime(2024, 2, 1)) as warped:
+    settlement = warped.pay_installment(
+        Money("846.07"),
+        discount=Money("10.00"),
+    )
+    print(f"Interest paid: {settlement.interest_paid}")
+```
 
 ## Tracking Fines and Mora via Settlements
 
@@ -290,6 +359,8 @@ Settlements are not stored as separate state — they are reconstructed by query
 | `total_fines` | `Money` | Sum of all fines ever applied |
 | `fine_balance` | `Money` | Unpaid fines (total minus what's been paid off) |
 | `fines_applied` | `Dict[datetime, Money]` | Fine amount applied per due date |
+| `overdue_interest_balance` | `Money` | Regular interest accrued past the contract due date (subset of `interest_balance`) |
+| `settlement_balance` | `Money` | Amount needed to cover the next installment via `pay_installment` (fines + mora + interest + next principal) |
 | `is_paid_off` | `bool` | True only when principal **and** fines are zero |
 | `installments` | `List[Installment]` | Repayment plan with expected/actual amounts (Warp-aware) |
 | `settlements` | `List[Settlement]` | Payment allocation history (Warp-aware) |
