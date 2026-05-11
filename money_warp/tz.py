@@ -8,7 +8,6 @@ import functools
 import inspect
 from datetime import date, datetime, timezone, tzinfo
 from typing import Callable, TypeVar, Union
-
 from zoneinfo import ZoneInfo
 
 _default_tz: tzinfo = timezone.utc

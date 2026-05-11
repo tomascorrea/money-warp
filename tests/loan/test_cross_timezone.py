@@ -10,9 +10,9 @@ can coexist and each resolves dates in its own timezone.
 """
 
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
-from zoneinfo import ZoneInfo
 
 from money_warp import InterestRate, Loan, Money
 from money_warp.tz import get_tz, set_tz, to_date

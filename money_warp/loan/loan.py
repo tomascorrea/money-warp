@@ -2,7 +2,6 @@
 
 from datetime import date, datetime, tzinfo
 from typing import Dict, List, Optional, Type, Union
-
 from zoneinfo import ZoneInfo
 
 from ..base_loan import BaseLoan

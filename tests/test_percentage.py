@@ -6,6 +6,7 @@ import pytest
 
 from money_warp import CompoundingFrequency, InterestRate, Money, Percentage, Rate
 
+
 # ===========================================================================
 # Construction — accepted string formats
 # ===========================================================================

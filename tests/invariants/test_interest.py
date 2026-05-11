@@ -23,6 +23,7 @@ from .strategies import (
     scheduler_st,
 )
 
+
 # ── Invariant 6: Interest monotonicity ──────────────────────────────
 
 

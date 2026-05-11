@@ -17,6 +17,7 @@ from money_warp import (
 )
 from money_warp.types.rate import CompoundingFrequency
 
+
 # ---------------------------------------------------------------------------
 # Creation — positive, negative, zero
 # ---------------------------------------------------------------------------

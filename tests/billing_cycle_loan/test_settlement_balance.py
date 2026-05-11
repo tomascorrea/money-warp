@@ -1,7 +1,6 @@
 """Tests for BillingCycleLoan.settlement_balance with explicit expected values."""
 
 from datetime import datetime, timezone
-
 from zoneinfo import ZoneInfo
 
 from money_warp import Money, Warp

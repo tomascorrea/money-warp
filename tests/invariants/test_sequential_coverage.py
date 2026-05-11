@@ -9,10 +9,10 @@ for arbitrary loan parameters, payment amounts, and timing.
 """
 
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from zoneinfo import ZoneInfo
 
 from money_warp import (
     BillingCycleLoan,

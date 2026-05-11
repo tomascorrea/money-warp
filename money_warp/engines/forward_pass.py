@@ -150,6 +150,104 @@ def _build_installments_snapshot(
 
 
 # ------------------------------------------------------------------
+# Waiver and discount helpers
+# ------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _WaiverResult:
+    effective_fine_cap: Money
+    effective_mora_cap: Money
+    interest_cap: Money
+    principal_discounted: Money
+    fines_waived: Money
+    mora_waived: Money
+    fines_applied: Dict[date, Money]
+    fines_paid_total: Money
+
+
+def _apply_waivers_and_discounts(
+    payment: object,
+    fine_balance: Money,
+    mora: Money,
+    interest_cap: Money,
+    fines_applied: Dict[date, Money],
+    fines_paid_total: Money,
+) -> _WaiverResult:
+    """Apply waive_fines, waive_mora, and discount to caps."""
+    fines_waived = Money.zero()
+    mora_waived = Money.zero()
+    effective_fine_cap = fine_balance
+    effective_mora_cap = mora
+
+    if payment.waive_fines:
+        fines_waived = fine_balance
+        fines_applied = {dd: Money.zero() for dd in fines_applied}
+        fines_paid_total = Money.zero()
+        effective_fine_cap = Money.zero()
+
+    if payment.waive_mora:
+        mora_waived = mora
+        effective_mora_cap = Money.zero()
+
+    discount_remaining = payment.discount
+    fine_discounted = Money(min(effective_fine_cap.raw_amount, discount_remaining.raw_amount))
+    discount_remaining = discount_remaining - fine_discounted
+    effective_fine_cap = effective_fine_cap - fine_discounted
+
+    mora_discounted = Money(min(effective_mora_cap.raw_amount, discount_remaining.raw_amount))
+    discount_remaining = discount_remaining - mora_discounted
+    effective_mora_cap = effective_mora_cap - mora_discounted
+
+    interest_discounted = Money(min(interest_cap.raw_amount, discount_remaining.raw_amount))
+    discount_remaining = discount_remaining - interest_discounted
+    interest_cap = interest_cap - interest_discounted
+
+    return _WaiverResult(
+        effective_fine_cap=effective_fine_cap,
+        effective_mora_cap=effective_mora_cap,
+        interest_cap=interest_cap,
+        principal_discounted=discount_remaining,
+        fines_waived=fines_waived,
+        mora_waived=mora_waived,
+        fines_applied=fines_applied,
+        fines_paid_total=fines_paid_total + fine_discounted,
+    )
+
+
+# ------------------------------------------------------------------
+# Overdue interest waiver
+# ------------------------------------------------------------------
+
+
+def _compute_overdue_interest_waiver(
+    regular: Money,
+    next_due: Optional[date],
+    days: int,
+    last_accrual_end: datetime,
+    running_principal: Money,
+    interest_calc: "InterestCalculator",
+    tz: tzinfo,
+) -> Tuple[Money, Money]:
+    """Compute overdue regular interest and return ``(reduced_regular, waived)``.
+
+    Overdue interest is the portion of *regular* that accrued past
+    the contract due date.  Returns the capped regular amount and
+    the excess that was waived.
+    """
+    if next_due is None:
+        return regular, Money.zero()
+    due_days = max(0, (next_due - to_date(last_accrual_end, tz)).days)
+    if due_days >= days:
+        return regular, Money.zero()
+    capped = interest_calc.interest_rate.accrue(running_principal, due_days)
+    excess = regular - capped
+    if not excess.is_positive():
+        return regular, Money.zero()
+    return capped, excess
+
+
+# ------------------------------------------------------------------
 # Forward pass: compute all settlements from cashflow
 # ------------------------------------------------------------------
 
@@ -265,14 +363,16 @@ def compute_state(
             mora = Money.zero()
 
         overdue_interest_waived = Money.zero()
-        if payment.waive_overdue_interest and next_due:
-            due_days = max(0, (next_due - to_date(last_accrual_end, tz)).days)
-            if due_days < days:
-                capped_interest = interest_calc.interest_rate.accrue(running_principal, due_days)
-                excess = regular - capped_interest
-                if excess.is_positive():
-                    overdue_interest_waived = excess
-                    regular = capped_interest
+        if payment.waive_overdue_interest:
+            regular, overdue_interest_waived = _compute_overdue_interest_waiver(
+                regular,
+                next_due,
+                days,
+                last_accrual_end,
+                running_principal,
+                interest_calc,
+                tz,
+            )
 
         installments = _build_installments_snapshot(
             allocs_by_number,
@@ -295,47 +395,27 @@ def compute_state(
         if fine_balance.is_negative():
             fine_balance = Money.zero()
 
-        fines_waived = Money.zero()
-        mora_waived = Money.zero()
-        effective_fine_cap = fine_balance
-        effective_mora_cap = mora
-
-        if payment.waive_fines:
-            fines_waived = fine_balance
-            fines_applied = {dd: Money.zero() for dd in fines_applied}
-            fines_paid_total = Money.zero()
-            effective_fine_cap = Money.zero()
-
-        if payment.waive_mora:
-            mora_waived = mora
-            effective_mora_cap = Money.zero()
-
-        discount_remaining = payment.discount
-        fine_discounted = Money(min(effective_fine_cap.raw_amount, discount_remaining.raw_amount))
-        discount_remaining = discount_remaining - fine_discounted
-        effective_fine_cap = effective_fine_cap - fine_discounted
-
-        mora_discounted = Money(min(effective_mora_cap.raw_amount, discount_remaining.raw_amount))
-        discount_remaining = discount_remaining - mora_discounted
-        effective_mora_cap = effective_mora_cap - mora_discounted
-
-        interest_discounted = Money(min(interest_cap.raw_amount, discount_remaining.raw_amount))
-        discount_remaining = discount_remaining - interest_discounted
-        interest_cap = interest_cap - interest_discounted
-
-        principal_discounted = discount_remaining
+        wd = _apply_waivers_and_discounts(
+            payment,
+            fine_balance,
+            mora,
+            interest_cap,
+            fines_applied,
+            fines_paid_total,
+        )
+        fines_applied = wd.fines_applied
 
         fine_paid, mora_paid, interest_paid, principal_paid, allocations = allocate_payment_into_installments(
             payment.amount,
             installments,
             running_principal,
-            fine_cap=effective_fine_cap,
-            interest_cap=interest_cap,
-            mora_cap=effective_mora_cap,
+            fine_cap=wd.effective_fine_cap,
+            interest_cap=wd.interest_cap,
+            mora_cap=wd.effective_mora_cap,
         )
 
-        fines_paid_total = fines_paid_total + fine_paid + fine_discounted
-        running_principal = running_principal - principal_paid - principal_discounted
+        fines_paid_total = wd.fines_paid_total + fine_paid
+        running_principal = running_principal - principal_paid - wd.principal_discounted
         if running_principal.is_negative():
             overpaid = overpaid + Money(-running_principal.raw_amount)
             running_principal = Money.zero()
@@ -353,8 +433,8 @@ def compute_state(
                 principal_paid=principal_paid,
                 remaining_balance=running_principal,
                 allocations=allocations,
-                fines_waived=fines_waived,
-                mora_waived=mora_waived,
+                fines_waived=wd.fines_waived,
+                mora_waived=wd.mora_waived,
                 overdue_interest_waived=overdue_interest_waived,
                 discount_applied=payment.discount,
             )

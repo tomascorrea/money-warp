@@ -1,9 +1,9 @@
 """Tests for is_paid_off when all installments have is_fully_covered=True."""
 
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from dateutil.relativedelta import relativedelta
-from zoneinfo import ZoneInfo
 
 from money_warp import (
     BillingCycleLoan,

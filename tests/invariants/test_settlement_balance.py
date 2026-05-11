@@ -9,7 +9,6 @@ installment via pay_installment.  These invariants must hold:
 """
 
 from datetime import datetime, timezone
-
 from zoneinfo import ZoneInfo
 
 from money_warp import Warp
