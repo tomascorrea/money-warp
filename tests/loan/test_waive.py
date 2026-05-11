@@ -563,6 +563,35 @@ def test_waive_overdue_interest_multi_installment():
         assert inst_1.allocations[0].is_fully_covered
 
 
+def test_waive_overdue_interest_multi_installment_past_next_due():
+    """waive_overdue_interest must cap interest at the due date even when payment crosses a later due."""
+    loan_single = Loan(
+        Money("1000"),
+        InterestRate("1.99% a.m."),
+        [date(2025, 3, 26)],
+        disbursement_date=datetime(2025, 2, 25, tzinfo=timezone.utc),
+    )
+    loan_multi = Loan(
+        Money("1000"),
+        InterestRate("1.99% a.m."),
+        [date(2025, 3, 26), date(2025, 4, 26)],
+        disbursement_date=datetime(2025, 2, 25, tzinfo=timezone.utc),
+    )
+
+    payment_date = datetime(2025, 4, 28, tzinfo=timezone.utc)
+    amount = Money("520")
+
+    with Warp(loan_single, payment_date) as w1:
+        s1 = w1.pay_installment(amount, waive_overdue_interest=True)
+
+    with Warp(loan_multi, payment_date) as w2:
+        s2 = w2.pay_installment(amount, waive_overdue_interest=True)
+
+    single_interest = s1.allocations[0].interest_allocated
+    multi_interest = s2.allocations[0].interest_allocated
+    assert multi_interest == single_interest
+
+
 def test_waive_overdue_interest_via_record_payment():
     """record_payment should accept and honor waive_overdue_interest."""
     loan = _make_single_loan()

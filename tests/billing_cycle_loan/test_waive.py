@@ -1,6 +1,6 @@
 """Tests for waiving fines and mora interest on billing-cycle loan payments."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from money_warp import BillingCycleLoan, InterestRate, Money, Warp
 from money_warp.billing_cycle import MonthlyBillingCycle
@@ -102,6 +102,39 @@ def test_pay_installment_waive_overdue_interest():
         s = warped.pay_installment(scheduled, waive_overdue_interest=True)
 
     assert s.overdue_interest_waived > Money.zero()
+
+
+def test_waive_overdue_interest_multi_installment_past_next_due():
+    """waive_overdue_interest must cap interest at the due date even when payment crosses a later installment's due."""
+    bcl_single = BillingCycleLoan(
+        principal=Money("1000"),
+        interest_rate=InterestRate("1.99% a.m."),
+        billing_cycle=MonthlyBillingCycle(due_dates=[date(2025, 3, 26)]),
+        start_date=datetime(2025, 2, 25, tzinfo=timezone.utc),
+        num_installments=1,
+        disbursement_date=datetime(2025, 2, 25, tzinfo=timezone.utc),
+    )
+    bcl_multi = BillingCycleLoan(
+        principal=Money("1000"),
+        interest_rate=InterestRate("1.99% a.m."),
+        billing_cycle=MonthlyBillingCycle(due_dates=[date(2025, 3, 26), date(2025, 4, 26)]),
+        start_date=datetime(2025, 2, 25, tzinfo=timezone.utc),
+        num_installments=2,
+        disbursement_date=datetime(2025, 2, 25, tzinfo=timezone.utc),
+    )
+
+    payment_date = datetime(2025, 4, 28, tzinfo=timezone.utc)
+    amount = Money("520")
+
+    with Warp(bcl_single, payment_date) as w1:
+        s1 = w1.pay_installment(amount, waive_overdue_interest=True)
+
+    with Warp(bcl_multi, payment_date) as w2:
+        s2 = w2.pay_installment(amount, waive_overdue_interest=True)
+
+    single_interest = s1.allocations[0].interest_allocated
+    multi_interest = s2.allocations[0].interest_allocated
+    assert multi_interest == single_interest
 
 
 def test_overdue_interest_balance_on_bcl():
