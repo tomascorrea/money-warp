@@ -8,7 +8,7 @@ that the forward pass depends on.
 
 from dataclasses import dataclass
 from datetime import date, datetime, tzinfo
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from ..cash_flow import CashFlow, CashFlowItem
 from ..models import Allocation, Installment, Settlement
@@ -89,7 +89,7 @@ def _skipped_contractual_interest(
 def _underpaid_prior_interest(
     installments: List[Installment],
     next_due: Optional[date],
-    waiver_targets: "set[int]",
+    waiver_targets: Set[int],
 ) -> Money:
     """Sum unpaid contractual interest for principal-overcovered installments before *next_due*.
 
@@ -107,10 +107,15 @@ def _underpaid_prior_interest(
         return Money.zero()
     total = Money.zero()
     for idx, inst in enumerate(installments):
-        if inst.due_date < next_due and idx in waiver_targets and inst.principal_paid > inst.expected_principal:
-            owed = inst.expected_interest - inst.interest_paid
-            if owed.is_positive():
-                total = total + owed
+        if inst.due_date >= next_due:
+            continue
+        if idx not in waiver_targets:
+            continue
+        if inst.principal_paid <= inst.expected_principal:
+            continue
+        owed = inst.expected_interest - inst.interest_paid
+        if owed.is_positive():
+            total = total + owed
     return total
 
 
@@ -357,7 +362,7 @@ def compute_state(
     settlements: List[Settlement] = []
     allocs_by_number: Dict[int, List[Allocation]] = {}
     processed_payments: list = []
-    waiver_targets: set[int] = set()
+    waiver_targets: Set[int] = set()
 
     events = _build_event_timeline(payment_entries, fine_observation_dates)
 
@@ -414,7 +419,8 @@ def compute_state(
                 tz,
             )
 
-        if payment.waive_mora or payment.waive_overdue_interest or payment.discount.is_positive():
+        has_discount = hasattr(payment, "discount") and payment.discount.is_positive()
+        if payment.waive_mora or payment.waive_overdue_interest or has_discount:
             waiver_targets.add(covered)
 
         installments = _build_installments_snapshot(

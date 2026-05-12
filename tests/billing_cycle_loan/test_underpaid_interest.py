@@ -66,7 +66,7 @@ def test_pay_installment_covers_interest_on_principal_overcovered_installment():
     inst3 = loan.installments[2]
     assert inst3.principal_paid > inst3.expected_principal
     interest_owed = inst3.expected_interest - inst3.interest_paid
-    assert interest_owed.is_positive()
+    assert interest_owed == Money("27.18")
 
     with Warp(loan, datetime(2025, 5, 5, tzinfo=SAO_PAULO)) as w:
         settlement = w.pay_installment(
@@ -79,7 +79,7 @@ def test_pay_installment_covers_interest_on_principal_overcovered_installment():
     alloc_by_num = {a.installment_number: a for a in settlement.allocations}
 
     assert 3 in alloc_by_num, "Settlement 4 must allocate to installment #3"
-    assert alloc_by_num[3].interest_allocated == interest_owed
+    assert alloc_by_num[3].interest_allocated == Money("27.18")
     assert alloc_by_num[3].is_fully_covered is True
 
     assert 4 in alloc_by_num, "Settlement 4 must also allocate to installment #4"
