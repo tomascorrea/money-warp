@@ -86,6 +86,34 @@ def _skipped_contractual_interest(
     return total
 
 
+def _underpaid_prior_interest(
+    installments: List[Installment],
+    next_due: Optional[date],
+    waiver_targets: "set[int]",
+) -> Money:
+    """Sum unpaid contractual interest for principal-overcovered installments before *next_due*.
+
+    When a late payment with waivers (``waive_mora``, ``waive_overdue_interest``,
+    or ``discount``) causes an earlier installment to be "covered" by
+    ``covered_due_date_count`` without its contractual interest being
+    satisfied, this function captures the missing interest so it can be
+    included in the payment's interest cap.
+
+    Only targets installments that were the target of a payment with
+    active waivers (tracked in *waiver_targets* as 0-based indices)
+    and whose principal has been strictly overcovered.
+    """
+    if next_due is None:
+        return Money.zero()
+    total = Money.zero()
+    for idx, inst in enumerate(installments):
+        if inst.due_date < next_due and idx in waiver_targets and inst.principal_paid > inst.expected_principal:
+            owed = inst.expected_interest - inst.interest_paid
+            if owed.is_positive():
+                total = total + owed
+    return total
+
+
 # ------------------------------------------------------------------
 # Installment snapshot construction
 # ------------------------------------------------------------------
@@ -329,6 +357,7 @@ def compute_state(
     settlements: List[Settlement] = []
     allocs_by_number: Dict[int, List[Allocation]] = {}
     processed_payments: list = []
+    waiver_targets: set[int] = set()
 
     events = _build_event_timeline(payment_entries, fine_observation_dates)
 
@@ -385,6 +414,9 @@ def compute_state(
                 tz,
             )
 
+        if payment.waive_mora or payment.waive_overdue_interest or payment.discount.is_positive():
+            waiver_targets.add(covered)
+
         installments = _build_installments_snapshot(
             allocs_by_number,
             running_principal,
@@ -403,7 +435,8 @@ def compute_state(
         skipped = _skipped_contractual_interest(installments, next_due, to_date(interest_date, tz))
         if payment.waive_overdue_interest:
             skipped = Money.zero()
-        interest_cap = Money(regular.raw_amount + skipped.raw_amount)
+        underpaid_prior = _underpaid_prior_interest(installments, next_due, waiver_targets)
+        interest_cap = Money(regular.raw_amount + skipped.raw_amount + underpaid_prior.raw_amount)
 
         total_fines_amount = Money(sum(f.raw_amount for f in fines_applied.values())) if fines_applied else Money.zero()
         fine_balance = total_fines_amount - fines_paid_total
