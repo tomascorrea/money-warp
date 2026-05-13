@@ -44,11 +44,11 @@ class LoanState:
 # ------------------------------------------------------------------
 
 
-def covered_due_date_count(
+def principal_covered_count(
     remaining_balance: Money,
     schedule: PaymentSchedule,
 ) -> int:
-    """How many due dates are covered given a remaining principal balance."""
+    """How many due dates have their principal covered given a remaining balance."""
     covered = 0
     for entry in schedule:
         if remaining_balance <= entry.ending_balance + BALANCE_TOLERANCE:
@@ -56,6 +56,22 @@ def covered_due_date_count(
         else:
             break
     return covered
+
+
+def fully_covered_count(installments: List[Installment]) -> int:
+    """Count consecutive fully-paid installments from the start.
+
+    Unlike :func:`principal_covered_count`, this checks **all** obligations
+    (principal, interest, mora, fine) via :attr:`Installment.is_fully_paid`.
+    Sub-cent rounding artifacts within ``BALANCE_TOLERANCE`` are tolerated.
+    """
+    count = 0
+    for inst in installments:
+        if inst.is_fully_paid or inst.balance <= BALANCE_TOLERANCE:
+            count += 1
+        else:
+            break
+    return count
 
 
 # ------------------------------------------------------------------
@@ -86,35 +102,34 @@ def _skipped_contractual_interest(
     return total
 
 
-def _underpaid_prior_interest(
+def _prior_underpaid_interest(
     installments: List[Installment],
-    next_due: Optional[date],
+    principal_covered: int,
     waiver_targets: Set[int],
 ) -> Money:
-    """Sum unpaid contractual interest for principal-overcovered installments before *next_due*.
+    """Sum unpaid contractual interest for principal-covered installments
+    that were targeted by a payment with active waivers.
 
     When a late payment with waivers (``waive_mora``, ``waive_overdue_interest``,
     or ``discount``) causes an earlier installment to be "covered" by
-    ``covered_due_date_count`` without its contractual interest being
+    ``principal_covered_count`` without its contractual interest being
     satisfied, this function captures the missing interest so it can be
-    included in the payment's interest cap.
+    included in ``interest_cap``.
 
-    Only targets installments that were the target of a payment with
-    active waivers (tracked in *waiver_targets* as 0-based indices)
-    and whose principal has been strictly overcovered.
+    Only targets installments whose principal has been strictly overcovered
+    AND that were the target of a waiver-affected payment (tracked in
+    *waiver_targets* as 0-based indices).  This prevents false positives
+    in anticipation scenarios where interest is legitimately lower.
     """
-    if next_due is None:
-        return Money.zero()
     total = Money.zero()
-    for idx, inst in enumerate(installments):
-        if inst.due_date >= next_due:
-            continue
+    for idx in range(min(principal_covered, len(installments))):
+        inst = installments[idx]
         if idx not in waiver_targets:
             continue
         if inst.principal_paid <= inst.expected_principal:
             continue
         owed = inst.expected_interest - inst.interest_paid
-        if owed.is_positive():
+        if owed > BALANCE_TOLERANCE:
             total = total + owed
     return total
 
@@ -146,7 +161,7 @@ def _build_installments_snapshot(
     waivers and the coverage check in ``distribute_into_installments``
     produces the correct ``is_fully_covered`` flag.
     """
-    covered = covered_due_date_count(principal_balance, schedule)
+    covered = principal_covered_count(principal_balance, schedule)
 
     result: List[Installment] = []
     for i, entry in enumerate(schedule):
@@ -388,7 +403,7 @@ def compute_state(
         interest_date = payment.interest_date if payment.interest_date is not None else payment.datetime
         days = max(0, (to_date(interest_date, tz) - to_date(last_accrual_end, tz)).days)
 
-        covered = covered_due_date_count(running_principal, schedule)
+        covered = principal_covered_count(running_principal, schedule)
         next_due = due_dates[covered] if covered < len(due_dates) else None
 
         mora_override = mora_rate_for_event(next_due) if mora_rate_for_event else None
@@ -441,8 +456,10 @@ def compute_state(
         skipped = _skipped_contractual_interest(installments, next_due, to_date(interest_date, tz))
         if payment.waive_overdue_interest:
             skipped = Money.zero()
-        underpaid_prior = _underpaid_prior_interest(installments, next_due, waiver_targets)
-        interest_cap = Money(regular.raw_amount + skipped.raw_amount + underpaid_prior.raw_amount)
+        prior_interest = _prior_underpaid_interest(installments, covered, waiver_targets)
+        interest_cap = Money(
+            regular.raw_amount + skipped.raw_amount + prior_interest.raw_amount
+        )
 
         total_fines_amount = Money(sum(f.raw_amount for f in fines_applied.values())) if fines_applied else Money.zero()
         fine_balance = total_fines_amount - fines_paid_total

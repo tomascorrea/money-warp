@@ -19,8 +19,8 @@ from .engines import (
     MoraStrategy,
     apply_tolerance_adjustment,
     build_installments,
-    covered_due_date_count,
     is_payment_late,
+    principal_covered_count,
 )
 from .models import Installment, Settlement
 from .scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry
@@ -247,7 +247,7 @@ class BaseLoan(ABC):
         days = (self._time_ctx.to_date(self.now()) - self._time_ctx.to_date(state.last_accrual_end)).days
 
         if state.principal_balance.is_positive() and days > 0:
-            covered = covered_due_date_count(state.principal_balance, self.get_original_schedule())
+            covered = principal_covered_count(state.principal_balance, self.get_original_schedule())
             next_due = self.due_dates[covered] if covered < len(self.due_dates) else None
             penalty_next_due = effective_penalty_due_date(next_due, self.working_day_calendar) if next_due else None
             mora_rate = self._resolve_mora_rate_for_due(next_due)
@@ -326,7 +326,7 @@ class BaseLoan(ABC):
             return Money.zero()
 
         schedule = self.get_original_schedule()
-        covered = covered_due_date_count(state.principal_balance, schedule)
+        covered = principal_covered_count(state.principal_balance, schedule)
         if covered >= len(self.due_dates):
             return Money.zero()
 
@@ -451,7 +451,7 @@ class BaseLoan(ABC):
 
     def _covered_due_date_count(self) -> int:
         """How many due dates have been covered by payments."""
-        return covered_due_date_count(self.principal_balance, self.get_original_schedule())
+        return principal_covered_count(self.principal_balance, self.get_original_schedule())
 
     def _next_unpaid_due_date(self) -> date:
         """Find the next due date that hasn't been fully paid.
@@ -505,7 +505,7 @@ class BaseLoan(ABC):
             prev_balance = s.remaining_balance
             prev_date = s.payment_date
 
-        covered = covered_due_date_count(state.principal_balance, self.get_original_schedule())
+        covered = principal_covered_count(state.principal_balance, self.get_original_schedule())
         remaining_due_dates = self.due_dates[covered:]
         if not remaining_due_dates:
             return PaymentSchedule(entries=actual_entries)

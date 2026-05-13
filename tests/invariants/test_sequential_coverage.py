@@ -205,3 +205,5 @@ def test_multiple_payments_coverage_always_sequential(
 
     for settlement in all_settlements:
         _assert_sequential_coverage(settlement)
+
+

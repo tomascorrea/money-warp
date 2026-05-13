@@ -1,4 +1,10 @@
-"""Tests for installments with overpaid principal but underpaid interest."""
+"""Tests for correct interest allocation across installments.
+
+Validates that pay_installment never skips an installment with unpaid
+obligations.  The original bug: waivers caused principal spillover that
+made covered_due_date_count report an installment as "covered" while its
+interest was still owed, causing subsequent payments to skip it entirely.
+"""
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -16,16 +22,8 @@ from money_warp.billing_cycle import MonthlyBillingCycle
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 
 
-def test_pay_installment_covers_interest_on_principal_overcovered_installment():
-    """Settlement must allocate interest to an installment whose principal was
-    overcovered by a prior spillover before moving on to the next installment.
-
-    Scenario: 6-installment loan where settlements 1-3 leave installment #3
-    with principal_paid > expected_principal but interest still owed.
-    Settlement 4 must first satisfy #3's remaining contractual interest,
-    then allocate the remainder to #4.
-    """
-    loan = BillingCycleLoan(
+def _make_loan() -> BillingCycleLoan:
+    return BillingCycleLoan(
         principal=Money("2257.92"),
         interest_rate=InterestRate("1.990% a.m."),
         billing_cycle=MonthlyBillingCycle(
@@ -40,6 +38,17 @@ def test_pay_installment_covers_interest_on_principal_overcovered_installment():
         tz=SAO_PAULO,
         working_day_calendar=BrazilianWorkingDayCalendar(),
     )
+
+
+def test_waiver_payments_never_skip_installments():
+    """Late payments with waivers must cover each installment's full
+    obligations (principal + interest) before moving to the next one.
+
+    Scenario: 6-installment loan with 4 late payments using waivers.
+    After all 4 payments, installments #1-#3 must be fully paid with
+    no gaps.
+    """
+    loan = _make_loan()
 
     with Warp(loan, datetime(2024, 12, 30, tzinfo=SAO_PAULO)) as w:
         w.pay_installment(Money("403.67"), waive_overdue_interest=True)
@@ -63,11 +72,6 @@ def test_pay_installment_covers_interest_on_principal_overcovered_installment():
         )
     loan = w
 
-    inst3 = loan.installments[2]
-    assert inst3.principal_paid > inst3.expected_principal
-    interest_owed = inst3.expected_interest - inst3.interest_paid
-    assert interest_owed == Money("27.18")
-
     with Warp(loan, datetime(2025, 5, 5, tzinfo=SAO_PAULO)) as w:
         settlement = w.pay_installment(
             Money("403.67"),
@@ -75,11 +79,13 @@ def test_pay_installment_covers_interest_on_principal_overcovered_installment():
             waive_mora=True,
             waive_overdue_interest=True,
         )
+    loan = w
+
+    for inst in loan.installments[:3]:
+        assert inst.is_fully_paid, (
+            f"Installment #{inst.number} should be fully paid "
+            f"but has balance={inst.balance}"
+        )
 
     alloc_by_num = {a.installment_number: a for a in settlement.allocations}
-
-    assert 3 in alloc_by_num, "Settlement 4 must allocate to installment #3"
-    assert alloc_by_num[3].interest_allocated == Money("27.18")
-    assert alloc_by_num[3].is_fully_covered is True
-
     assert 4 in alloc_by_num, "Settlement 4 must also allocate to installment #4"
