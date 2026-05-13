@@ -8,7 +8,7 @@ that the forward pass depends on.
 
 from dataclasses import dataclass
 from datetime import date, datetime, tzinfo
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from ..cash_flow import CashFlow, CashFlowItem
 from ..models import Allocation, Installment, Settlement
@@ -44,11 +44,11 @@ class LoanState:
 # ------------------------------------------------------------------
 
 
-def covered_due_date_count(
+def principal_covered_count(
     remaining_balance: Money,
     schedule: PaymentSchedule,
 ) -> int:
-    """How many due dates are covered given a remaining principal balance."""
+    """How many due dates have their principal covered given a remaining balance."""
     covered = 0
     for entry in schedule:
         if remaining_balance <= entry.ending_balance + BALANCE_TOLERANCE:
@@ -56,6 +56,22 @@ def covered_due_date_count(
         else:
             break
     return covered
+
+
+def fully_covered_count(installments: List[Installment]) -> int:
+    """Count consecutive fully-paid installments from the start.
+
+    Unlike :func:`principal_covered_count`, this checks **all** obligations
+    (principal, interest, mora, fine) via :attr:`Installment.is_fully_paid`.
+    Sub-cent rounding artifacts within ``BALANCE_TOLERANCE`` are tolerated.
+    """
+    count = 0
+    for inst in installments:
+        if inst.is_fully_paid or inst.balance <= BALANCE_TOLERANCE:
+            count += 1
+        else:
+            break
+    return count
 
 
 # ------------------------------------------------------------------
@@ -86,6 +102,55 @@ def _skipped_contractual_interest(
     return total
 
 
+def _prior_underpaid_interest(
+    installments: List[Installment],
+    principal_covered: int,
+    waiver_targets: Set[int],
+) -> Money:
+    """Sum unpaid contractual interest for principal-covered installments
+    that were targeted by a payment with active waivers.
+
+    When a late payment with waivers (``waive_mora``, ``waive_overdue_interest``,
+    or ``discount``) causes an earlier installment to be "covered" by
+    ``principal_covered_count`` without its contractual interest being
+    satisfied, this function captures the missing interest so it can be
+    included in ``interest_cap``.
+
+    Only targets installments whose principal has been strictly overcovered
+    AND that were the target of a waiver-affected payment (tracked in
+    *waiver_targets* as 0-based indices).  This prevents false positives
+    in anticipation scenarios where interest is legitimately lower.
+    """
+    total = Money.zero()
+    for idx in range(min(principal_covered, len(installments))):
+        inst = installments[idx]
+        if idx not in waiver_targets:
+            continue
+        if inst.principal_paid <= inst.expected_principal:
+            continue
+        owed = inst.expected_interest - inst.interest_paid
+        if owed > BALANCE_TOLERANCE:
+            total = total + owed
+    return total
+
+
+def _interest_cap_for_payment(
+    payment: CashFlowItem,
+    installments: List[Installment],
+    covered: int,
+    next_due: Optional[date],
+    interest_date: datetime,
+    tz: tzinfo,
+    waiver_targets: Set[int],
+    regular: Money,
+) -> Money:
+    skipped = _skipped_contractual_interest(installments, next_due, to_date(interest_date, tz))
+    if payment.waive_overdue_interest:
+        skipped = Money.zero()
+    prior_interest = _prior_underpaid_interest(installments, covered, waiver_targets)
+    return Money(regular.raw_amount + skipped.raw_amount + prior_interest.raw_amount)
+
+
 # ------------------------------------------------------------------
 # Installment snapshot construction
 # ------------------------------------------------------------------
@@ -113,7 +178,7 @@ def _build_installments_snapshot(
     waivers and the coverage check in ``distribute_into_installments``
     produces the correct ``is_fully_covered`` flag.
     """
-    covered = covered_due_date_count(principal_balance, schedule)
+    covered = principal_covered_count(principal_balance, schedule)
 
     result: List[Installment] = []
     for i, entry in enumerate(schedule):
@@ -329,6 +394,7 @@ def compute_state(
     settlements: List[Settlement] = []
     allocs_by_number: Dict[int, List[Allocation]] = {}
     processed_payments: list = []
+    waiver_targets: Set[int] = set()
 
     events = _build_event_timeline(payment_entries, fine_observation_dates)
 
@@ -354,7 +420,7 @@ def compute_state(
         interest_date = payment.interest_date if payment.interest_date is not None else payment.datetime
         days = max(0, (to_date(interest_date, tz) - to_date(last_accrual_end, tz)).days)
 
-        covered = covered_due_date_count(running_principal, schedule)
+        covered = principal_covered_count(running_principal, schedule)
         next_due = due_dates[covered] if covered < len(due_dates) else None
 
         mora_override = mora_rate_for_event(next_due) if mora_rate_for_event else None
@@ -385,6 +451,10 @@ def compute_state(
                 tz,
             )
 
+        has_discount = payment.discount.is_positive()
+        if payment.waive_mora or payment.waive_overdue_interest or has_discount:
+            waiver_targets.add(covered)
+
         installments = _build_installments_snapshot(
             allocs_by_number,
             running_principal,
@@ -400,10 +470,16 @@ def compute_state(
             waive_mora=payment.waive_mora,
         )
 
-        skipped = _skipped_contractual_interest(installments, next_due, to_date(interest_date, tz))
-        if payment.waive_overdue_interest:
-            skipped = Money.zero()
-        interest_cap = Money(regular.raw_amount + skipped.raw_amount)
+        interest_cap = _interest_cap_for_payment(
+            payment,
+            installments,
+            covered,
+            next_due,
+            interest_date,
+            tz,
+            waiver_targets,
+            regular,
+        )
 
         total_fines_amount = Money(sum(f.raw_amount for f in fines_applied.values())) if fines_applied else Money.zero()
         fine_balance = total_fines_amount - fines_paid_total

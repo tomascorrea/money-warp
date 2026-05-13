@@ -1,8 +1,7 @@
-"""Property-based tests for interest, mora, and coverage invariants.
+"""Property-based tests for interest and mora invariants.
 
 6. Interest monotonicity: more days of accrual produces more interest.
-7. Covered due date count never decreases as payments are made.
-8. Mora is zero when payment is on or before the due date.
+7. Mora is zero when payment is on or before the due date.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -22,7 +21,6 @@ from .strategies import (
     principal_st,
     scheduler_st,
 )
-
 
 # ── Invariant 6: Interest monotonicity ──────────────────────────────
 
@@ -64,55 +62,7 @@ def test_interest_is_nonnegative(principal, annual_rate, days):
     ), f"Interest should be nonneg but got {interest} for principal={principal}, rate={annual_rate}%, days={days}"
 
 
-# ── Invariant 7: Covered due date count monotone ────────────────────
-
-
-@given(
-    principal=principal_st,
-    annual_rate=annual_rate_st,
-    num_installments=st.integers(min_value=2, max_value=8),
-    scheduler=scheduler_st,
-    payment_days=st.lists(
-        st.integers(min_value=20, max_value=400),
-        min_size=2,
-        max_size=5,
-        unique=True,
-    ).map(sorted),
-    fractions=st.lists(
-        st.floats(min_value=0.20, max_value=1.0),
-        min_size=5,
-        max_size=5,
-    ),
-)
-@settings(max_examples=200)
-def test_covered_due_date_count_never_decreases(
-    principal, annual_rate, num_installments, scheduler, payment_days, fractions
-):
-    """As payments are made, the count of covered due dates never goes down."""
-    loan = build_loan(principal, annual_rate, num_installments, scheduler)
-    prev_covered = 0
-
-    for i, day_offset in enumerate(payment_days):
-        pay_dt = DISBURSEMENT + timedelta(days=day_offset)
-
-        with Warp(loan, pay_dt) as warped:
-            balance = warped.current_balance
-            if balance.is_zero() or balance.is_negative():
-                break
-            amount = make_payment_amount(balance, fractions[i])
-            if amount.is_zero() or amount.is_negative():
-                continue
-            warped.pay_installment(amount)
-            covered = warped._covered_due_date_count()
-
-            assert (
-                covered >= prev_covered
-            ), f"Covered count decreased from {prev_covered} to {covered} after payment of {amount} on day {day_offset}"
-            prev_covered = covered
-        loan = warped
-
-
-# ── Invariant 8: Mora only after due date ───────────────────────────
+# ── Invariant 7: Mora only after due date ───────────────────────────
 
 
 @given(

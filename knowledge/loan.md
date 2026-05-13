@@ -16,7 +16,7 @@ The Loan delegates computation to two focused components in `engines.py`:
   - `allocate_payment(...)` — loan-level allocation (fine -> mora -> interest -> principal).
   - `distribute_into_installments(...)` — maps loan-level totals to per-installment allocations for reporting.
   - `allocate_payment_into_installments(...)` — convenience wrapper that calls both of the above.
-  - `covered_due_date_count(...)` — how many due dates are covered given a remaining balance.
+  - `principal_covered_count(...)` — how many installments have principal covered given a remaining balance vs the original schedule milestones.
   - `is_payment_late(...)` — grace-period-aware lateness check.
 - **TVM functions** (`tvm.py`) — standalone `loan_present_value`, `loan_irr`, `loan_calculate_anticipation`.
 
@@ -90,7 +90,7 @@ Neither method takes a date parameter — they use `self.now()` (which respects 
   - **On-time payment**: interest matches the scheduled amount exactly.
   - **Late payment**: interest accrues up to `self.now()`, so the borrower pays extra interest (mora) for the days beyond the due date. Late fines are also applied automatically.
 
-  A large payment naturally covers the current installment **and** eats into future installments — the per-installment allocation and `covered_due_date_count()` handle this without special-casing.
+  A large payment naturally covers the current installment **and** eats into future installments — the per-installment allocation and `BaseLoan._principal_covered_count()` (same milestone logic as `principal_covered_count`) handle this without special-casing.
 
 - **`anticipate_payment(amount, installments=None, description=None, waive_fines=False, waive_mora=False, waive_overdue_interest=False, discount=None)`** — early payment **with interest discount**. Records payment at `self.now()` and calculates interest only up to `self.now()` (fewer days = less interest charged). When `installments` is provided (1-based numbers), the corresponding expected cash-flow items are temporally deleted via `CashFlowItem.delete()`.
 
@@ -361,7 +361,7 @@ Internal dataclass returned by `compute_state`: `settlements`, `principal_balanc
 
 ### Due date coverage uses cumulative principal, not payment count (fixed 2026-02-20)
 
-**Fix:** `covered_due_date_count()` compares the remaining principal against the original schedule's `ending_balance` milestones. A due date is covered when remaining principal is at or below that entry's ending balance.
+**Fix:** `principal_covered_count` / `BaseLoan._principal_covered_count()` compares the remaining principal against the original schedule's `ending_balance` milestones. An installment's principal is covered when remaining principal is at or below that entry's ending balance.
 
 **Lesson:** Avoid coupling "number of events" to "progress through a schedule." Use the financial state (principal balance) as the source of truth.
 

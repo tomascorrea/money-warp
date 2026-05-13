@@ -27,7 +27,8 @@ from .forward_pass import (
     apply_tolerance_adjustment,
     build_installments,
     compute_state,
-    covered_due_date_count,
+    fully_covered_count,
+    principal_covered_count,
 )
 from .interest import InterestCalculator, MoraRateCallback, MoraStrategy
 
@@ -42,7 +43,8 @@ __all__ = [
     "build_installments",
     "compute_fines_at",
     "compute_state",
-    "covered_due_date_count",
+    "fully_covered_count",
+    "principal_covered_count",
     "distribute_into_installments",
     "is_payment_late",
 ]

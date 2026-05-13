@@ -16,9 +16,10 @@ from ..engines import (
     build_installments,
     compute_fines_at,
     compute_state,
-    covered_due_date_count,
     distribute_into_installments,
+    fully_covered_count,
     is_payment_late,
+    principal_covered_count,
 )
 
 __all__ = [
@@ -32,7 +33,8 @@ __all__ = [
     "build_installments",
     "compute_fines_at",
     "compute_state",
-    "covered_due_date_count",
+    "fully_covered_count",
+    "principal_covered_count",
     "distribute_into_installments",
     "is_payment_late",
 ]

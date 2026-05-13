@@ -79,7 +79,7 @@ def loan_calculate_anticipation(
         ValueError: If any number is invalid or already paid.
     """
     original = loan.get_original_schedule()
-    covered = loan._covered_due_date_count()
+    covered = loan._principal_covered_count()
     total_installments = len(original)
 
     removed_set = set(installments)
