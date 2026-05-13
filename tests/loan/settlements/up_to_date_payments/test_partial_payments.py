@@ -155,23 +155,25 @@ def test_p5_second_installment(six_partial_settlements):
 
 
 def test_p6_third_installment_allocation(six_partial_settlements):
-    """Inst 3 gets principal + interest from P6."""
+    """Inst 3 gets principal + interest from P6.
+
+    Inst 2 is already settled (balance within tolerance) so P6 skips
+    it and the full payment flows to inst 3.
+    """
     _, settlements = six_partial_settlements
-    a = settlements[5].allocations[1]
+    assert len(settlements[5].allocations) == 1
+    a = settlements[5].allocations[0]
     assert a.installment_number == 3
     assert a.principal_allocated == Money("197.65")
-    assert a.interest_allocated == Money("2.28")
+    assert a.interest_allocated == Money("2.35")
     assert a.is_fully_covered is True
 
 
-def test_p6_finishes_second_installment(six_partial_settlements):
-    """P6 also covers inst 2's remaining interest (0.07)."""
+def test_p6_skips_fully_paid_second_installment(six_partial_settlements):
+    """Inst 2 is fully paid — P6 must not allocate anything to it."""
     _, settlements = six_partial_settlements
-    a = settlements[5].allocations[0]
-    assert a.installment_number == 2
-    assert a.interest_allocated == Money("0.07")
-    assert a.principal_allocated == Money("0.00")
-    assert a.is_fully_covered is True
+    inst2_allocs = [a for a in settlements[5].allocations if a.installment_number == 2]
+    assert not inst2_allocs
 
 
 # --- Final state ---
@@ -193,4 +195,4 @@ def test_final_installment_three_not_paid(six_partial_settlements):
     """Installment 3 still has a remaining balance (R$910 < total owed)."""
     loan, _ = six_partial_settlements
     assert loan.installments[2].is_fully_paid is False
-    assert loan.installments[2].balance == Money("0.94")
+    assert loan.installments[2].balance == Money("0.87")

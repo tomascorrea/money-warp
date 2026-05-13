@@ -67,6 +67,9 @@ def distribute_into_installments(
     allocations: List[Allocation] = []
 
     for inst in installments:
+        if inst.is_fully_paid or inst.balance <= BALANCE_TOLERANCE:
+            continue
+
         fine_owed = inst.expected_fine - inst.fine_paid
         fine_alloc = Money(min(max(fine_owed.raw_amount, 0), fine_remaining.raw_amount))
         fine_remaining = fine_remaining - fine_alloc
