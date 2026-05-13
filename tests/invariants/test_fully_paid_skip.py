@@ -8,7 +8,6 @@ See: https://github.com/tomascorrea/money-warp/issues/88
 """
 
 from datetime import datetime
-
 from zoneinfo import ZoneInfo
 
 from money_warp import (
@@ -86,9 +85,9 @@ def test_fully_paid_installment_receives_no_allocation() -> None:
 
     with Warp(loan, datetime(2025, 9, 15, tzinfo=SAO_PAULO)) as w:
         inst3 = w.installments[2]
-        assert inst3.is_fully_paid or inst3.balance <= BALANCE_TOLERANCE, (
-            f"Precondition: installment #3 should be settled (balance within tolerance), " f"balance={inst3.balance}"
-        )
+        assert (
+            inst3.is_fully_paid or inst3.balance <= BALANCE_TOLERANCE
+        ), f"Precondition: installment #3 should be settled (balance within tolerance), balance={inst3.balance}"
 
         settlement = w.pay_installment(
             pmt,
@@ -98,12 +97,14 @@ def test_fully_paid_installment_receives_no_allocation() -> None:
         )
 
     alloc_for_3 = [a for a in settlement.allocations if a.installment_number == 3]
-    assert not alloc_for_3, (
-        f"Installment #3 is fully paid but received allocation: " f"interest={alloc_for_3[0].interest_allocated}"
-    )
+    assert (
+        not alloc_for_3
+    ), f"Installment #3 is fully paid but received allocation: interest={alloc_for_3[0].interest_allocated}"
 
     alloc_for_4 = [a for a in settlement.allocations if a.installment_number == 4]
     assert alloc_for_4, "Installment #4 should have received an allocation"
-    assert alloc_for_4[0].is_fully_covered, (
-        f"Installment #4 should be fully covered but is not. " f"Allocated: {alloc_for_4[0].total_allocated}"
+    assert alloc_for_4[
+        0
+    ].is_fully_covered, (
+        f"Installment #4 should be fully covered but is not. Allocated: {alloc_for_4[0].total_allocated}"
     )
