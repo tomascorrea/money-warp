@@ -77,7 +77,7 @@ Property-based invariant tests live in `tests/invariants/`, not `tests/engines/`
 | `test_balance.py` | (3, 5) Principal balance never negative; installment balances nonneg; `is_fully_paid` implies zero |
 | `test_allocation.py` | (4) Settlement components nonneg and sum to payment amount |
 | `test_allocation_completeness.py` | Per-component allocation sums match settlement totals across all installments |
-| `test_interest.py` | (6-8) Interest monotonicity; covered due-date count non-decreasing; zero mora on/before due date |
+| `test_interest.py` | (6-7) Interest monotonicity / nonnegative; zero mora on/before due date |
 | `test_sequential_coverage.py` | Coverage flags monotonically ordered; no money leaks past uncovered installments |
 
 Shared Hypothesis strategies and helpers (`build_loan`, `make_payment_amount`, etc.) live in `tests/invariants/strategies.py`. The `conftest.py` adds the directory to `sys.path` so test files can import strategies directly.
