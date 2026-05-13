@@ -142,7 +142,7 @@ class BaseLoan(ABC):
         """
         payment_date = self.now()
 
-        if self._covered_due_date_count() >= len(self.due_dates):
+        if self._principal_covered_count() >= len(self.due_dates):
             warnings.warn(
                 f"All installments already paid. Recording {amount} as overpayment.",
                 stacklevel=2,
@@ -449,8 +449,8 @@ class BaseLoan(ABC):
         """Days since the last payment (Warp-aware)."""
         return (self._time_ctx.to_date(self.now()) - self._time_ctx.to_date(self.last_payment_date)).days
 
-    def _covered_due_date_count(self) -> int:
-        """How many due dates have been covered by payments."""
+    def _principal_covered_count(self) -> int:
+        """How many installments have principal covered (schedule milestones)."""
         return principal_covered_count(self.principal_balance, self.get_original_schedule())
 
     def _next_unpaid_due_date(self) -> date:
@@ -459,7 +459,7 @@ class BaseLoan(ABC):
         Raises:
             ValueError: If all due dates have been paid.
         """
-        covered = self._covered_due_date_count()
+        covered = self._principal_covered_count()
         if covered >= len(self.due_dates):
             raise ValueError("All due dates have been paid")
         return self.due_dates[covered]

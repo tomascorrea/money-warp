@@ -85,10 +85,10 @@ def test_interest_is_nonnegative(principal, annual_rate, days):
     ),
 )
 @settings(max_examples=200)
-def test_covered_due_date_count_never_decreases(
+def test_principal_covered_count_never_decreases(
     principal, annual_rate, num_installments, scheduler, payment_days, fractions
 ):
-    """As payments are made, the count of covered due dates never goes down."""
+    """As payments are made, the principal-covered installment count never goes down."""
     loan = build_loan(principal, annual_rate, num_installments, scheduler)
     prev_covered = 0
 
@@ -103,7 +103,7 @@ def test_covered_due_date_count_never_decreases(
             if amount.is_zero() or amount.is_negative():
                 continue
             warped.pay_installment(amount)
-            covered = warped._covered_due_date_count()
+            covered = warped._principal_covered_count()
 
             assert (
                 covered >= prev_covered

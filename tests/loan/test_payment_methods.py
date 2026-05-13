@@ -489,7 +489,7 @@ def test_large_payment_covers_two_installments():
     two_installments = original[0].payment_amount + original[1].payment_amount
 
     loan.record_payment(two_installments, datetime(2025, 2, 1, tzinfo=timezone.utc))
-    assert loan._covered_due_date_count() >= 2
+    assert loan._principal_covered_count() >= 2
     assert loan._next_unpaid_due_date() == date(2025, 4, 1)
 
 
@@ -516,7 +516,7 @@ def test_three_consecutive_anticipations():
             interest_date=payment_date,
         )
 
-    assert loan._covered_due_date_count() == 3
+    assert loan._principal_covered_count() == 3
 
     with pytest.raises(ValueError, match="All due dates have been paid"):
         loan._next_unpaid_due_date()

@@ -16,10 +16,10 @@ from ..engines import (
     build_installments,
     compute_fines_at,
     compute_state,
-    fully_covered_count,
-    principal_covered_count,
     distribute_into_installments,
+    fully_covered_count,
     is_payment_late,
+    principal_covered_count,
 )
 
 __all__ = [

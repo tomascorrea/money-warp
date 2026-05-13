@@ -134,6 +134,23 @@ def _prior_underpaid_interest(
     return total
 
 
+def _interest_cap_for_payment(
+    payment: CashFlowItem,
+    installments: List[Installment],
+    covered: int,
+    next_due: Optional[date],
+    interest_date: datetime,
+    tz: tzinfo,
+    waiver_targets: Set[int],
+    regular: Money,
+) -> Money:
+    skipped = _skipped_contractual_interest(installments, next_due, to_date(interest_date, tz))
+    if payment.waive_overdue_interest:
+        skipped = Money.zero()
+    prior_interest = _prior_underpaid_interest(installments, covered, waiver_targets)
+    return Money(regular.raw_amount + skipped.raw_amount + prior_interest.raw_amount)
+
+
 # ------------------------------------------------------------------
 # Installment snapshot construction
 # ------------------------------------------------------------------
@@ -434,7 +451,7 @@ def compute_state(
                 tz,
             )
 
-        has_discount = hasattr(payment, "discount") and payment.discount.is_positive()
+        has_discount = payment.discount.is_positive()
         if payment.waive_mora or payment.waive_overdue_interest or has_discount:
             waiver_targets.add(covered)
 
@@ -453,12 +470,15 @@ def compute_state(
             waive_mora=payment.waive_mora,
         )
 
-        skipped = _skipped_contractual_interest(installments, next_due, to_date(interest_date, tz))
-        if payment.waive_overdue_interest:
-            skipped = Money.zero()
-        prior_interest = _prior_underpaid_interest(installments, covered, waiver_targets)
-        interest_cap = Money(
-            regular.raw_amount + skipped.raw_amount + prior_interest.raw_amount
+        interest_cap = _interest_cap_for_payment(
+            payment,
+            installments,
+            covered,
+            next_due,
+            interest_date,
+            tz,
+            waiver_targets,
+            regular,
         )
 
         total_fines_amount = Money(sum(f.raw_amount for f in fines_applied.values())) if fines_applied else Money.zero()

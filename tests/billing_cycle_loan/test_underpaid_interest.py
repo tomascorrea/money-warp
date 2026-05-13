@@ -2,7 +2,7 @@
 
 Validates that pay_installment never skips an installment with unpaid
 obligations.  The original bug: waivers caused principal spillover that
-made covered_due_date_count report an installment as "covered" while its
+made principal_covered_count report an installment as "covered" while its
 interest was still owed, causing subsequent payments to skip it entirely.
 """
 
@@ -82,10 +82,7 @@ def test_waiver_payments_never_skip_installments():
     loan = w
 
     for inst in loan.installments[:3]:
-        assert inst.is_fully_paid, (
-            f"Installment #{inst.number} should be fully paid "
-            f"but has balance={inst.balance}"
-        )
+        assert inst.is_fully_paid, f"Installment #{inst.number} should be fully paid but has balance={inst.balance}"
 
     alloc_by_num = {a.installment_number: a for a in settlement.allocations}
     assert 4 in alloc_by_num, "Settlement 4 must also allocate to installment #4"
