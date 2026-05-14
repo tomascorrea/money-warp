@@ -183,6 +183,7 @@ class BaseLoan(ABC):
                     self.payment_tolerance,
                     len(self.due_dates),
                     self._time_ctx,
+                    waive_overdue_interest=waive_overdue_interest,
                 )
                 break
 

@@ -3,10 +3,13 @@
 from datetime import date, datetime, timezone
 
 import pytest
+from zoneinfo import ZoneInfo
 
-from money_warp import BillingCycleLoan, InterestRate, Money
+from money_warp import BillingCycleLoan, InterestRate, Money, PriceScheduler
 from money_warp.billing_cycle import MonthlyBillingCycle
 from money_warp.engines import MoraStrategy
+
+SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 
 
 @pytest.fixture
@@ -58,3 +61,34 @@ def variable_mora_loan(billing_cycle):
         mora_rate_resolver=resolver,
         mora_strategy=MoraStrategy.COMPOUND,
     )
+
+
+@pytest.fixture
+def make_late_waiver_loan():
+    """Factory for the loan from the late-payment-shortens-next-period bug report.
+
+    4 monthly installments at 79.380% a.a., principal R$667.45, due on the 25th
+    starting Dec 2025.  Returns a fresh loan each call so a single test can
+    build the same loan twice and compare scenarios.
+    """
+
+    def _build() -> BillingCycleLoan:
+        return BillingCycleLoan(
+            principal=Money("667.45"),
+            interest_rate=InterestRate("79.380% a.a."),
+            billing_cycle=MonthlyBillingCycle(
+                due_dates=[
+                    date(2025, 12, 25),
+                    date(2026, 1, 25),
+                    date(2026, 2, 25),
+                    date(2026, 3, 25),
+                ],
+            ),
+            start_date=datetime(2025, 11, 24, tzinfo=SAO_PAULO),
+            num_installments=4,
+            disbursement_date=datetime(2025, 11, 24, tzinfo=SAO_PAULO),
+            scheduler=PriceScheduler,
+            fine_rate=InterestRate("2% a.m."),
+        )
+
+    return _build

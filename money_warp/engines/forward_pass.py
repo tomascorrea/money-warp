@@ -328,6 +328,37 @@ def _compute_overdue_interest_waiver(
 # ------------------------------------------------------------------
 
 
+def _accrual_end_with_waiver_cap(
+    default_end: datetime,
+    payment: object,
+    running_principal: Money,
+    schedule: PaymentSchedule,
+    due_dates: List[date],
+    tz: tzinfo,
+) -> datetime:
+    """Cap ``last_accrual_end`` at the latest covered due date when waiving overdue interest.
+
+    When ``waive_overdue_interest`` is active and at least one installment
+    is fully covered, the regular interest was capped at the prior due
+    date and the late window was not billed.  Returning that due date
+    keeps the next installment's interest period at its full contractual
+    length instead of being shortened by the late days.
+
+    Tolerance-adjustment items inherit the waiver flag, so this cap also
+    holds across the synthetic events ``apply_tolerance_adjustment`` adds
+    after a snapped payment.
+    """
+    if not payment.waive_overdue_interest:
+        return default_end
+    new_covered = principal_covered_count(running_principal, schedule)
+    if new_covered <= 0:
+        return default_end
+    snap_cap = to_datetime(due_dates[new_covered - 1], tz)
+    if snap_cap < default_end:
+        return snap_cap
+    return default_end
+
+
 def _build_event_timeline(
     payment_entries: list,
     fine_observation_dates: Optional[List[datetime]],
@@ -532,7 +563,15 @@ def compute_state(
         )
 
         last_payment_date = payment.datetime
-        last_accrual_end = max(payment.datetime, interest_date)
+        last_accrual_end = _accrual_end_with_waiver_cap(
+            max(payment.datetime, interest_date),
+            payment,
+            running_principal,
+            schedule,
+            due_dates,
+            tz,
+        )
+
         processed_payments.append(payment)
 
     return LoanState(
@@ -597,6 +636,7 @@ def apply_tolerance_adjustment(
     payment_tolerance: Money,
     num_installments: int,
     time_ctx: TimeContext,
+    waive_overdue_interest: bool = False,
 ) -> None:
     """Add a small CashFlowItem if the balance drifted from the schedule.
 
@@ -609,6 +649,12 @@ def apply_tolerance_adjustment(
     accumulated tolerance is also absorbed.  The multiplier of 3
     accounts for compounding -- per-period rounding errors grow
     faster than linearly at high interest rates.
+
+    *waive_overdue_interest* is propagated from the originating payment
+    so the forward pass treats the synthetic adjustment with the same
+    accrual-cap semantics; otherwise a tolerance event scheduled at the
+    actual late timestamp would silently undo the snap that
+    ``compute_state`` applied to ``last_accrual_end``.
     """
     balance = settlement.remaining_balance
     gap = balance - entry.ending_balance
@@ -621,6 +667,7 @@ def apply_tolerance_adjustment(
                 "payment",
                 time_context=time_ctx,
                 interest_date=interest_date,
+                waive_overdue_interest=waive_overdue_interest,
             )
         )
         return
@@ -637,5 +684,6 @@ def apply_tolerance_adjustment(
                     "payment",
                     time_context=time_ctx,
                     interest_date=interest_date,
+                    waive_overdue_interest=waive_overdue_interest,
                 )
             )
