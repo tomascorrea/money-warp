@@ -199,36 +199,35 @@ def _build_installments_snapshot(
 
         prior_mora = Money(sum(a.mora_allocated.raw_amount for a in allocs))
 
-        mora_override = mora_rate_for_event(entry.due_date) if mora_rate_for_event else None
-
         if waive_mora or i < covered:
             expected_mora = prior_mora
         elif i == covered and entry.due_date < to_date(as_of_date, tz):
             within_grace = not is_payment_late(entry.due_date, grace_period_days, as_of_date, tz, calendar)
             if within_grace:
                 accrued_mora = Money.zero()
-            elif last_payment_date is not None:
-                penalty_due = effective_penalty_due_date(entry.due_date, calendar)
-                total_days = (to_date(as_of_date, tz) - to_date(last_payment_date, tz)).days
-                _, accrued_mora = interest_calc.compute_accrued_interest(
-                    total_days,
-                    principal_balance,
-                    tz,
-                    penalty_due,
-                    last_payment_date,
-                    mora_rate_override=mora_override,
-                )
             else:
+                mora_override = mora_rate_for_event(entry.due_date) if mora_rate_for_event else None
                 penalty_due = effective_penalty_due_date(entry.due_date, calendar)
-                days_overdue = max(0, (to_date(as_of_date, tz) - penalty_due).days)
-                _, accrued_mora = interest_calc.compute_accrued_interest(
-                    days_overdue,
-                    principal_balance,
-                    tz,
-                    penalty_due,
-                    to_datetime(penalty_due, tz),
-                    mora_rate_override=mora_override,
-                )
+                if last_payment_date is not None:
+                    total_days = (to_date(as_of_date, tz) - to_date(last_payment_date, tz)).days
+                    _, accrued_mora = interest_calc.compute_accrued_interest(
+                        total_days,
+                        principal_balance,
+                        tz,
+                        penalty_due,
+                        last_payment_date,
+                        mora_rate_override=mora_override,
+                    )
+                else:
+                    days_overdue = max(0, (to_date(as_of_date, tz) - penalty_due).days)
+                    _, accrued_mora = interest_calc.compute_accrued_interest(
+                        days_overdue,
+                        principal_balance,
+                        tz,
+                        penalty_due,
+                        to_datetime(penalty_due, tz),
+                        mora_rate_override=mora_override,
+                    )
             expected_mora = prior_mora + accrued_mora
         else:
             expected_mora = Money.zero()
