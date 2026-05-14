@@ -47,27 +47,36 @@ class LoanState:
 def principal_covered_count(
     remaining_balance: Money,
     schedule: PaymentSchedule,
+    balance_tolerance: Money = BALANCE_TOLERANCE,
 ) -> int:
-    """How many due dates have their principal covered given a remaining balance."""
+    """How many due dates have their principal covered given a remaining balance.
+
+    *balance_tolerance* lets the caller override the sub-cent threshold
+    used when comparing the running balance to scheduled ending
+    balances. Defaults to the engine constant.
+    """
     covered = 0
     for entry in schedule:
-        if remaining_balance <= entry.ending_balance + BALANCE_TOLERANCE:
+        if remaining_balance <= entry.ending_balance + balance_tolerance:
             covered += 1
         else:
             break
     return covered
 
 
-def fully_covered_count(installments: List[Installment]) -> int:
+def fully_covered_count(
+    installments: List[Installment],
+    balance_tolerance: Money = BALANCE_TOLERANCE,
+) -> int:
     """Count consecutive fully-paid installments from the start.
 
     Unlike :func:`principal_covered_count`, this checks **all** obligations
     (principal, interest, mora, fine) via :attr:`Installment.is_fully_paid`.
-    Sub-cent rounding artifacts within ``BALANCE_TOLERANCE`` are tolerated.
+    Sub-cent rounding artifacts within *balance_tolerance* are tolerated.
     """
     count = 0
     for inst in installments:
-        if inst.is_fully_paid or inst.balance <= BALANCE_TOLERANCE:
+        if inst.is_fully_paid or inst.balance <= balance_tolerance:
             count += 1
         else:
             break
@@ -106,6 +115,7 @@ def _prior_underpaid_interest(
     installments: List[Installment],
     principal_covered: int,
     waiver_targets: Set[int],
+    balance_tolerance: Money = BALANCE_TOLERANCE,
 ) -> Money:
     """Sum unpaid contractual interest for principal-covered installments
     that were targeted by a payment with active waivers.
@@ -129,7 +139,7 @@ def _prior_underpaid_interest(
         if inst.principal_paid <= inst.expected_principal:
             continue
         owed = inst.expected_interest - inst.interest_paid
-        if owed > BALANCE_TOLERANCE:
+        if owed > balance_tolerance:
             total = total + owed
     return total
 
@@ -143,11 +153,12 @@ def _interest_cap_for_payment(
     tz: tzinfo,
     waiver_targets: Set[int],
     regular: Money,
+    balance_tolerance: Money = BALANCE_TOLERANCE,
 ) -> Money:
     skipped = _skipped_contractual_interest(installments, next_due, to_date(interest_date, tz))
     if payment.waive_overdue_interest:
         skipped = Money.zero()
-    prior_interest = _prior_underpaid_interest(installments, covered, waiver_targets)
+    prior_interest = _prior_underpaid_interest(installments, covered, waiver_targets, balance_tolerance)
     return Money(regular.raw_amount + skipped.raw_amount + prior_interest.raw_amount)
 
 
@@ -169,16 +180,27 @@ def _build_installments_snapshot(
     grace_period_days: int = 0,
     waive_fines: bool = False,
     waive_mora: bool = False,
+    mora_rate_for_event: MoraRateCallback = None,
+    balance_tolerance: Money = BALANCE_TOLERANCE,
 ) -> List[Installment]:
     """Build Installment objects from pre-computed allocation data.
 
     When *waive_fines* or *waive_mora* is ``True`` the corresponding
     expectation is capped at what was already paid by prior allocations,
     so ``Installment.balance`` reflects the effective obligation after
-    waivers and the coverage check in ``distribute_into_installments``
-    produces the correct ``is_fully_covered`` flag.
+    waivers and the post-payment coverage check in
+    :func:`_finalize_coverage` produces the correct ``is_fully_covered``
+    flag.
+
+    *mora_rate_for_event* mirrors the callback used by :func:`compute_state`
+    to resolve a per-cycle mora rate. When provided, the resolved rate
+    is passed as ``mora_rate_override`` to the interest calculator so
+    the snapshot's ``expected_mora`` matches the loan-level allocation.
+    Without this, a `BillingCycleLoan` with a per-cycle resolver would
+    underestimate ``Installment.balance`` and yield ``is_fully_covered``
+    flags that disagree with ``is_fully_paid``.
     """
-    covered = principal_covered_count(principal_balance, schedule)
+    covered = principal_covered_count(principal_balance, schedule, balance_tolerance)
 
     result: List[Installment] = []
     for i, entry in enumerate(schedule):
@@ -196,31 +218,42 @@ def _build_installments_snapshot(
             within_grace = not is_payment_late(entry.due_date, grace_period_days, as_of_date, tz, calendar)
             if within_grace:
                 accrued_mora = Money.zero()
-            elif last_payment_date is not None:
-                penalty_due = effective_penalty_due_date(entry.due_date, calendar)
-                total_days = (to_date(as_of_date, tz) - to_date(last_payment_date, tz)).days
-                _, accrued_mora = interest_calc.compute_accrued_interest(
-                    total_days,
-                    principal_balance,
-                    tz,
-                    penalty_due,
-                    last_payment_date,
-                )
             else:
+                mora_override = mora_rate_for_event(entry.due_date) if mora_rate_for_event else None
                 penalty_due = effective_penalty_due_date(entry.due_date, calendar)
-                days_overdue = max(0, (to_date(as_of_date, tz) - penalty_due).days)
-                _, accrued_mora = interest_calc.compute_accrued_interest(
-                    days_overdue,
-                    principal_balance,
-                    tz,
-                    penalty_due,
-                    to_datetime(penalty_due, tz),
-                )
+                if last_payment_date is not None:
+                    total_days = (to_date(as_of_date, tz) - to_date(last_payment_date, tz)).days
+                    _, accrued_mora = interest_calc.compute_accrued_interest(
+                        total_days,
+                        principal_balance,
+                        tz,
+                        penalty_due,
+                        last_payment_date,
+                        mora_rate_override=mora_override,
+                    )
+                else:
+                    days_overdue = max(0, (to_date(as_of_date, tz) - penalty_due).days)
+                    _, accrued_mora = interest_calc.compute_accrued_interest(
+                        days_overdue,
+                        principal_balance,
+                        tz,
+                        penalty_due,
+                        to_datetime(penalty_due, tz),
+                        mora_rate_override=mora_override,
+                    )
             expected_mora = prior_mora + accrued_mora
         else:
             expected_mora = Money.zero()
 
-        result.append(Installment.from_schedule_entry(entry, allocs, expected_mora, expected_fine))
+        result.append(
+            Installment.from_schedule_entry(
+                entry,
+                allocs,
+                expected_mora,
+                expected_fine,
+                balance_tolerance=balance_tolerance,
+            )
+        )
 
     return result
 
@@ -335,6 +368,7 @@ def _accrual_end_with_waiver_cap(
     schedule: PaymentSchedule,
     due_dates: List[date],
     tz: tzinfo,
+    balance_tolerance: Money = BALANCE_TOLERANCE,
 ) -> datetime:
     """Cap ``last_accrual_end`` at the latest covered due date when waiving overdue interest.
 
@@ -350,7 +384,7 @@ def _accrual_end_with_waiver_cap(
     """
     if not payment.waive_overdue_interest:
         return default_end
-    new_covered = principal_covered_count(running_principal, schedule)
+    new_covered = principal_covered_count(running_principal, schedule, balance_tolerance)
     if new_covered <= 0:
         return default_end
     snap_cap = to_datetime(due_dates[new_covered - 1], tz)
@@ -393,6 +427,7 @@ def compute_state(
     fine_observation_dates: Optional[List[datetime]] = None,
     mora_rate_for_event: MoraRateCallback = None,
     calendar: WorkingDayCalendar = _DEFAULT_CALENDAR,
+    balance_tolerance: Money = BALANCE_TOLERANCE,
 ) -> LoanState:
     """Forward pass: compute all settlements and derived state from payments.
 
@@ -443,6 +478,7 @@ def compute_state(
             processed_payments,
             tz,
             calendar,
+            balance_tolerance=balance_tolerance,
         )
 
         if not is_payment:
@@ -451,7 +487,7 @@ def compute_state(
         interest_date = payment.interest_date if payment.interest_date is not None else payment.datetime
         days = max(0, (to_date(interest_date, tz) - to_date(last_accrual_end, tz)).days)
 
-        covered = principal_covered_count(running_principal, schedule)
+        covered = principal_covered_count(running_principal, schedule, balance_tolerance)
         next_due = due_dates[covered] if covered < len(due_dates) else None
 
         mora_override = mora_rate_for_event(next_due) if mora_rate_for_event else None
@@ -499,6 +535,8 @@ def compute_state(
             grace_period_days=grace_period_days,
             waive_fines=payment.waive_fines,
             waive_mora=payment.waive_mora,
+            mora_rate_for_event=mora_rate_for_event,
+            balance_tolerance=balance_tolerance,
         )
 
         interest_cap = _interest_cap_for_payment(
@@ -510,6 +548,7 @@ def compute_state(
             tz,
             waiver_targets,
             regular,
+            balance_tolerance=balance_tolerance,
         )
 
         total_fines_amount = Money(sum(f.raw_amount for f in fines_applied.values())) if fines_applied else Money.zero()
@@ -530,10 +569,10 @@ def compute_state(
         fine_paid, mora_paid, interest_paid, principal_paid, allocations = allocate_payment_into_installments(
             payment.amount,
             installments,
-            running_principal,
             fine_cap=wd.effective_fine_cap,
             interest_cap=wd.interest_cap,
             mora_cap=wd.effective_mora_cap,
+            balance_tolerance=balance_tolerance,
         )
 
         fines_paid_total = wd.fines_paid_total + fine_paid
@@ -570,9 +609,26 @@ def compute_state(
             schedule,
             due_dates,
             tz,
+            balance_tolerance,
         )
 
         processed_payments.append(payment)
+
+    _reconcile_coverage_with_final_state(
+        settlements,
+        allocs_by_number,
+        running_principal,
+        schedule,
+        fines_applied,
+        interest_calc,
+        tz,
+        last_payment_date=last_accrual_end,
+        as_of=as_of,
+        calendar=calendar,
+        grace_period_days=grace_period_days,
+        mora_rate_for_event=mora_rate_for_event,
+        balance_tolerance=balance_tolerance,
+    )
 
     return LoanState(
         settlements=settlements,
@@ -583,6 +639,64 @@ def compute_state(
         last_accrual_end=last_accrual_end,
         overpaid=overpaid,
     )
+
+
+def _reconcile_coverage_with_final_state(
+    settlements: List[Settlement],
+    allocs_by_number: Dict[int, List[Allocation]],
+    principal_balance: Money,
+    schedule: PaymentSchedule,
+    fines_applied: Dict[date, Money],
+    interest_calc: InterestCalculator,
+    tz: tzinfo,
+    last_payment_date: datetime,
+    as_of: datetime,
+    calendar: WorkingDayCalendar,
+    grace_period_days: int,
+    mora_rate_for_event: MoraRateCallback,
+    balance_tolerance: Money = BALANCE_TOLERANCE,
+) -> None:
+    """Align every allocation's ``is_fully_covered`` with the final installment view.
+
+    Per-event ``_finalize_coverage`` labels each allocation based on
+    the state immediately after its settlement. Subsequent accrual
+    (e.g. when ``waive_overdue_interest`` snaps ``last_accrual_end``
+    and a later settlement's snapshot recomputes ``expected_mora``)
+    can change the installment view without revisiting earlier
+    allocations. The user-facing invariant
+    ``Allocation.is_fully_covered == Installment.is_fully_paid`` is
+    restored here by re-projecting every settlement's allocations
+    against the final installment snapshot.
+    """
+    final_installments = _build_installments_snapshot(
+        allocs_by_number,
+        principal_balance,
+        as_of,
+        schedule,
+        fines_applied,
+        interest_calc,
+        tz,
+        last_payment_date=last_payment_date,
+        calendar=calendar,
+        grace_period_days=grace_period_days,
+        mora_rate_for_event=mora_rate_for_event,
+        balance_tolerance=balance_tolerance,
+    )
+    is_paid_by_number = {inst.number: inst.is_fully_paid for inst in final_installments}
+
+    for settlement in settlements:
+        for i, alloc in enumerate(settlement.allocations):
+            target = is_paid_by_number.get(alloc.installment_number)
+            if target is None or alloc.is_fully_covered == target:
+                continue
+            settlement.allocations[i] = Allocation(
+                installment_number=alloc.installment_number,
+                principal_allocated=alloc.principal_allocated,
+                interest_allocated=alloc.interest_allocated,
+                mora_allocated=alloc.mora_allocated,
+                fine_allocated=alloc.fine_allocated,
+                is_fully_covered=target,
+            )
 
 
 # ------------------------------------------------------------------
@@ -601,8 +715,18 @@ def build_installments(
     tz: tzinfo,
     calendar: WorkingDayCalendar = _DEFAULT_CALENDAR,
     grace_period_days: int = 0,
+    mora_rate_for_event: MoraRateCallback = None,
+    balance_tolerance: Money = BALANCE_TOLERANCE,
 ) -> List[Installment]:
-    """Build the installment view from settlements + schedule."""
+    """Build the installment view from settlements + schedule.
+
+    *mora_rate_for_event* mirrors the callback used by :func:`compute_state`.
+    When provided, it is threaded down to :func:`_build_installments_snapshot`
+    so the snapshot's ``expected_mora`` uses the same per-cycle resolved
+    rate as the loan-level allocation. Without this, products that resolve
+    mora per cycle (e.g. ``BillingCycleLoan``) would expose installments
+    whose ``balance`` disagrees with the allocation's ``is_fully_covered``.
+    """
     allocs_by_number: Dict[int, List[Allocation]] = {}
     for settlement in settlements:
         for a in settlement.allocations:
@@ -619,6 +743,8 @@ def build_installments(
         last_payment_date=last_accrual_end,
         calendar=calendar,
         grace_period_days=grace_period_days,
+        mora_rate_for_event=mora_rate_for_event,
+        balance_tolerance=balance_tolerance,
     )
 
 

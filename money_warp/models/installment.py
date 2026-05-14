@@ -1,12 +1,14 @@
 """Installment data structure for loan repayment plans."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import List
 
 from ..scheduler import PaymentScheduleEntry
 from ..types.money import Money
 from .allocation import Allocation
+
+DEFAULT_BALANCE_TOLERANCE = Money("0.01")
 
 
 @dataclass(frozen=True)
@@ -18,6 +20,13 @@ class Installment:
 
     Installments are derived views -- the Loan builds them on demand
     from the CashFlow and the schedule.
+
+    ``balance_tolerance`` controls the sub-cent threshold under which a
+    positive residual is treated as zero for ``balance`` and
+    ``is_fully_paid``. Defaults to R$0.01 (matching
+    ``DEFAULT_BALANCE_TOLERANCE``); :class:`Loan` and
+    :class:`BillingCycleLoan` propagate their own configurable value
+    through every installment snapshot they build.
     """
 
     number: int
@@ -33,18 +42,36 @@ class Installment:
     mora_paid: Money
     fine_paid: Money
     allocations: List[Allocation]
+    # ``dataclass`` rejects any non-(list/dict/set) instance as a plain
+    # default — even immutable ones — so ``Money`` must be supplied via
+    # ``default_factory`` despite being effectively immutable.
+    balance_tolerance: Money = field(default_factory=lambda: DEFAULT_BALANCE_TOLERANCE)
 
     @property
     def balance(self) -> Money:
-        """The amount still owed to fully settle this installment."""
+        """The amount still owed to fully settle this installment.
+
+        Positive residuals within ``balance_tolerance`` collapse to zero
+        so ``is_fully_paid`` agrees with ``Allocation.is_fully_covered``
+        on rounding artifacts that the tolerance-adjustment mechanism
+        absorbs.
+        """
         total_expected = self.expected_principal + self.expected_interest + self.expected_mora + self.expected_fine
         total_paid = self.principal_paid + self.interest_paid + self.mora_paid + self.fine_paid
         remaining = total_expected - total_paid
-        return remaining if remaining.is_positive() else Money.zero()
+        if not remaining.is_positive() or remaining <= self.balance_tolerance:
+            return Money.zero()
+        return remaining
 
     @property
     def is_fully_paid(self) -> bool:
-        """Whether this installment has been fully settled."""
+        """Whether this installment has been fully settled.
+
+        Uses ``balance``, which absorbs sub-cent residuals within
+        :attr:`balance_tolerance`. A R$0.005 leftover therefore counts
+        as fully paid; a R$0.02 leftover does not (at the default
+        tolerance).
+        """
         return self.balance.is_zero()
 
     @classmethod
@@ -54,8 +81,14 @@ class Installment:
         allocations: List[Allocation],
         expected_mora: Money,
         expected_fine: Money,
+        balance_tolerance: Money = DEFAULT_BALANCE_TOLERANCE,
     ) -> "Installment":
-        """Build an Installment from a scheduler's PaymentScheduleEntry."""
+        """Build an Installment from a scheduler's PaymentScheduleEntry.
+
+        ``balance_tolerance`` is forwarded to the constructed Installment
+        so ``balance`` and ``is_fully_paid`` honor the loan-level
+        setting.
+        """
         principal_paid = Money(sum(a.principal_allocated.raw_amount for a in allocations))
         interest_paid = Money(sum(a.interest_allocated.raw_amount for a in allocations))
         mora_paid = Money(sum(a.mora_allocated.raw_amount for a in allocations))
@@ -75,4 +108,5 @@ class Installment:
             mora_paid=mora_paid,
             fine_paid=fine_paid,
             allocations=allocations,
+            balance_tolerance=balance_tolerance,
         )

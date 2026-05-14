@@ -1,7 +1,12 @@
-"""Shared constants for engine submodules."""
+"""Shared constants for engine submodules.
 
-from ..types.money import Money
+Re-exports the canonical balance-tolerance default defined alongside
+``Installment``, so the engine and the model can never drift apart.
+The literal lives in :mod:`money_warp.models.installment` because the
+"balance" concept belongs to the installment view; the engine consumes
+it.
+"""
 
-# Sub-cent tolerance for internal balance comparisons (rounding artifacts
-# from our own calculations).
-BALANCE_TOLERANCE = Money("0.01")
+from ..models.installment import DEFAULT_BALANCE_TOLERANCE as BALANCE_TOLERANCE
+
+__all__ = ["BALANCE_TOLERANCE"]

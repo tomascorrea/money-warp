@@ -44,18 +44,25 @@ def distribute_into_installments(
     mora_total: Money,
     interest_total: Money,
     principal_total: Money,
-    ending_balance: Money,
+    balance_tolerance: Money = BALANCE_TOLERANCE,
 ) -> List[Allocation]:
     """Distribute loan-level totals into per-installment allocations.
 
     Walks installments sequentially, filling each installment's
-    obligations from the pre-computed loan-level totals.  This is a
+    obligations from the pre-computed loan-level totals. This is a
     reporting view -- the financial math is done by
     :func:`allocate_payment`.
 
-    A residual adjustment ensures ``sum(allocations.X) == X_total``
-    for every component, and a coverage fixup marks allocations as
-    fully covered when the loan is paid off.
+    Two post-processing passes run on the resulting allocations:
+
+    * :func:`_apply_residual` ensures ``sum(allocations.X) == X_total``
+      for every component (loan-level accrual can exceed what
+      installments absorb due to rounding, partial periods, or
+      overpayment).
+    * :func:`_finalize_coverage` recomputes every allocation's
+      ``is_fully_covered`` flag from the post-payment per-installment
+      view, so it agrees with :attr:`Installment.is_fully_paid` by
+      construction.
 
     Returns:
         List of Allocation objects (one per touched installment).
@@ -67,7 +74,7 @@ def distribute_into_installments(
     allocations: List[Allocation] = []
 
     for inst in installments:
-        if inst.is_fully_paid or inst.balance <= BALANCE_TOLERANCE:
+        if inst.is_fully_paid or inst.balance <= balance_tolerance:
             continue
 
         fine_owed = inst.expected_fine - inst.fine_paid
@@ -88,7 +95,7 @@ def distribute_into_installments(
 
         total = fine_alloc + mora_alloc + interest_alloc + principal_alloc
         if total.is_positive():
-            is_covered = total + BALANCE_TOLERANCE >= inst.balance
+            is_covered = total + balance_tolerance >= inst.balance
 
             if not is_covered:
                 shortfall = inst.balance - total
@@ -101,7 +108,7 @@ def distribute_into_installments(
                 interest_alloc = interest_alloc + interest_extra
                 principal_alloc = principal_alloc + principal_extra
                 total = fine_alloc + mora_alloc + interest_alloc + principal_alloc
-                is_covered = total + BALANCE_TOLERANCE >= inst.balance
+                is_covered = total + balance_tolerance >= inst.balance
 
             allocations.append(
                 Allocation(
@@ -115,8 +122,7 @@ def distribute_into_installments(
             )
 
     _apply_residual(allocations, installments, fine_total, mora_total, interest_total, principal_total)
-    _apply_coverage_fixup(allocations, installments, ending_balance, principal_total)
-    _enforce_sequential_coverage(allocations)
+    _finalize_coverage(allocations, installments)
     return allocations
 
 
@@ -178,72 +184,61 @@ def _apply_residual(
         )
 
 
-def _apply_coverage_fixup(
+def _finalize_coverage(
     allocations: List[Allocation],
     installments: List[Installment],
-    ending_balance: Money,
-    principal_total: Money,
 ) -> None:
-    """Override coverage flags when the loan is paid off.
+    """Recompute ``is_fully_covered`` using the post-payment installment view.
 
-    If the post-payment balance is zero, negative, or within
-    ``BALANCE_TOLERANCE`` (a sub-cent residual that will be absorbed
-    by the tolerance adjustment mechanism), any allocation whose
-    principal was fully allocated is marked as fully covered.
+    An allocation is fully covered iff its targeted installment is
+    fully paid after the allocation is applied. We project a
+    hypothetical post-payment :class:`Installment` and read
+    :attr:`Installment.is_fully_paid` directly, so the flag follows
+    whatever balance semantics the model defines (including the
+    configurable ``balance_tolerance``).
     """
-    post_balance = ending_balance - principal_total
-    if post_balance > BALANCE_TOLERANCE:
-        return
-
     inst_by_number = {inst.number: inst for inst in installments}
     for i, alloc in enumerate(allocations):
-        if alloc.is_fully_covered:
-            continue
         inst = inst_by_number.get(alloc.installment_number)
         if inst is None:
             continue
-        principal_owed = inst.expected_principal - inst.principal_paid
-        if alloc.principal_allocated + BALANCE_TOLERANCE >= principal_owed:
+
+        projected = Installment(
+            number=inst.number,
+            due_date=inst.due_date,
+            days_in_period=inst.days_in_period,
+            expected_payment=inst.expected_payment,
+            expected_principal=inst.expected_principal,
+            expected_interest=inst.expected_interest,
+            expected_mora=inst.expected_mora,
+            expected_fine=inst.expected_fine,
+            principal_paid=inst.principal_paid + alloc.principal_allocated,
+            interest_paid=inst.interest_paid + alloc.interest_allocated,
+            mora_paid=inst.mora_paid + alloc.mora_allocated,
+            fine_paid=inst.fine_paid + alloc.fine_allocated,
+            allocations=inst.allocations,
+            balance_tolerance=inst.balance_tolerance,
+        )
+        is_settled = projected.is_fully_paid
+
+        if alloc.is_fully_covered != is_settled:
             allocations[i] = Allocation(
                 installment_number=alloc.installment_number,
                 principal_allocated=alloc.principal_allocated,
                 interest_allocated=alloc.interest_allocated,
                 mora_allocated=alloc.mora_allocated,
                 fine_allocated=alloc.fine_allocated,
-                is_fully_covered=True,
+                is_fully_covered=is_settled,
             )
-
-
-def _enforce_sequential_coverage(allocations: List[Allocation]) -> None:
-    """Ensure coverage flags are monotonically ordered.
-
-    If allocation N is not fully covered, all subsequent allocations
-    must also be marked as not covered.  This prevents a later
-    installment from appearing paid while an earlier one is still
-    outstanding.
-    """
-    seen_uncovered = False
-    for i, alloc in enumerate(allocations):
-        if seen_uncovered and alloc.is_fully_covered:
-            allocations[i] = Allocation(
-                installment_number=alloc.installment_number,
-                principal_allocated=alloc.principal_allocated,
-                interest_allocated=alloc.interest_allocated,
-                mora_allocated=alloc.mora_allocated,
-                fine_allocated=alloc.fine_allocated,
-                is_fully_covered=False,
-            )
-        if not alloc.is_fully_covered:
-            seen_uncovered = True
 
 
 def allocate_payment_into_installments(
     amount: Money,
     installments: List[Installment],
-    ending_balance: Money,
     fine_cap: Money,
     interest_cap: Money,
     mora_cap: Money,
+    balance_tolerance: Money = BALANCE_TOLERANCE,
 ) -> Tuple[Money, Money, Money, Money, List[Allocation]]:
     """Allocate a payment across installments in priority order.
 
@@ -253,6 +248,10 @@ def allocate_payment_into_installments(
        the totals: fine -> mora -> interest -> principal.
     2. **Per-installment distribution** (:func:`distribute_into_installments`)
        maps those totals to individual installments for reporting.
+
+    *balance_tolerance* controls the sub-cent threshold used by the
+    per-installment distribution and by :func:`_finalize_coverage`.
+    Defaults to the engine-wide ``BALANCE_TOLERANCE``.
 
     Returns:
         (fine_total, mora_total, interest_total, principal_total, allocations)
@@ -270,7 +269,7 @@ def allocate_payment_into_installments(
         mora_paid,
         interest_paid,
         principal_paid,
-        ending_balance,
+        balance_tolerance=balance_tolerance,
     )
 
     return fine_paid, mora_paid, interest_paid, principal_paid, allocations

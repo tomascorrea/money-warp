@@ -12,7 +12,7 @@ from ..engines import (
     MoraStrategy,
     compute_state,
 )
-from ..models import AnticipationResult, Settlement
+from ..models import DEFAULT_BALANCE_TOLERANCE, AnticipationResult, Settlement
 from ..scheduler import BaseScheduler, PriceScheduler
 from ..tax.base import BaseTax, TaxResult
 from ..time_context import TimeContext
@@ -64,6 +64,7 @@ class Loan(BaseLoan):
         taxes: Optional[List[BaseTax]] = None,
         is_grossed_up: bool = False,
         payment_tolerance: Optional[Money] = None,
+        balance_tolerance: Optional[Money] = None,
         working_day_calendar: Optional[WorkingDayCalendar] = None,
         tz: Optional[Union[str, tzinfo]] = None,
     ) -> None:
@@ -92,6 +93,7 @@ class Loan(BaseLoan):
         self.fine_rate = fine_rate if fine_rate is not None else InterestRate("2% annual")
         self.grace_period_days = grace_period_days
         self.payment_tolerance = payment_tolerance if payment_tolerance is not None else Money("0.01")
+        self.balance_tolerance = balance_tolerance if balance_tolerance is not None else DEFAULT_BALANCE_TOLERANCE
         self.working_day_calendar: WorkingDayCalendar = working_day_calendar or EveryDayCalendar()
         self.taxes: List[BaseTax] = taxes or []
         self.is_grossed_up = is_grossed_up
@@ -256,6 +258,7 @@ class Loan(BaseLoan):
             tz=self._time_ctx.tz,
             fine_observation_dates=self._fine_observation_dates,
             calendar=self.working_day_calendar,
+            balance_tolerance=self.balance_tolerance,
         )
 
     # ------------------------------------------------------------------
