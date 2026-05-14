@@ -12,8 +12,7 @@ from ..engines import (
     MoraStrategy,
     compute_state,
 )
-from ..models import AnticipationResult, Settlement
-from ..models.installment import DEFAULT_BALANCE_TOLERANCE
+from ..models import DEFAULT_BALANCE_TOLERANCE, AnticipationResult, Settlement
 from ..scheduler import BaseScheduler, PriceScheduler
 from ..tax.base import BaseTax, TaxResult
 from ..time_context import TimeContext

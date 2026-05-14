@@ -174,7 +174,7 @@ class BaseLoan(ABC):
         )
 
         schedule = self.get_original_schedule()
-        cashflow_size_before = sum(1 for _ in self.cashflow.items())
+        cashflow_size_before = len(self.cashflow)
         for entry in schedule:
             if entry.due_date == next_due:
                 apply_tolerance_adjustment(
@@ -196,8 +196,7 @@ class BaseLoan(ABC):
         # Re-align the returned object only when that synthetic event
         # actually fired — otherwise we'd run an extra ``_compute_state``
         # on every payment for no reason.
-        cashflow_size_after = sum(1 for _ in self.cashflow.items())
-        if cashflow_size_after > cashflow_size_before:
+        if len(self.cashflow) > cashflow_size_before:
             self._reconcile_returned_settlement_coverage(settlement)
 
         return settlement

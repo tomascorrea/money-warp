@@ -42,6 +42,9 @@ class Installment:
     mora_paid: Money
     fine_paid: Money
     allocations: List[Allocation]
+    # ``dataclass`` rejects any non-(list/dict/set) instance as a plain
+    # default — even immutable ones — so ``Money`` must be supplied via
+    # ``default_factory`` despite being effectively immutable.
     balance_tolerance: Money = field(default_factory=lambda: DEFAULT_BALANCE_TOLERANCE)
 
     @property

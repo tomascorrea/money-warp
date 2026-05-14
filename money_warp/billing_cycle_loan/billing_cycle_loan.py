@@ -12,8 +12,7 @@ from ..engines import (
     LoanState,
     MoraStrategy,
 )
-from ..models import BillingCycleLoanStatement, Settlement
-from ..models.installment import DEFAULT_BALANCE_TOLERANCE
+from ..models import DEFAULT_BALANCE_TOLERANCE, BillingCycleLoanStatement, Settlement
 from ..scheduler import BaseScheduler, PriceScheduler
 from ..time_context import TimeContext
 from ..types.interest_rate import InterestRate

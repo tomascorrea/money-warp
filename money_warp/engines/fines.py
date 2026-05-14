@@ -53,7 +53,11 @@ def _has_payment_near(
             be centered on the effective date while looking up the
             expected amount from the original schedule date.
         balance_tolerance: Sub-cent threshold for "sufficient" payment;
-            defaults to the engine-wide ``BALANCE_TOLERANCE``.
+            defaults to the engine-wide ``BALANCE_TOLERANCE``. This is
+            the same setting that controls ``Installment.is_fully_paid``,
+            so widening it on a ``Loan`` / ``BillingCycleLoan`` also
+            relaxes when a small underpayment triggers a fine on the
+            related due date.
     """
     lookup_date = schedule_due_date if schedule_due_date is not None else due_date
 
