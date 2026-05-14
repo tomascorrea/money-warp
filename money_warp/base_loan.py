@@ -22,7 +22,7 @@ from .engines import (
     is_payment_late,
     principal_covered_count,
 )
-from .models import Allocation, Installment, Settlement
+from .models import Installment, Settlement
 from .scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry
 from .time_context import TimeContext
 from .types.interest_rate import InterestRate
@@ -190,45 +190,17 @@ class BaseLoan(ABC):
                 )
                 break
 
-        # The synthetic tolerance-adjustment item, when added, makes
-        # ``self.installments`` (recomputed below) reflect a state the
-        # returned ``settlement`` was built against an earlier compute.
-        # Re-align the returned object only when that synthetic event
-        # actually fired — otherwise we'd run an extra ``_compute_state``
-        # on every payment for no reason.
+        # The synthetic tolerance-adjustment item, when added, makes the
+        # forward pass emit an extra settlement at the tail of the list.
+        # Re-fetch the original payment's settlement (now at -2) from
+        # the live forward pass so the caller sees allocations whose
+        # ``is_fully_covered`` matches the post-tolerance installment
+        # view. Stable sort on equal (datetime, is_payment) keeps the
+        # original payment ahead of its tolerance follow-up.
         if len(self.cashflow) > cashflow_size_before:
-            self._reconcile_returned_settlement_coverage(settlement)
+            settlement = self.settlements[-2]
 
         return settlement
-
-    def _reconcile_returned_settlement_coverage(self, settlement: Settlement) -> None:
-        """Align the returned settlement's allocations with the post-tolerance state.
-
-        ``pay_installment`` may add a synthetic tolerance-adjustment
-        payment after ``record_payment`` returned ``settlement``. The
-        original allocations' ``is_fully_covered`` flags were decided
-        before that synthetic existed, so they may disagree with the
-        live ``Installment.is_fully_paid`` view that downstream
-        callers see immediately after ``pay_installment`` returns.
-
-        Mutating the settlement's ``allocations`` list in place keeps
-        the invariant ``Allocation.is_fully_covered == Installment.is_fully_paid``
-        intact without exposing the synthetic adjustment as a separate
-        public concept.
-        """
-        installments_by_number = {inst.number: inst for inst in self.installments}
-        for index, alloc in enumerate(settlement.allocations):
-            target = installments_by_number.get(alloc.installment_number)
-            if target is None or alloc.is_fully_covered == target.is_fully_paid:
-                continue
-            settlement.allocations[index] = Allocation(
-                installment_number=alloc.installment_number,
-                principal_allocated=alloc.principal_allocated,
-                interest_allocated=alloc.interest_allocated,
-                mora_allocated=alloc.mora_allocated,
-                fine_allocated=alloc.fine_allocated,
-                is_fully_covered=target.is_fully_paid,
-            )
 
     # ------------------------------------------------------------------
     # Derived state helpers

@@ -113,6 +113,8 @@ Equality between `CashFlowItem` and `CashFlowEntry` uses Python's reflected-equa
 
 `Loan.cashflow` is the single source of truth — expected schedule items and actual payment items live in one `CashFlow`. All derived state (settlements, installments, balances, fines) is computed on demand via a forward pass. Schedule generation (`generate_expected_cash_flow`, `get_original_schedule`, `get_amortization_schedule`) stays in `Loan`.
 
+Data flow is strictly unidirectional: `CashFlow` + static schedule -> `compute_state` -> `Settlement[]` -> `Installment[]` (downstream projection via `build_installments`). Inside the forward-pass loop the allocator consumes `_InstallmentExpectation` primitives derived from the cashflow and schedule, never the public `Installment` view. `Allocation.is_fully_covered` is written in exactly one place — a final pass at the end of `compute_state` that reads `Installment.is_fully_paid` from the freshly built projection — so the two views can never drift. `apply_tolerance_adjustment` preserves this model by recording sub-cent reconciliations as real `CashFlowItem` entries (not as in-place mutations of derived state).
+
 ### Flexible Scheduling via Due Dates
 
 Rather than encoding "monthly" or "bi-weekly" into the loan, the constructor accepts `due_dates: List[date]` (calendar due dates). This supports irregular schedules, seasonal payments, and custom arrangements. Convenience functions in `date_utils.py` return `List[datetime]`; use `tz.to_date()` element-wise when passing their output into `Loan` and schedulers.

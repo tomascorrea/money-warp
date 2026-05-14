@@ -19,5 +19,4 @@ class MoraRateResolver(Protocol):
     on top of an external index).
     """
 
-    def __call__(self, reference_date: date, base_mora_rate: InterestRate) -> InterestRate:
-        ...
+    def __call__(self, reference_date: date, base_mora_rate: InterestRate) -> InterestRate: ...

@@ -60,8 +60,7 @@ class CashFlowEntry(ABC):
 
     @property
     @abstractmethod
-    def kind(self) -> CashFlowType:
-        ...
+    def kind(self) -> CashFlowType: ...
 
     def is_inflow(self) -> bool:
         return self.amount.is_positive()

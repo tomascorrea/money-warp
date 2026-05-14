@@ -4,6 +4,13 @@ Builds settlements, installment snapshots, and derived state by
 processing each payment chronologically.  Also contains coverage
 helpers, installment construction, and tolerance adjustment logic
 that the forward pass depends on.
+
+Data flow is strictly unidirectional: ``CashFlow`` and the static
+schedule feed ``compute_state``, which produces ``Settlement`` objects.
+The public ``Installment`` view is a projection built downstream of
+those settlements by :func:`build_installments`. Inside the forward
+pass the allocator is fed only ``_InstallmentExpectation`` primitives
+— it never reads back a public ``Installment``.
 """
 
 from dataclasses import dataclass
@@ -18,7 +25,7 @@ from ..types.interest_rate import InterestRate
 from ..types.money import Money
 from ..tz import to_date, to_datetime
 from ..working_day import EveryDayCalendar, WorkingDayCalendar, effective_penalty_due_date
-from .allocation import allocate_payment_into_installments
+from .allocation import _InstallmentExpectation, allocate_payment_into_installments
 from .constants import BALANCE_TOLERANCE
 from .fines import compute_fines_at, is_payment_late
 from .interest import InterestCalculator, MoraRateCallback
@@ -89,7 +96,7 @@ def fully_covered_count(
 
 
 def _skipped_contractual_interest(
-    installments: List[Installment],
+    expectations: List[_InstallmentExpectation],
     next_due: Optional[date],
     cutoff: date,
 ) -> Money:
@@ -103,16 +110,16 @@ def _skipped_contractual_interest(
     if next_due is None:
         return Money.zero()
     total = Money.zero()
-    for inst in installments:
-        if inst.due_date > next_due and inst.due_date <= cutoff:
-            owed = inst.expected_interest - inst.interest_paid
+    for exp in expectations:
+        if exp.due_date > next_due and exp.due_date <= cutoff:
+            owed = exp.expected_interest - exp.interest_paid
             if owed.is_positive():
                 total = total + owed
     return total
 
 
 def _prior_underpaid_interest(
-    installments: List[Installment],
+    expectations: List[_InstallmentExpectation],
     principal_covered: int,
     waiver_targets: Set[int],
     balance_tolerance: Money = BALANCE_TOLERANCE,
@@ -132,13 +139,13 @@ def _prior_underpaid_interest(
     in anticipation scenarios where interest is legitimately lower.
     """
     total = Money.zero()
-    for idx in range(min(principal_covered, len(installments))):
-        inst = installments[idx]
+    for idx in range(min(principal_covered, len(expectations))):
+        exp = expectations[idx]
         if idx not in waiver_targets:
             continue
-        if inst.principal_paid <= inst.expected_principal:
+        if exp.principal_paid <= exp.expected_principal:
             continue
-        owed = inst.expected_interest - inst.interest_paid
+        owed = exp.expected_interest - exp.interest_paid
         if owed > balance_tolerance:
             total = total + owed
     return total
@@ -146,7 +153,7 @@ def _prior_underpaid_interest(
 
 def _interest_cap_for_payment(
     payment: CashFlowItem,
-    installments: List[Installment],
+    expectations: List[_InstallmentExpectation],
     covered: int,
     next_due: Optional[date],
     interest_date: datetime,
@@ -155,19 +162,19 @@ def _interest_cap_for_payment(
     regular: Money,
     balance_tolerance: Money = BALANCE_TOLERANCE,
 ) -> Money:
-    skipped = _skipped_contractual_interest(installments, next_due, to_date(interest_date, tz))
+    skipped = _skipped_contractual_interest(expectations, next_due, to_date(interest_date, tz))
     if payment.waive_overdue_interest:
         skipped = Money.zero()
-    prior_interest = _prior_underpaid_interest(installments, covered, waiver_targets, balance_tolerance)
+    prior_interest = _prior_underpaid_interest(expectations, covered, waiver_targets, balance_tolerance)
     return Money(regular.raw_amount + skipped.raw_amount + prior_interest.raw_amount)
 
 
 # ------------------------------------------------------------------
-# Installment snapshot construction
+# Installment expectation construction
 # ------------------------------------------------------------------
 
 
-def _build_installments_snapshot(
+def _build_expectations(
     allocs_by_number: Dict[int, List[Allocation]],
     principal_balance: Money,
     as_of_date: datetime,
@@ -182,35 +189,37 @@ def _build_installments_snapshot(
     waive_mora: bool = False,
     mora_rate_for_event: MoraRateCallback = None,
     balance_tolerance: Money = BALANCE_TOLERANCE,
-) -> List[Installment]:
-    """Build Installment objects from pre-computed allocation data.
+) -> List[_InstallmentExpectation]:
+    """Build :class:`_InstallmentExpectation` records for every installment.
 
-    When *waive_fines* or *waive_mora* is ``True`` the corresponding
+    Single source of waiver-aware ``expected_fine`` / ``expected_mora``
+    math. ``_build_installments_snapshot`` (which produces the public
+    :class:`Installment` view) reuses these values so the loan-level
+    allocator and the public view never disagree.
+
+    When *waive_fines* / *waive_mora* is ``True`` the corresponding
     expectation is capped at what was already paid by prior allocations,
-    so ``Installment.balance`` reflects the effective obligation after
-    waivers and the post-payment coverage check in
-    :func:`_finalize_coverage` produces the correct ``is_fully_covered``
-    flag.
+    so the resulting ``balance`` reflects the effective obligation after
+    waivers.
 
-    *mora_rate_for_event* mirrors the callback used by :func:`compute_state`
-    to resolve a per-cycle mora rate. When provided, the resolved rate
-    is passed as ``mora_rate_override`` to the interest calculator so
-    the snapshot's ``expected_mora`` matches the loan-level allocation.
-    Without this, a `BillingCycleLoan` with a per-cycle resolver would
-    underestimate ``Installment.balance`` and yield ``is_fully_covered``
-    flags that disagree with ``is_fully_paid``.
+    *mora_rate_for_event* mirrors the callback used by
+    :func:`compute_state` to resolve a per-cycle mora rate. When
+    provided, the resolved rate is passed as ``mora_rate_override``
+    to the interest calculator.
     """
     covered = principal_covered_count(principal_balance, schedule, balance_tolerance)
 
-    result: List[Installment] = []
+    result: List[_InstallmentExpectation] = []
     for i, entry in enumerate(schedule):
         installment_num = i + 1
         allocs = allocs_by_number.get(installment_num, [])
 
-        prior_fine = Money(sum(a.fine_allocated.raw_amount for a in allocs))
-        expected_fine = prior_fine if waive_fines else fines_applied.get(entry.due_date, Money.zero())
-
+        prior_principal = Money(sum(a.principal_allocated.raw_amount for a in allocs))
+        prior_interest = Money(sum(a.interest_allocated.raw_amount for a in allocs))
         prior_mora = Money(sum(a.mora_allocated.raw_amount for a in allocs))
+        prior_fine = Money(sum(a.fine_allocated.raw_amount for a in allocs))
+
+        expected_fine = prior_fine if waive_fines else fines_applied.get(entry.due_date, Money.zero())
 
         if waive_mora or i < covered:
             expected_mora = prior_mora
@@ -246,11 +255,77 @@ def _build_installments_snapshot(
             expected_mora = Money.zero()
 
         result.append(
+            _InstallmentExpectation(
+                number=installment_num,
+                due_date=entry.due_date,
+                expected_principal=entry.principal_payment,
+                expected_interest=entry.interest_payment,
+                expected_mora=expected_mora,
+                expected_fine=expected_fine,
+                principal_paid=prior_principal,
+                interest_paid=prior_interest,
+                mora_paid=prior_mora,
+                fine_paid=prior_fine,
+                balance_tolerance=balance_tolerance,
+            )
+        )
+
+    return result
+
+
+# ------------------------------------------------------------------
+# Installment snapshot construction (public view)
+# ------------------------------------------------------------------
+
+
+def _build_installments_snapshot(
+    allocs_by_number: Dict[int, List[Allocation]],
+    principal_balance: Money,
+    as_of_date: datetime,
+    schedule: PaymentSchedule,
+    fines_applied: Dict[date, Money],
+    interest_calc: InterestCalculator,
+    tz: tzinfo,
+    last_payment_date: Optional[datetime] = None,
+    calendar: WorkingDayCalendar = _DEFAULT_CALENDAR,
+    grace_period_days: int = 0,
+    waive_fines: bool = False,
+    waive_mora: bool = False,
+    mora_rate_for_event: MoraRateCallback = None,
+    balance_tolerance: Money = BALANCE_TOLERANCE,
+) -> List[Installment]:
+    """Build the public :class:`Installment` view as a downstream projection.
+
+    Delegates the waiver-aware ``expected_*`` math to
+    :func:`_build_expectations` so the public view shares its source
+    with the loan-level allocator.
+    """
+    expectations = _build_expectations(
+        allocs_by_number,
+        principal_balance,
+        as_of_date,
+        schedule,
+        fines_applied,
+        interest_calc,
+        tz,
+        last_payment_date=last_payment_date,
+        calendar=calendar,
+        grace_period_days=grace_period_days,
+        waive_fines=waive_fines,
+        waive_mora=waive_mora,
+        mora_rate_for_event=mora_rate_for_event,
+        balance_tolerance=balance_tolerance,
+    )
+
+    result: List[Installment] = []
+    for entry, exp in zip(schedule, expectations):
+        allocs = allocs_by_number.get(exp.number, [])
+        result.append(
             Installment.from_schedule_entry(
                 entry,
                 allocs,
-                expected_mora,
-                expected_fine,
+                exp.expected_mora,
+                exp.expected_fine,
                 balance_tolerance=balance_tolerance,
             )
         )
@@ -431,9 +506,18 @@ def compute_state(
 ) -> LoanState:
     """Forward pass: compute all settlements and derived state from payments.
 
-    For each payment, builds installment snapshots, computes interest
+    For each payment, builds installment expectations, computes interest
     (including skipped contractual interest), and runs the per-installment
-    allocation algorithm.
+    allocation algorithm. The allocator is fed
+    :class:`_InstallmentExpectation` primitives only — the public
+    :class:`Installment` view is built downstream of the produced
+    settlements by :func:`build_installments`.
+
+    After all payments have been processed, a single final pass assigns
+    every allocation's ``is_fully_covered`` flag from the final
+    :class:`Installment` view, restoring the invariant
+    ``Allocation.is_fully_covered == Installment.is_fully_paid`` in one
+    place.
 
     Fines are computed at each payment date AND at any explicit
     ``fine_observation_dates`` (from Warp or calculate_late_fines calls).
@@ -522,7 +606,7 @@ def compute_state(
         if payment.waive_mora or payment.waive_overdue_interest or has_discount:
             waiver_targets.add(covered)
 
-        installments = _build_installments_snapshot(
+        expectations = _build_expectations(
             allocs_by_number,
             running_principal,
             payment.datetime,
@@ -541,7 +625,7 @@ def compute_state(
 
         interest_cap = _interest_cap_for_payment(
             payment,
-            installments,
+            expectations,
             covered,
             next_due,
             interest_date,
@@ -568,7 +652,7 @@ def compute_state(
 
         fine_paid, mora_paid, interest_paid, principal_paid, allocations = allocate_payment_into_installments(
             payment.amount,
-            installments,
+            expectations,
             fine_cap=wd.effective_fine_cap,
             interest_cap=wd.interest_cap,
             mora_cap=wd.effective_mora_cap,
@@ -614,7 +698,7 @@ def compute_state(
 
         processed_payments.append(payment)
 
-    _reconcile_coverage_with_final_state(
+    _finalize_settlements_coverage(
         settlements,
         allocs_by_number,
         running_principal,
@@ -641,7 +725,7 @@ def compute_state(
     )
 
 
-def _reconcile_coverage_with_final_state(
+def _finalize_settlements_coverage(
     settlements: List[Settlement],
     allocs_by_number: Dict[int, List[Allocation]],
     principal_balance: Money,
@@ -656,17 +740,15 @@ def _reconcile_coverage_with_final_state(
     mora_rate_for_event: MoraRateCallback,
     balance_tolerance: Money = BALANCE_TOLERANCE,
 ) -> None:
-    """Align every allocation's ``is_fully_covered`` with the final installment view.
+    """Single coverage pass: align every allocation's ``is_fully_covered``
+    with the final :class:`Installment` view.
 
-    Per-event ``_finalize_coverage`` labels each allocation based on
-    the state immediately after its settlement. Subsequent accrual
-    (e.g. when ``waive_overdue_interest`` snaps ``last_accrual_end``
-    and a later settlement's snapshot recomputes ``expected_mora``)
-    can change the installment view without revisiting earlier
-    allocations. The user-facing invariant
+    The allocator emits provisional ``is_fully_covered=False`` flags
+    inside the forward-pass loop. After the loop completes, this pass
+    builds the final installment view once and overwrites every flag
+    against it. The invariant
     ``Allocation.is_fully_covered == Installment.is_fully_paid`` is
-    restored here by re-projecting every settlement's allocations
-    against the final installment snapshot.
+    therefore decided in exactly one place.
     """
     final_installments = _build_installments_snapshot(
         allocs_by_number,
