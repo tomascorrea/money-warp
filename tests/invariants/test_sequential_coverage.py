@@ -1,7 +1,16 @@
 """Tests for sequential installment coverage ordering.
 
-Installments must always be marked as fully covered in order: if
-installment N is not covered, installment N+1 must not be covered either.
+Money flows oldest-first through the allocation engine: principal
+allocated to installment N+1 requires installment N's principal to be
+fully covered. This file asserts that *principal* never leaks past a
+principal-uncovered installment.
+
+Flag monotonicity (``is_fully_covered`` never going True after False)
+is *not* asserted here — non-principal pools (mora, fine, interest)
+running out on an earlier installment can legitimately leave it
+uncovered while later installments are fully paid. The per-allocation
+``is_fully_covered == is_fully_paid`` invariant lives in
+``test_coverage_consistency``.
 
 Includes both a deterministic reproduction of the original bug and
 property-based tests (Hypothesis) that assert the invariant holds
@@ -9,6 +18,7 @@ for arbitrary loan parameters, payment amounts, and timing.
 """
 
 from datetime import date, datetime, timedelta, timezone
+from typing import List
 from zoneinfo import ZoneInfo
 
 from hypothesis import given, settings
@@ -17,6 +27,7 @@ from hypothesis import strategies as st
 from money_warp import (
     BillingCycleLoan,
     BrazilianWorkingDayCalendar,
+    Installment,
     InterestRate,
     Money,
     MonthlyBillingCycle,
@@ -44,32 +55,40 @@ def _resolve_high_mora_rate(reference_date: date, base_mora_rate: InterestRate) 
     return InterestRate("17% a.m.")
 
 
-def _assert_sequential_coverage(settlement: Settlement) -> None:
-    """Assert that no money leaks past an uncovered installment.
+def _assert_sequential_coverage(settlement: Settlement, installments: List[Installment]) -> None:
+    """Assert that no principal leaks past a principal-uncovered installment.
 
-    Two checks, from weakest to strongest:
-    1. Coverage flags never go True after a False.
-    2. No money is allocated to a newer installment at all when an
-       older installment is not fully covered.  (Allocations are only
-       created when total > 0, so the mere *existence* of a later
-       allocation means money leaked.)
+    Principal flows oldest-first: once an installment still owes
+    principal, no later installment may receive any principal in the
+    same settlement. Non-principal gaps (mora/fine/interest pools
+    running out, or sub-cent residuals absorbed by tolerance) do not
+    block principal flow — the earlier installment kept everything it
+    could absorb and the remaining principal pool legitimately moved
+    onward.
+
+    Flag monotonicity (``is_fully_covered`` never going True after
+    False) is *not* enforced. The per-allocation
+    ``is_fully_covered == is_fully_paid`` invariant lives in
+    ``test_coverage_consistency``.
     """
-    seen_uncovered = False
-    uncovered_number = None
+    inst_by_number = {inst.number: inst for inst in installments}
+    principal_short_seen = False
+    short_number = None
     for alloc in settlement.allocations:
-        if seen_uncovered:
-            assert not alloc.is_fully_covered, (
-                f"Installment #{alloc.installment_number} is marked fully covered "
-                f"but installment #{uncovered_number} is not"
-            )
-            assert alloc.total_allocated.is_zero(), (
+        if principal_short_seen:
+            assert alloc.principal_allocated.is_zero(), (
                 f"Installment #{alloc.installment_number} received "
-                f"{alloc.total_allocated} but installment #{uncovered_number} "
-                "is not fully covered — money must not leak to newer installments"
+                f"{alloc.principal_allocated} in principal but installment "
+                f"#{short_number} still owes principal — principal must not "
+                "leak to newer installments"
             )
-        if not alloc.is_fully_covered:
-            seen_uncovered = True
-            uncovered_number = alloc.installment_number
+        inst = inst_by_number.get(alloc.installment_number)
+        if inst is None:
+            continue
+        principal_remaining = inst.expected_principal - inst.principal_paid
+        if principal_remaining.is_positive():
+            principal_short_seen = True
+            short_number = alloc.installment_number
 
 
 # ── Deterministic reproduction ──────────────────────────────────────
@@ -111,14 +130,15 @@ def test_high_mora_does_not_cover_later_installment_before_earlier():
         (datetime(2025, 7, 2, tzinfo=SAO_PAULO), Money("1156.22")),
     ]
 
-    all_settlements = []
+    all_settlements: List[tuple] = []
     for pay_date, amount in payments:
         with Warp(loan, pay_date) as w:
-            all_settlements.append(w.pay_installment(amount))
+            settlement = w.pay_installment(amount)
+            all_settlements.append((settlement, list(w.installments)))
         loan = w
 
-    for settlement in all_settlements:
-        _assert_sequential_coverage(settlement)
+    for settlement, installments in all_settlements:
+        _assert_sequential_coverage(settlement, installments)
 
 
 # ── Property-based: single payment at any time ──────────────────────
@@ -136,8 +156,8 @@ def test_high_mora_does_not_cover_later_installment_before_earlier():
 def test_single_payment_coverage_always_sequential(
     principal, annual_rate, num_installments, scheduler, payment_fraction, days_offset
 ):
-    """A single payment — early, on-time, or late — must never produce
-    out-of-order coverage flags.
+    """A single payment — early, on-time, or late — must never leak
+    principal past a principal-uncovered installment.
     """
     loan = build_loan(principal, annual_rate, num_installments, scheduler)
     due_date_dt = datetime(
@@ -155,8 +175,9 @@ def test_single_payment_coverage_always_sequential(
         if amount.is_zero() or amount.is_negative():
             return
         settlement = warped.pay_installment(amount)
+        installments = list(warped.installments)
 
-    _assert_sequential_coverage(settlement)
+    _assert_sequential_coverage(settlement, installments)
 
 
 # ── Property-based: multiple payments, varying timing ───────────────
@@ -183,13 +204,14 @@ def test_single_payment_coverage_always_sequential(
 def test_multiple_payments_coverage_always_sequential(
     principal, annual_rate, num_installments, scheduler, payment_days, fractions
 ):
-    """Multiple payments spread across the loan lifetime — coverage
-    flags must be sequential in every settlement regardless of how many
-    payments are made or when they land.
+    """Multiple payments spread across the loan lifetime — principal
+    must never leak past a principal-uncovered installment in any
+    settlement, regardless of how many payments are made or when they
+    land.
     """
     loan = build_loan(principal, annual_rate, num_installments, scheduler)
 
-    all_settlements = []
+    all_settlements: List[tuple] = []
     for i, day_offset in enumerate(payment_days):
         pay_dt = DISBURSEMENT + timedelta(days=day_offset)
 
@@ -200,8 +222,9 @@ def test_multiple_payments_coverage_always_sequential(
             amount = make_payment_amount(balance, fractions[i])
             if amount.is_zero() or amount.is_negative():
                 continue
-            all_settlements.append(warped.pay_installment(amount))
+            settlement = warped.pay_installment(amount)
+            all_settlements.append((settlement, list(warped.installments)))
         loan = warped
 
-    for settlement in all_settlements:
-        _assert_sequential_coverage(settlement)
+    for settlement, installments in all_settlements:
+        _assert_sequential_coverage(settlement, installments)

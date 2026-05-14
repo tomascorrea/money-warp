@@ -3,6 +3,7 @@
 from typing import List, Tuple
 
 from ..models import Allocation, Installment
+from ..scheduler import PaymentSchedule
 from ..types.money import Money
 from .constants import BALANCE_TOLERANCE
 
@@ -45,6 +46,7 @@ def distribute_into_installments(
     interest_total: Money,
     principal_total: Money,
     ending_balance: Money,
+    schedule: PaymentSchedule,
 ) -> List[Allocation]:
     """Distribute loan-level totals into per-installment allocations.
 
@@ -115,8 +117,7 @@ def distribute_into_installments(
             )
 
     _apply_residual(allocations, installments, fine_total, mora_total, interest_total, principal_total)
-    _apply_coverage_fixup(allocations, installments, ending_balance, principal_total)
-    _enforce_sequential_coverage(allocations)
+    _finalize_coverage(allocations, installments, schedule, ending_balance)
     return allocations
 
 
@@ -178,63 +179,50 @@ def _apply_residual(
         )
 
 
-def _apply_coverage_fixup(
+def _finalize_coverage(
     allocations: List[Allocation],
     installments: List[Installment],
+    schedule: PaymentSchedule,
     ending_balance: Money,
-    principal_total: Money,
 ) -> None:
-    """Override coverage flags when the loan is paid off.
+    """Recompute ``is_fully_covered`` using the post-payment installment view.
 
-    If the post-payment balance is zero, negative, or within
-    ``BALANCE_TOLERANCE`` (a sub-cent residual that will be absorbed
-    by the tolerance adjustment mechanism), any allocation whose
-    principal was fully allocated is marked as fully covered.
+    An allocation is fully covered iff its targeted installment is
+    fully paid (within ``BALANCE_TOLERANCE``) after applying this
+    allocation. The check uses the same per-component balance that
+    drives ``Installment.is_fully_paid``, so the labelling and the
+    installment view never disagree.
     """
-    post_balance = ending_balance - principal_total
-    if post_balance > BALANCE_TOLERANCE:
-        return
+    principal_total = Money(sum(a.principal_allocated.raw_amount for a in allocations))
+    running_after = ending_balance - principal_total
+    if running_after.is_negative():
+        running_after = Money.zero()
 
     inst_by_number = {inst.number: inst for inst in installments}
     for i, alloc in enumerate(allocations):
-        if alloc.is_fully_covered:
-            continue
         inst = inst_by_number.get(alloc.installment_number)
         if inst is None:
             continue
-        principal_owed = inst.expected_principal - inst.principal_paid
-        if alloc.principal_allocated + BALANCE_TOLERANCE >= principal_owed:
+
+        new_principal_paid = inst.principal_paid + alloc.principal_allocated
+        new_interest_paid = inst.interest_paid + alloc.interest_allocated
+        new_mora_paid = inst.mora_paid + alloc.mora_allocated
+        new_fine_paid = inst.fine_paid + alloc.fine_allocated
+
+        total_expected = inst.expected_principal + inst.expected_interest + inst.expected_mora + inst.expected_fine
+        total_paid = new_principal_paid + new_interest_paid + new_mora_paid + new_fine_paid
+        remaining = total_expected - total_paid
+        is_settled = not remaining.is_positive() or remaining <= BALANCE_TOLERANCE
+
+        if alloc.is_fully_covered != is_settled:
             allocations[i] = Allocation(
                 installment_number=alloc.installment_number,
                 principal_allocated=alloc.principal_allocated,
                 interest_allocated=alloc.interest_allocated,
                 mora_allocated=alloc.mora_allocated,
                 fine_allocated=alloc.fine_allocated,
-                is_fully_covered=True,
+                is_fully_covered=is_settled,
             )
-
-
-def _enforce_sequential_coverage(allocations: List[Allocation]) -> None:
-    """Ensure coverage flags are monotonically ordered.
-
-    If allocation N is not fully covered, all subsequent allocations
-    must also be marked as not covered.  This prevents a later
-    installment from appearing paid while an earlier one is still
-    outstanding.
-    """
-    seen_uncovered = False
-    for i, alloc in enumerate(allocations):
-        if seen_uncovered and alloc.is_fully_covered:
-            allocations[i] = Allocation(
-                installment_number=alloc.installment_number,
-                principal_allocated=alloc.principal_allocated,
-                interest_allocated=alloc.interest_allocated,
-                mora_allocated=alloc.mora_allocated,
-                fine_allocated=alloc.fine_allocated,
-                is_fully_covered=False,
-            )
-        if not alloc.is_fully_covered:
-            seen_uncovered = True
 
 
 def allocate_payment_into_installments(
@@ -244,6 +232,7 @@ def allocate_payment_into_installments(
     fine_cap: Money,
     interest_cap: Money,
     mora_cap: Money,
+    schedule: PaymentSchedule,
 ) -> Tuple[Money, Money, Money, Money, List[Allocation]]:
     """Allocate a payment across installments in priority order.
 
@@ -271,6 +260,7 @@ def allocate_payment_into_installments(
         interest_paid,
         principal_paid,
         ending_balance,
+        schedule,
     )
 
     return fine_paid, mora_paid, interest_paid, principal_paid, allocations

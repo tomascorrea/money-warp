@@ -158,7 +158,10 @@ def test_p6_third_installment_allocation(six_partial_settlements):
     """Inst 3 gets principal + interest from P6.
 
     Inst 2 is already settled (balance within tolerance) so P6 skips
-    it and the full payment flows to inst 3.
+    it and the full payment flows to inst 3. The customer's six
+    payments total R$910 against R$910.87 scheduled — short by R$0.87 —
+    so the allocation must reflect that inst 3 is *not* fully covered.
+    The flag agrees with ``installment.is_fully_paid`` (also False).
     """
     _, settlements = six_partial_settlements
     assert len(settlements[5].allocations) == 1
@@ -166,7 +169,7 @@ def test_p6_third_installment_allocation(six_partial_settlements):
     assert a.installment_number == 3
     assert a.principal_allocated == Money("197.65")
     assert a.interest_allocated == Money("2.35")
-    assert a.is_fully_covered is True
+    assert a.is_fully_covered is False
 
 
 def test_p6_skips_fully_paid_second_installment(six_partial_settlements):

@@ -59,8 +59,8 @@ External loan origination systems may introduce a small rounding error per insta
 
 The `payment_tolerance` parameter controls the per-installment error unit. It is used by `apply_tolerance_adjustment` (called from `pay_installment`) to absorb small balance drift after each payment.
 
-- **`Installment.is_fully_paid`**: `self.balance.is_zero()` — exact check on the installment balance.
-- **`Allocation.is_fully_covered`**: uses `BALANCE_TOLERANCE` (R$0.01) per installment — tolerance-based.
+- **`Installment.is_fully_paid`**: `self.balance.is_zero()` on a balance that absorbs sub-cent residuals within `BALANCE_TOLERANCE` (R$0.01).
+- **`Allocation.is_fully_covered`**: computed by `_finalize_coverage` from the post-payment installment view using the same balance formula — by construction it equals `Installment.is_fully_paid` for the targeted installment.
 - **`Loan.is_paid_off`**: first checks `current_balance.is_zero() or current_balance.is_negative()`, then falls back to checking if all installments have at least one allocation with `is_fully_covered=True`. This handles schedule divergence residuals that exceed `apply_tolerance_adjustment`'s absorption threshold.
 
 The tolerance is threaded through the settlement engine (`compute_state`), where it also controls the principal snap-to-zero threshold and coverage fixup checks.
@@ -200,7 +200,7 @@ The central algorithm in `engines.compute_state`. It processes a merged timeline
 After distributing loan-level totals into per-installment allocations, two adjustments run:
 
 1. **Residual** (`_apply_residual`): ensures `sum(allocations.X) == X_total` for each component. Loan-level accrual can exceed what installments absorb (rounding, partial periods, overpayment); the residual is added to the last allocation.
-2. **Coverage fixup** (`_apply_coverage_fixup`): if the post-payment balance is within `BALANCE_TOLERANCE` of zero (i.e. `post_balance <= BALANCE_TOLERANCE`), any allocation whose principal was fully allocated within the same tolerance (`principal_allocated + BALANCE_TOLERANCE >= principal_owed`) is marked `is_fully_covered = True`. Both gates use the same tolerance so that a sub-cent residual that will be absorbed by `apply_tolerance_adjustment` does not leave the allocation in a state that contradicts `Loan.is_paid_off`.
+2. **Coverage finalization** (`_finalize_coverage`): every allocation's `is_fully_covered` is recomputed from the post-payment per-installment view (same formula as `Installment.balance`, with sub-cent residuals absorbed by `BALANCE_TOLERANCE`). The flag agrees with `Installment.is_fully_paid` by construction, replacing the older two-stage `_apply_coverage_fixup` + `_enforce_sequential_coverage` mechanism.
 
 ## Dynamic Amortization Schedule
 

@@ -547,6 +547,7 @@ def compute_state(
             fine_cap=wd.effective_fine_cap,
             interest_cap=wd.interest_cap,
             mora_cap=wd.effective_mora_cap,
+            schedule=schedule,
         )
 
         fines_paid_total = wd.fines_paid_total + fine_paid
@@ -587,6 +588,21 @@ def compute_state(
 
         processed_payments.append(payment)
 
+    _reconcile_coverage_with_final_state(
+        settlements,
+        allocs_by_number,
+        running_principal,
+        schedule,
+        fines_applied,
+        interest_calc,
+        tz,
+        last_payment_date=last_accrual_end,
+        as_of=as_of,
+        calendar=calendar,
+        grace_period_days=grace_period_days,
+        mora_rate_for_event=mora_rate_for_event,
+    )
+
     return LoanState(
         settlements=settlements,
         principal_balance=running_principal,
@@ -596,6 +612,62 @@ def compute_state(
         last_accrual_end=last_accrual_end,
         overpaid=overpaid,
     )
+
+
+def _reconcile_coverage_with_final_state(
+    settlements: List[Settlement],
+    allocs_by_number: Dict[int, List[Allocation]],
+    principal_balance: Money,
+    schedule: PaymentSchedule,
+    fines_applied: Dict[date, Money],
+    interest_calc: InterestCalculator,
+    tz: tzinfo,
+    last_payment_date: datetime,
+    as_of: datetime,
+    calendar: WorkingDayCalendar,
+    grace_period_days: int,
+    mora_rate_for_event: MoraRateCallback,
+) -> None:
+    """Align every allocation's ``is_fully_covered`` with the final installment view.
+
+    Per-event ``_finalize_coverage`` labels each allocation based on
+    the state immediately after its settlement. Subsequent accrual
+    (e.g. when ``waive_overdue_interest`` snaps ``last_accrual_end``
+    and a later settlement's snapshot recomputes ``expected_mora``)
+    can change the installment view without revisiting earlier
+    allocations. The user-facing invariant
+    ``Allocation.is_fully_covered == Installment.is_fully_paid`` is
+    restored here by re-projecting every settlement's allocations
+    against the final installment snapshot.
+    """
+    final_installments = _build_installments_snapshot(
+        allocs_by_number,
+        principal_balance,
+        as_of,
+        schedule,
+        fines_applied,
+        interest_calc,
+        tz,
+        last_payment_date=last_payment_date,
+        calendar=calendar,
+        grace_period_days=grace_period_days,
+        mora_rate_for_event=mora_rate_for_event,
+    )
+    is_paid_by_number = {inst.number: inst.is_fully_paid for inst in final_installments}
+
+    for settlement in settlements:
+        for i, alloc in enumerate(settlement.allocations):
+            target = is_paid_by_number.get(alloc.installment_number)
+            if target is None or alloc.is_fully_covered == target:
+                continue
+            settlement.allocations[i] = Allocation(
+                installment_number=alloc.installment_number,
+                principal_allocated=alloc.principal_allocated,
+                interest_allocated=alloc.interest_allocated,
+                mora_allocated=alloc.mora_allocated,
+                fine_allocated=alloc.fine_allocated,
+                is_fully_covered=target,
+            )
 
 
 # ------------------------------------------------------------------

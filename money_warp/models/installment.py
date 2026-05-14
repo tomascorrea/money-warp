@@ -8,6 +8,8 @@ from ..scheduler import PaymentScheduleEntry
 from ..types.money import Money
 from .allocation import Allocation
 
+_BALANCE_TOLERANCE = Money("0.01")
+
 
 @dataclass(frozen=True)
 class Installment:
@@ -36,11 +38,19 @@ class Installment:
 
     @property
     def balance(self) -> Money:
-        """The amount still owed to fully settle this installment."""
+        """The amount still owed to fully settle this installment.
+
+        Sub-cent residuals within ``BALANCE_TOLERANCE`` (R$0.01) collapse
+        to zero so ``is_fully_paid`` agrees with ``Allocation.is_fully_covered``
+        on rounding artifacts that the tolerance-adjustment mechanism
+        absorbs.
+        """
         total_expected = self.expected_principal + self.expected_interest + self.expected_mora + self.expected_fine
         total_paid = self.principal_paid + self.interest_paid + self.mora_paid + self.fine_paid
         remaining = total_expected - total_paid
-        return remaining if remaining.is_positive() else Money.zero()
+        if not remaining.is_positive() or remaining <= _BALANCE_TOLERANCE:
+            return Money.zero()
+        return remaining
 
     @property
     def is_fully_paid(self) -> bool:
