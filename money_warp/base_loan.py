@@ -222,6 +222,7 @@ class BaseLoan(ABC):
             tz=self._time_ctx.tz,
             calendar=self.working_day_calendar,
             grace_period_days=self.grace_period_days,
+            mora_rate_for_event=self._resolve_mora_rate_for_due,
         )
 
     # ------------------------------------------------------------------

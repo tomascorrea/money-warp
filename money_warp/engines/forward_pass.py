@@ -169,6 +169,7 @@ def _build_installments_snapshot(
     grace_period_days: int = 0,
     waive_fines: bool = False,
     waive_mora: bool = False,
+    mora_rate_for_event: MoraRateCallback = None,
 ) -> List[Installment]:
     """Build Installment objects from pre-computed allocation data.
 
@@ -177,6 +178,14 @@ def _build_installments_snapshot(
     so ``Installment.balance`` reflects the effective obligation after
     waivers and the coverage check in ``distribute_into_installments``
     produces the correct ``is_fully_covered`` flag.
+
+    *mora_rate_for_event* mirrors the callback used by :func:`compute_state`
+    to resolve a per-cycle mora rate. When provided, the resolved rate
+    is passed as ``mora_rate_override`` to the interest calculator so
+    the snapshot's ``expected_mora`` matches the loan-level allocation.
+    Without this, a `BillingCycleLoan` with a per-cycle resolver would
+    underestimate ``Installment.balance`` and yield ``is_fully_covered``
+    flags that disagree with ``is_fully_paid``.
     """
     covered = principal_covered_count(principal_balance, schedule)
 
@@ -189,6 +198,8 @@ def _build_installments_snapshot(
         expected_fine = prior_fine if waive_fines else fines_applied.get(entry.due_date, Money.zero())
 
         prior_mora = Money(sum(a.mora_allocated.raw_amount for a in allocs))
+
+        mora_override = mora_rate_for_event(entry.due_date) if mora_rate_for_event else None
 
         if waive_mora or i < covered:
             expected_mora = prior_mora
@@ -205,6 +216,7 @@ def _build_installments_snapshot(
                     tz,
                     penalty_due,
                     last_payment_date,
+                    mora_rate_override=mora_override,
                 )
             else:
                 penalty_due = effective_penalty_due_date(entry.due_date, calendar)
@@ -215,6 +227,7 @@ def _build_installments_snapshot(
                     tz,
                     penalty_due,
                     to_datetime(penalty_due, tz),
+                    mora_rate_override=mora_override,
                 )
             expected_mora = prior_mora + accrued_mora
         else:
@@ -499,6 +512,7 @@ def compute_state(
             grace_period_days=grace_period_days,
             waive_fines=payment.waive_fines,
             waive_mora=payment.waive_mora,
+            mora_rate_for_event=mora_rate_for_event,
         )
 
         interest_cap = _interest_cap_for_payment(
@@ -601,8 +615,17 @@ def build_installments(
     tz: tzinfo,
     calendar: WorkingDayCalendar = _DEFAULT_CALENDAR,
     grace_period_days: int = 0,
+    mora_rate_for_event: MoraRateCallback = None,
 ) -> List[Installment]:
-    """Build the installment view from settlements + schedule."""
+    """Build the installment view from settlements + schedule.
+
+    *mora_rate_for_event* mirrors the callback used by :func:`compute_state`.
+    When provided, it is threaded down to :func:`_build_installments_snapshot`
+    so the snapshot's ``expected_mora`` uses the same per-cycle resolved
+    rate as the loan-level allocation. Without this, products that resolve
+    mora per cycle (e.g. ``BillingCycleLoan``) would expose installments
+    whose ``balance`` disagrees with the allocation's ``is_fully_covered``.
+    """
     allocs_by_number: Dict[int, List[Allocation]] = {}
     for settlement in settlements:
         for a in settlement.allocations:
@@ -619,6 +642,7 @@ def build_installments(
         last_payment_date=last_accrual_end,
         calendar=calendar,
         grace_period_days=grace_period_days,
+        mora_rate_for_event=mora_rate_for_event,
     )
 
 
