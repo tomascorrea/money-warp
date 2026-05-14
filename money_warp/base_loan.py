@@ -48,6 +48,7 @@ class BaseLoan(ABC):
     - ``fine_rate``: :class:`InterestRate`
     - ``grace_period_days``: ``int``
     - ``payment_tolerance``: :class:`Money`
+    - ``balance_tolerance``: :class:`Money`
     - ``working_day_calendar``: :class:`WorkingDayCalendar`
     - ``_fine_observation_dates``: ``List[datetime]``
     - ``cashflow``: :class:`CashFlow`
@@ -65,6 +66,7 @@ class BaseLoan(ABC):
     fine_rate: InterestRate
     grace_period_days: int
     payment_tolerance: Money
+    balance_tolerance: Money
     working_day_calendar: WorkingDayCalendar
     _fine_observation_dates: List[datetime]
     cashflow: CashFlow
@@ -172,7 +174,7 @@ class BaseLoan(ABC):
         )
 
         schedule = self.get_original_schedule()
-        cashflow_size_before = len(list(self.cashflow.items()))
+        cashflow_size_before = sum(1 for _ in self.cashflow.items())
         for entry in schedule:
             if entry.due_date == next_due:
                 apply_tolerance_adjustment(
@@ -188,7 +190,14 @@ class BaseLoan(ABC):
                 )
                 break
 
-        if len(list(self.cashflow.items())) > cashflow_size_before:
+        # The synthetic tolerance-adjustment item, when added, makes
+        # ``self.installments`` (recomputed below) reflect a state the
+        # returned ``settlement`` was built against an earlier compute.
+        # Re-align the returned object only when that synthetic event
+        # actually fired — otherwise we'd run an extra ``_compute_state``
+        # on every payment for no reason.
+        cashflow_size_after = sum(1 for _ in self.cashflow.items())
+        if cashflow_size_after > cashflow_size_before:
             self._reconcile_returned_settlement_coverage(settlement)
 
         return settlement
@@ -256,6 +265,7 @@ class BaseLoan(ABC):
             calendar=self.working_day_calendar,
             grace_period_days=self.grace_period_days,
             mora_rate_for_event=self._resolve_mora_rate_for_due,
+            balance_tolerance=self.balance_tolerance,
         )
 
     # ------------------------------------------------------------------
@@ -282,7 +292,11 @@ class BaseLoan(ABC):
         days = (self._time_ctx.to_date(self.now()) - self._time_ctx.to_date(state.last_accrual_end)).days
 
         if state.principal_balance.is_positive() and days > 0:
-            covered = principal_covered_count(state.principal_balance, self.get_original_schedule())
+            covered = principal_covered_count(
+                state.principal_balance,
+                self.get_original_schedule(),
+                self.balance_tolerance,
+            )
             next_due = self.due_dates[covered] if covered < len(self.due_dates) else None
             penalty_next_due = effective_penalty_due_date(next_due, self.working_day_calendar) if next_due else None
             mora_rate = self._resolve_mora_rate_for_due(next_due)
@@ -361,7 +375,7 @@ class BaseLoan(ABC):
             return Money.zero()
 
         schedule = self.get_original_schedule()
-        covered = principal_covered_count(state.principal_balance, schedule)
+        covered = principal_covered_count(state.principal_balance, schedule, self.balance_tolerance)
         if covered >= len(self.due_dates):
             return Money.zero()
 
@@ -486,7 +500,11 @@ class BaseLoan(ABC):
 
     def _principal_covered_count(self) -> int:
         """How many installments have principal covered (schedule milestones)."""
-        return principal_covered_count(self.principal_balance, self.get_original_schedule())
+        return principal_covered_count(
+            self.principal_balance,
+            self.get_original_schedule(),
+            self.balance_tolerance,
+        )
 
     def _next_unpaid_due_date(self) -> date:
         """Find the next due date that hasn't been fully paid.
@@ -540,7 +558,11 @@ class BaseLoan(ABC):
             prev_balance = s.remaining_balance
             prev_date = s.payment_date
 
-        covered = principal_covered_count(state.principal_balance, self.get_original_schedule())
+        covered = principal_covered_count(
+            state.principal_balance,
+            self.get_original_schedule(),
+            self.balance_tolerance,
+        )
         remaining_due_dates = self.due_dates[covered:]
         if not remaining_due_dates:
             return PaymentSchedule(entries=actual_entries)

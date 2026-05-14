@@ -59,8 +59,9 @@ External loan origination systems may introduce a small rounding error per insta
 
 The `payment_tolerance` parameter controls the per-installment error unit. It is used by `apply_tolerance_adjustment` (called from `pay_installment`) to absorb small balance drift after each payment.
 
-- **`Installment.is_fully_paid`**: `self.balance.is_zero()` on a balance that absorbs sub-cent residuals within `BALANCE_TOLERANCE` (R$0.01).
+- **`Installment.is_fully_paid`**: `self.balance.is_zero()` on a balance that absorbs sub-cent residuals within the installment's `balance_tolerance` (default R$0.01, configurable via the loan constructor).
 - **`Allocation.is_fully_covered`**: computed by `_finalize_coverage` from the post-payment installment view using the same balance formula — by construction it equals `Installment.is_fully_paid` for the targeted installment.
+- **`Loan(..., balance_tolerance=Money("0.02"))`** / **`BillingCycleLoan(..., balance_tolerance=...)`** lets the caller widen or narrow this threshold; the value flows through every engine function that takes tolerance-based decisions.
 - **`Loan.is_paid_off`**: first checks `current_balance.is_zero() or current_balance.is_negative()`, then falls back to checking if all installments have at least one allocation with `is_fully_covered=True`. This handles schedule divergence residuals that exceed `apply_tolerance_adjustment`'s absorption threshold.
 
 The tolerance is threaded through the settlement engine (`compute_state`), where it also controls the principal snap-to-zero threshold and coverage fixup checks.

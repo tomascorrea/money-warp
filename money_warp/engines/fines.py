@@ -38,6 +38,7 @@ def _has_payment_near(
     payment_entries: list,
     tz: tzinfo,
     schedule_due_date: Optional[date] = None,
+    balance_tolerance: Money = BALANCE_TOLERANCE,
 ) -> bool:
     """Check if sufficient payment has been made near a due date.
 
@@ -51,6 +52,8 @@ def _has_payment_near(
             lookup instead of *due_date*.  This allows the window to
             be centered on the effective date while looking up the
             expected amount from the original schedule date.
+        balance_tolerance: Sub-cent threshold for "sufficient" payment;
+            defaults to the engine-wide ``BALANCE_TOLERANCE``.
     """
     lookup_date = schedule_due_date if schedule_due_date is not None else due_date
 
@@ -63,13 +66,13 @@ def _has_payment_near(
         return False
 
     exact = [p for p in payment_entries if to_date(p.datetime, tz) == due_date and p.datetime <= as_of]
-    if sum((p.amount for p in exact), Money.zero()) >= (expected - BALANCE_TOLERANCE):
+    if sum((p.amount for p in exact), Money.zero()) >= (expected - balance_tolerance):
         return True
 
     window_start = to_datetime(due_date - timedelta(days=_WINDOW_DAYS_BEFORE), tz)
     window_end = min(as_of, to_datetime(due_date + timedelta(days=_WINDOW_DAYS_AFTER), tz))
     window = [p for p in payment_entries if window_start <= p.datetime <= window_end and p.datetime <= as_of]
-    return sum((p.amount for p in window), Money.zero()) >= (expected - BALANCE_TOLERANCE)
+    return sum((p.amount for p in window), Money.zero()) >= (expected - balance_tolerance)
 
 
 def compute_fines_at(
@@ -82,6 +85,7 @@ def compute_fines_at(
     payment_entries: list,
     tz: tzinfo,
     calendar: WorkingDayCalendar,
+    balance_tolerance: Money = BALANCE_TOLERANCE,
 ) -> Dict[date, Money]:
     """Compute fines for overdue due dates as of *as_of*.
 
@@ -100,7 +104,15 @@ def compute_fines_at(
         if not is_payment_late(dd, grace_period_days, as_of, tz, calendar):
             continue
         penalty_dd = effective_penalty_due_date(dd, calendar)
-        if _has_payment_near(penalty_dd, as_of, schedule, payment_entries, tz, schedule_due_date=dd):
+        if _has_payment_near(
+            penalty_dd,
+            as_of,
+            schedule,
+            payment_entries,
+            tz,
+            schedule_due_date=dd,
+            balance_tolerance=balance_tolerance,
+        ):
             continue
         for entry in schedule:
             if entry.due_date == dd:

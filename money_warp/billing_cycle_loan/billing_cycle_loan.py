@@ -13,6 +13,7 @@ from ..engines import (
     MoraStrategy,
 )
 from ..models import BillingCycleLoanStatement, Settlement
+from ..models.installment import DEFAULT_BALANCE_TOLERANCE
 from ..scheduler import BaseScheduler, PriceScheduler
 from ..time_context import TimeContext
 from ..types.interest_rate import InterestRate
@@ -75,6 +76,7 @@ class BillingCycleLoan(BaseLoan):
         mora_rate_resolver: Optional[MoraRateResolver] = None,
         mora_strategy: MoraStrategy = MoraStrategy.COMPOUND,
         payment_tolerance: Optional[Money] = None,
+        balance_tolerance: Optional[Money] = None,
         working_day_calendar: Optional[WorkingDayCalendar] = None,
         tz: Optional[Union[str, tzinfo]] = None,
     ) -> None:
@@ -100,6 +102,7 @@ class BillingCycleLoan(BaseLoan):
         self.fine_rate = fine_rate if fine_rate is not None else InterestRate("2% annual")
         self.grace_period_days = grace_period_days
         self.payment_tolerance = payment_tolerance if payment_tolerance is not None else Money("0.01")
+        self.balance_tolerance = balance_tolerance if balance_tolerance is not None else DEFAULT_BALANCE_TOLERANCE
         self.working_day_calendar: WorkingDayCalendar = working_day_calendar or EveryDayCalendar()
 
         self._interest = InterestCalculator(
@@ -286,6 +289,7 @@ class BillingCycleLoan(BaseLoan):
             mora_rate_resolver=self.mora_rate_resolver,
             fine_observation_dates=self._fine_observation_dates,
             calendar=self.working_day_calendar,
+            balance_tolerance=self.balance_tolerance,
         )
 
     def _resolve_mora_rate_for_due(self, next_due: Optional[date]) -> Optional[InterestRate]:

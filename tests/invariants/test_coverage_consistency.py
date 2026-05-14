@@ -25,6 +25,7 @@ from hypothesis import strategies as st
 
 from money_warp import (
     BillingCycleLoan,
+    Installment,
     InterestRate,
     Money,
     MonthlyBillingCycle,
@@ -36,8 +37,10 @@ from money_warp import (
 from .strategies import (
     DISBURSEMENT,
     annual_rate_st,
+    build_loan,
     num_installments_st,
     principal_st,
+    scheduler_st,
 )
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
@@ -46,7 +49,7 @@ SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 # ── Helpers ─────────────────────────────────────────────────────────
 
 
-def _assert_coverage_matches_fully_paid(settlement: Settlement, installments: list) -> None:
+def _assert_coverage_matches_fully_paid(settlement: Settlement, installments: List[Installment]) -> None:
     """For every allocation, ``is_fully_covered`` must equal ``is_fully_paid``.
 
     Both flags read the same underlying fact — "is the targeted
@@ -228,6 +231,54 @@ def test_late_payment_with_waiver_coverage_matches_fully_paid(
 
     with Warp(loan, pay_dt) as w:
         settlement = w.pay_installment(amount, waive_overdue_interest=True)
+        _assert_coverage_matches_fully_paid(settlement, w.installments)
+
+
+# ── Property-based: late payment on a plain Loan (constant mora) ────
+
+
+@given(
+    principal=principal_st,
+    annual_rate=annual_rate_st,
+    num_installments=num_installments_st,
+    scheduler=scheduler_st,
+    late_days=late_days_st,
+    payment_multiplier=payment_multiplier_st,
+)
+@settings(max_examples=200)
+def test_late_payment_coverage_matches_fully_paid_loan(
+    principal: Decimal,
+    annual_rate: Decimal,
+    num_installments: int,
+    scheduler: type,
+    late_days: int,
+    payment_multiplier: float,
+) -> None:
+    """Late payment on a plain ``Loan`` (constant mora rate) keeps the
+    flags consistent across principal, rate, term, and scheduler.
+
+    Parallels :func:`test_late_payment_coverage_matches_fully_paid_bcl_variable_mora`
+    but without the per-cycle mora resolver — ensures the invariant
+    is not BCL-specific.
+    """
+    loan = build_loan(principal, annual_rate, num_installments, scheduler)
+    first_due_dt = datetime(
+        loan.due_dates[0].year,
+        loan.due_dates[0].month,
+        loan.due_dates[0].day,
+        tzinfo=timezone.utc,
+    )
+    pay_dt = first_due_dt + timedelta(days=late_days)
+
+    schedule = loan.get_original_schedule()
+    base = schedule.entries[0].payment_amount.raw_amount
+    amount_raw = (base * Decimal(str(payment_multiplier))).quantize(Decimal("0.01"))
+    amount = Money(str(amount_raw))
+    if amount.is_zero() or amount.is_negative():
+        return
+
+    with Warp(loan, pay_dt) as w:
+        settlement = w.pay_installment(amount)
         _assert_coverage_matches_fully_paid(settlement, w.installments)
 
 

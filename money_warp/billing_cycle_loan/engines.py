@@ -12,6 +12,7 @@ from typing import Dict, List, Optional
 from ..billing_cycle import BaseBillingCycle
 from ..engines import InterestCalculator, LoanState, MoraRateCallback
 from ..engines import compute_state as _compute_state
+from ..engines.constants import BALANCE_TOLERANCE
 from ..models import BillingCycleLoanStatement, Settlement
 from ..scheduler import PaymentSchedule
 from ..types.interest_rate import InterestRate
@@ -93,6 +94,7 @@ def compute_state(
     mora_rate_resolver: Optional[MoraRateResolver] = None,
     fine_observation_dates: Optional[List[datetime]] = None,
     calendar: WorkingDayCalendar = _DEFAULT_CALENDAR,
+    balance_tolerance: Money = BALANCE_TOLERANCE,
 ) -> LoanState:
     """Forward pass for billing-cycle loans.
 
@@ -115,6 +117,7 @@ def compute_state(
         fine_observation_dates=fine_observation_dates,
         mora_rate_for_event=callback,
         calendar=calendar,
+        balance_tolerance=balance_tolerance,
     )
 
 
