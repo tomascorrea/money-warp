@@ -2,9 +2,9 @@
 
 from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
+from zoneinfo import ZoneInfo
 
 import pytest
-from zoneinfo import ZoneInfo
 
 from money_warp.tz import _DefaultTimeSource, ensure_aware, get_tz, now, set_tz, to_date, tz_aware
 

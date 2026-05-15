@@ -1,9 +1,9 @@
 """Shared fixtures available to all test directories."""
 
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
-from zoneinfo import ZoneInfo
 
 from money_warp import (
     BillingCycleLoan,

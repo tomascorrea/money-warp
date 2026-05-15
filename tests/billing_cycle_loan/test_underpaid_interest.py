@@ -7,7 +7,6 @@ interest was still owed, causing subsequent payments to skip it entirely.
 """
 
 from datetime import datetime
-
 from zoneinfo import ZoneInfo
 
 from money_warp import (

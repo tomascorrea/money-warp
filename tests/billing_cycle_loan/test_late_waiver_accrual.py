@@ -8,7 +8,6 @@ split drifts and small residuals leak past ``is_paid_off``.
 """
 
 from datetime import datetime
-
 from zoneinfo import ZoneInfo
 
 from money_warp import Money, Warp

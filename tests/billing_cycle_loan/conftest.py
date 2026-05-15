@@ -1,9 +1,9 @@
 """Shared fixtures for billing-cycle loan tests (BCL-specific only; common fixtures in tests/conftest.py)."""
 
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
-from zoneinfo import ZoneInfo
 
 from money_warp import BillingCycleLoan, InterestRate, Money, PriceScheduler
 from money_warp.billing_cycle import MonthlyBillingCycle
