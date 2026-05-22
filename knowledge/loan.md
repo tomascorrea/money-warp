@@ -176,11 +176,11 @@ Waivers are applied first. When `waive_fines=True` and a discount is also provid
 
 ### Implementation
 
-The discount amount is stored on `CashFlowEntry` (via the `discount: Money` field, default `Money.zero()`) and read by the forward pass during payment processing. After computing effective caps and applying waivers, the forward pass reduces each cap in priority order by the discount amount. Fines absorbed by the discount are added to `fines_paid_total` so `fine_balance` correctly reaches zero. Principal absorbed by the discount reduces `running_principal` directly.
+The discount amount is stored on `CashFlowEntry` (via the `discount: Money` field, default `Money.zero()`) and read by the forward pass during payment processing. After computing effective caps and applying waivers, `_apply_waivers_and_discounts` reduces each cap in priority order by the discount amount and returns the per-category split (`fine_discounted`, `mora_discounted`, `interest_discounted`, `principal_discounted`) on `_WaiverResult`. Those four totals flow into `allocate_payment_into_installments`, which distributes them across the touched installments by the same priority and records the result on every `Allocation`. Fines absorbed by the discount are added to `fines_paid_total` so `fine_balance` correctly reaches zero. Principal absorbed by the discount reduces `running_principal` directly.
 
-### Settlement Fields
+### Settlement and Installment Fields
 
-`Settlement` includes `discount_applied: Money` (default `Money.zero()`). This records the total discount amount given for the payment. The per-component breakdown (how much was absorbed from fines, mora, interest, principal) stays internal to the forward pass.
+`Settlement.discount_applied: Money` records the total discount amount given for the payment. The per-category breakdown is exposed on each `Allocation` (`fine_discounted`, `mora_discounted`, `interest_discounted`, `principal_discounted`) and aggregated onto the corresponding `Installment` (`fine_discounted`, `mora_discounted`, `interest_discounted`, `principal_discounted`), so `Installment.balance` and `Installment.is_fully_paid` agree with the loan-level `remaining_balance` when a discount is applied.
 
 ## Forward Pass: `compute_state`
 
@@ -301,10 +301,13 @@ A loan is **not** a group of installments. Installments are a **consequence** of
 
 A frozen dataclass built by `build_installments` from settlements + schedule. Warp-aware.
 
-Fields: `number`, `due_date`, `days_in_period`, `expected_payment`, `expected_principal`, `expected_interest`, `expected_mora`, `expected_fine`, `principal_paid`, `interest_paid`, `mora_paid`, `fine_paid`, `allocations`.
+Fields: `number`, `due_date`, `days_in_period`, `expected_payment`, `expected_principal`, `expected_interest`, `expected_mora`, `expected_fine`, `principal_paid`, `interest_paid`, `mora_paid`, `fine_paid`, `allocations`, `balance_tolerance`, `fine_discounted`, `mora_discounted`, `interest_discounted`, `principal_discounted`.
 
-- `balance` — amount still owed to fully settle this installment.
+The `*_discounted` fields aggregate the discount portion each allocation absorbed for that component. They default to `Money.zero()` so discount-free payments produce identical installments to before.
+
+- `balance` — amount still owed to fully settle this installment: `total_expected - total_paid - total_discounted`, collapsed to zero within `balance_tolerance`.
 - `is_fully_paid` — `True` when `balance` is within tolerance of zero.
+- `total_discounted` — sum of the four `*_discounted` fields.
 
 Per-installment allocation is a reporting view produced by `engines.distribute_into_installments` (not on the Installment class).
 
@@ -316,7 +319,9 @@ Fields: `payment_amount`, `payment_date`, `fine_paid`, `interest_paid`, `mora_pa
 
 ### Allocation
 
-Defined in `loan/allocation.py`. Fields: `installment_number`, `principal_allocated`, `interest_allocated`, `mora_allocated`, `fine_allocated`, `is_fully_covered`.
+Defined in `models/allocation.py`. Fields: `installment_number`, `principal_allocated`, `interest_allocated`, `mora_allocated`, `fine_allocated`, `is_fully_covered`, `fine_discounted`, `mora_discounted`, `interest_discounted`, `principal_discounted`.
+
+The `*_discounted` fields default to `Money.zero()` and record the portion of the payment's `discount` that absorbed each component for this installment. They mirror the `*_allocated` fields for the cash payment. `total_allocated` and `total_discounted` are convenience properties.
 
 Shared between Settlement (forward view) and Installment (reverse view).
 
@@ -483,3 +488,13 @@ This aligns the coverage flag with the tolerance-adjustment mechanism: a residua
 **Scope:** Both `Loan` and `BillingCycleLoan` were affected and fixed.
 
 **Lesson:** When a tolerance-based flag (`is_fully_covered`) at the per-installment level coexists with an exact check (`is_paid_off`) at the loan level, the loan-level check must have a fallback that respects the per-installment tolerance. Otherwise the two levels can disagree, leaving consumers in an inconsistent state.
+
+### Installment.is_fully_paid ignored the discount (fixed 2026-05-21)
+
+**Symptom:** Calling `pay_installment(amount, discount=...)` with `amount + discount == expected_payment` left `Installment.balance > 0` and `Installment.is_fully_paid == False`. The loan-level `remaining_balance` and `Settlement.discount_applied` were correct, so the loan paid off cleanly while the per-installment view contradicted itself. `Allocation.is_fully_covered` followed `is_fully_paid` and was therefore also wrong.
+
+**Root cause:** `_apply_waivers_and_discounts` reduced the loan-level fine, mora, and interest caps by the discount they absorbed, but only the principal residual leaked back out (`_WaiverResult.principal_discounted`). The per-category discount portions were never recorded on the resulting `Allocation`, so `Installment.from_schedule_entry` saw only the cash `*_paid` and treated the discounted portion as still owed.
+
+**Fix:** Added per-category `*_discounted` fields to `Allocation`, `Installment`, and the internal `_InstallmentExpectation`, all defaulting to `Money.zero()`. `_WaiverResult` now exposes all four loan-level discount totals; `allocate_payment_into_installments` distributes them across the touched installments in the same fine→mora→interest→principal priority via `_split_component`. `Installment.balance` subtracts `total_discounted` alongside `total_paid`, restoring the invariant `Installment.is_fully_paid iff expected_payment − (paid + discounted) ≤ balance_tolerance`. `_finalize_settlements_coverage` continues to align `Allocation.is_fully_covered` with the post-payment view in one place, so the flag automatically follows.
+
+**Lesson:** When a loan-level adjustment shrinks downstream caps, every consumer that walks per-installment obligations must also receive the breakdown — otherwise the per-installment view silently disagrees with the loan-level view. Recording the per-category split on the same data structure that already carries the cash allocation keeps the two views in lockstep.

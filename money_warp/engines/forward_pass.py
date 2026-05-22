@@ -218,6 +218,10 @@ def _build_expectations(
         prior_interest = Money(sum(a.interest_allocated.raw_amount for a in allocs))
         prior_mora = Money(sum(a.mora_allocated.raw_amount for a in allocs))
         prior_fine = Money(sum(a.fine_allocated.raw_amount for a in allocs))
+        prior_principal_discounted = Money(sum(a.principal_discounted.raw_amount for a in allocs))
+        prior_interest_discounted = Money(sum(a.interest_discounted.raw_amount for a in allocs))
+        prior_mora_discounted = Money(sum(a.mora_discounted.raw_amount for a in allocs))
+        prior_fine_discounted = Money(sum(a.fine_discounted.raw_amount for a in allocs))
 
         expected_fine = prior_fine if waive_fines else fines_applied.get(entry.due_date, Money.zero())
 
@@ -267,6 +271,10 @@ def _build_expectations(
                 mora_paid=prior_mora,
                 fine_paid=prior_fine,
                 balance_tolerance=balance_tolerance,
+                fine_discounted=prior_fine_discounted,
+                mora_discounted=prior_mora_discounted,
+                interest_discounted=prior_interest_discounted,
+                principal_discounted=prior_principal_discounted,
             )
         )
 
@@ -343,6 +351,9 @@ class _WaiverResult:
     effective_fine_cap: Money
     effective_mora_cap: Money
     interest_cap: Money
+    fine_discounted: Money
+    mora_discounted: Money
+    interest_discounted: Money
     principal_discounted: Money
     fines_waived: Money
     mora_waived: Money
@@ -358,7 +369,15 @@ def _apply_waivers_and_discounts(
     fines_applied: Dict[date, Money],
     fines_paid_total: Money,
 ) -> _WaiverResult:
-    """Apply waive_fines, waive_mora, and discount to caps."""
+    """Apply waive_fines, waive_mora, and discount to caps.
+
+    The per-category discount amounts (``fine_discounted``,
+    ``mora_discounted``, ``interest_discounted``,
+    ``principal_discounted``) are returned alongside the reduced caps
+    so the allocator can record them on each :class:`Allocation`. That
+    keeps the per-installment view's ``balance`` consistent with the
+    loan-level ``remaining_balance`` when a discount is applied.
+    """
     fines_waived = Money.zero()
     mora_waived = Money.zero()
     effective_fine_cap = fine_balance
@@ -391,6 +410,9 @@ def _apply_waivers_and_discounts(
         effective_fine_cap=effective_fine_cap,
         effective_mora_cap=effective_mora_cap,
         interest_cap=interest_cap,
+        fine_discounted=fine_discounted,
+        mora_discounted=mora_discounted,
+        interest_discounted=interest_discounted,
         principal_discounted=discount_remaining,
         fines_waived=fines_waived,
         mora_waived=mora_waived,
@@ -657,6 +679,10 @@ def compute_state(
             interest_cap=wd.interest_cap,
             mora_cap=wd.effective_mora_cap,
             balance_tolerance=balance_tolerance,
+            fine_discount_total=wd.fine_discounted,
+            mora_discount_total=wd.mora_discounted,
+            interest_discount_total=wd.interest_discounted,
+            principal_discount_total=wd.principal_discounted,
         )
 
         fines_paid_total = wd.fines_paid_total + fine_paid
@@ -778,6 +804,10 @@ def _finalize_settlements_coverage(
                 mora_allocated=alloc.mora_allocated,
                 fine_allocated=alloc.fine_allocated,
                 is_fully_covered=target,
+                fine_discounted=alloc.fine_discounted,
+                mora_discounted=alloc.mora_discounted,
+                interest_discounted=alloc.interest_discounted,
+                principal_discounted=alloc.principal_discounted,
             )
 
 
