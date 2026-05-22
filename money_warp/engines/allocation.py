@@ -8,7 +8,7 @@ the cashflow and schedule, never by a public :class:`Installment` view.
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from ..models import Allocation
 from ..types.money import Money
@@ -102,10 +102,10 @@ def distribute_into_installments(
     interest_total: Money,
     principal_total: Money,
     balance_tolerance: Money = BALANCE_TOLERANCE,
-    fine_discount_total: Money = None,
-    mora_discount_total: Money = None,
-    interest_discount_total: Money = None,
-    principal_discount_total: Money = None,
+    fine_discount_total: Optional[Money] = None,
+    mora_discount_total: Optional[Money] = None,
+    interest_discount_total: Optional[Money] = None,
+    principal_discount_total: Optional[Money] = None,
 ) -> List[Allocation]:
     """Distribute loan-level totals into per-installment allocations.
 
@@ -298,10 +298,10 @@ def allocate_payment_into_installments(
     interest_cap: Money,
     mora_cap: Money,
     balance_tolerance: Money = BALANCE_TOLERANCE,
-    fine_discount_total: Money = None,
-    mora_discount_total: Money = None,
-    interest_discount_total: Money = None,
-    principal_discount_total: Money = None,
+    fine_discount_total: Optional[Money] = None,
+    mora_discount_total: Optional[Money] = None,
+    interest_discount_total: Optional[Money] = None,
+    principal_discount_total: Optional[Money] = None,
 ) -> Tuple[Money, Money, Money, Money, List[Allocation]]:
     """Allocate a payment across installments in priority order.
 

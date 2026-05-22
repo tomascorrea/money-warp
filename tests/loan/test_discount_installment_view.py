@@ -165,16 +165,15 @@ def test_discount_covers_principal_of_tiny_final_installment():
 
 
 @pytest.mark.parametrize(
-    "scenario,amount,discount,waive_fines",
+    "amount,discount,waive_fines",
     [
-        ("fines", "10072.10", "502.48", False),
-        ("mora", "10049.61", "22.49", True),
-        ("mix", "10019.61", "554.97", False),
+        ("10072.10", "502.48", False),
+        ("10049.61", "22.49", True),
+        ("10019.61", "554.97", False),
     ],
     ids=["fines_only", "mora_only", "mix_fine_mora_interest"],
 )
 def test_late_payment_discount_keeps_loan_level_balance_at_zero(
-    scenario: str,
     amount: str,
     discount: str,
     waive_fines: bool,
