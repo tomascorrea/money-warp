@@ -16,7 +16,8 @@ class Installment:
     """A single installment in a loan repayment plan.
 
     Represents the borrower's obligation for one period: what is expected,
-    what has actually been paid, and the detailed per-payment allocations.
+    what has actually been paid, what has been covered by a discount,
+    and the detailed per-payment allocations.
 
     Installments are derived views -- the Loan builds them on demand
     from the CashFlow and the schedule.
@@ -27,6 +28,10 @@ class Installment:
     ``DEFAULT_BALANCE_TOLERANCE``); :class:`Loan` and
     :class:`BillingCycleLoan` propagate their own configurable value
     through every installment snapshot they build.
+
+    The ``*_discounted`` fields aggregate the discount portion each
+    allocation absorbed for that component. They default to zero so
+    discount-free payments produce identical installments to before.
     """
 
     number: int
@@ -46,6 +51,15 @@ class Installment:
     # default — even immutable ones — so ``Money`` must be supplied via
     # ``default_factory`` despite being effectively immutable.
     balance_tolerance: Money = field(default_factory=lambda: DEFAULT_BALANCE_TOLERANCE)
+    fine_discounted: Money = field(default_factory=Money.zero)
+    mora_discounted: Money = field(default_factory=Money.zero)
+    interest_discounted: Money = field(default_factory=Money.zero)
+    principal_discounted: Money = field(default_factory=Money.zero)
+
+    @property
+    def total_discounted(self) -> Money:
+        """Sum of discount portions absorbed by this installment."""
+        return self.fine_discounted + self.mora_discounted + self.interest_discounted + self.principal_discounted
 
     @property
     def balance(self) -> Money:
@@ -54,11 +68,12 @@ class Installment:
         Positive residuals within ``balance_tolerance`` collapse to zero
         so ``is_fully_paid`` agrees with ``Allocation.is_fully_covered``
         on rounding artifacts that the tolerance-adjustment mechanism
-        absorbs.
+        absorbs. The discount portions are treated as covered, mirroring
+        what ``Settlement.discount_applied`` reports at the loan level.
         """
         total_expected = self.expected_principal + self.expected_interest + self.expected_mora + self.expected_fine
         total_paid = self.principal_paid + self.interest_paid + self.mora_paid + self.fine_paid
-        remaining = total_expected - total_paid
+        remaining = total_expected - total_paid - self.total_discounted
         if not remaining.is_positive() or remaining <= self.balance_tolerance:
             return Money.zero()
         return remaining
@@ -87,12 +102,17 @@ class Installment:
 
         ``balance_tolerance`` is forwarded to the constructed Installment
         so ``balance`` and ``is_fully_paid`` honor the loan-level
-        setting.
+        setting. The ``*_discounted`` fields are derived from the
+        allocations so callers never need to compute them.
         """
         principal_paid = Money(sum(a.principal_allocated.raw_amount for a in allocations))
         interest_paid = Money(sum(a.interest_allocated.raw_amount for a in allocations))
         mora_paid = Money(sum(a.mora_allocated.raw_amount for a in allocations))
         fine_paid = Money(sum(a.fine_allocated.raw_amount for a in allocations))
+        fine_discounted = Money(sum(a.fine_discounted.raw_amount for a in allocations))
+        mora_discounted = Money(sum(a.mora_discounted.raw_amount for a in allocations))
+        interest_discounted = Money(sum(a.interest_discounted.raw_amount for a in allocations))
+        principal_discounted = Money(sum(a.principal_discounted.raw_amount for a in allocations))
 
         return cls(
             number=entry.payment_number,
@@ -109,4 +129,8 @@ class Installment:
             fine_paid=fine_paid,
             allocations=allocations,
             balance_tolerance=balance_tolerance,
+            fine_discounted=fine_discounted,
+            mora_discounted=mora_discounted,
+            interest_discounted=interest_discounted,
+            principal_discounted=principal_discounted,
         )
