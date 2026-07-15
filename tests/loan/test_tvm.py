@@ -111,8 +111,11 @@ def test_loan_present_value_different_discount_rates():
         datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
-    low_rate_pv = loan.present_value(InterestRate("2% annual"))  # Very low discount
-    high_rate_pv = loan.present_value(InterestRate("20% annual"))  # Very high discount
+    # Pin the valuation date: the default is loan.now() (wall-clock time), and
+    # once real time passes the last due date every flow is "in the past" and
+    # the discount rate stops mattering — the PVs collapse to the same sum.
+    low_rate_pv = loan.present_value(InterestRate("2% annual"), valuation_date=loan.disbursement_date)
+    high_rate_pv = loan.present_value(InterestRate("20% annual"), valuation_date=loan.disbursement_date)
 
     # Higher discount rate should result in lower present value
     # The difference should be significant with these rates and timeframes
