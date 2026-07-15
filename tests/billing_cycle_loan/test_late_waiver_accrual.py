@@ -78,3 +78,88 @@ def test_every_installment_late_with_waivers_matches_on_time_split(make_late_wai
         late_loan = w
 
     assert late_splits == on_time_splits
+
+
+def test_same_cycle_partials_match_single_payment(make_late_waiver_loan):
+    """Two same-cycle partials with the waiver must equal one batched payment.
+
+    A partial payment that does not finish the open installment's principal
+    must not rewind ``last_accrual_end`` to the prior due date; otherwise the
+    follow-up partial re-accrues regular interest over days already billed.
+    """
+    single = make_late_waiver_loan()
+    with Warp(single, datetime(2025, 12, 25, tzinfo=SAO_PAULO)) as w:
+        w.pay_installment(Money("188.40"))
+    single = w
+    with Warp(single, datetime(2026, 1, 25, tzinfo=SAO_PAULO)) as w:
+        s_single = w.pay_installment(Money("188.40"), waive_overdue_interest=True)
+
+    split = make_late_waiver_loan()
+    with Warp(split, datetime(2025, 12, 25, tzinfo=SAO_PAULO)) as w:
+        w.pay_installment(Money("188.40"))
+    split = w
+    with Warp(split, datetime(2026, 1, 20, tzinfo=SAO_PAULO)) as w:
+        s_a = w.pay_installment(Money("100.00"), waive_overdue_interest=True)
+    split = w
+    with Warp(split, datetime(2026, 1, 25, tzinfo=SAO_PAULO)) as w:
+        s_b = w.pay_installment(Money("88.40"), waive_overdue_interest=True)
+
+    assert s_a.interest_paid + s_b.interest_paid == s_single.interest_paid
+    assert s_a.principal_paid + s_b.principal_paid == s_single.principal_paid
+    assert s_b.remaining_balance == s_single.remaining_balance
+
+
+def test_same_cycle_partials_do_not_leave_amort_gap(make_late_waiver_loan):
+    """Split payments covering the scheduled amount must close the installment.
+
+    Without the fix the second partial overpays regular interest and shorts
+    principal, so a later on-time payment gets dragged into mora/fine on the
+    supposedly settled installment.
+    """
+    loan = make_late_waiver_loan()
+    with Warp(loan, datetime(2025, 12, 25, tzinfo=SAO_PAULO)) as w:
+        w.pay_installment(Money("188.40"))
+    loan = w
+    with Warp(loan, datetime(2026, 1, 23, tzinfo=SAO_PAULO)) as w:
+        w.pay_installment(Money("100.00"), waive_overdue_interest=True)
+    loan = w
+    with Warp(loan, datetime(2026, 1, 25, tzinfo=SAO_PAULO)) as w:
+        w.pay_installment(Money("88.40"), waive_overdue_interest=True)
+    loan = w
+
+    with Warp(loan, datetime(2026, 2, 25, tzinfo=SAO_PAULO)) as w:
+        s_third = w.pay_installment(Money("188.40"))
+
+    assert s_third.mora_paid == Money.zero()
+    assert s_third.fine_paid == Money.zero()
+    assert {a.installment_number for a in s_third.allocations} == {3}
+
+
+def test_late_partial_complement_does_not_reopen_prior_window(make_late_waiver_loan):
+    """A late partial's complement must not re-accrue back to the prior due date.
+
+    Partial A (late, waiver) already billed regular interest capped at the
+    due date.  Complement B days later must accrue only from A's date, and
+    everything past due is mora — so B carries no regular interest at all.
+    """
+    loan = make_late_waiver_loan()
+    with Warp(loan, datetime(2025, 12, 25, tzinfo=SAO_PAULO)) as w:
+        w.pay_installment(Money("188.40"))
+    loan = w
+    with Warp(loan, datetime(2026, 1, 27, tzinfo=SAO_PAULO)) as w:
+        w.pay_installment(
+            Money("100.00"),
+            waive_fines=True,
+            waive_mora=True,
+            waive_overdue_interest=True,
+        )
+    loan = w
+    with Warp(loan, datetime(2026, 1, 30, tzinfo=SAO_PAULO)) as w:
+        s_b = w.pay_installment(
+            Money("88.40"),
+            waive_fines=True,
+            waive_mora=True,
+            waive_overdue_interest=True,
+        )
+
+    assert s_b.interest_paid == Money.zero()

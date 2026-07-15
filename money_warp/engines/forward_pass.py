@@ -465,28 +465,42 @@ def _accrual_end_with_waiver_cap(
     schedule: PaymentSchedule,
     due_dates: List[date],
     tz: tzinfo,
+    covered_before: int,
+    prev_payment_datetime: datetime,
+    prev_accrual_end: datetime,
     balance_tolerance: Money = BALANCE_TOLERANCE,
 ) -> datetime:
     """Cap ``last_accrual_end`` at the latest covered due date when waiving overdue interest.
 
-    When ``waive_overdue_interest`` is active and at least one installment
-    is fully covered, the regular interest was capped at the prior due
-    date and the late window was not billed.  Returning that due date
-    keeps the next installment's interest period at its full contractual
-    length instead of being shortened by the late days.
+    When ``waive_overdue_interest`` is active and this payment finished the
+    principal of one or more installments (``new_covered > covered_before``),
+    the regular interest was capped at the prior due date and the late
+    window was not billed.  Returning that due date keeps the next
+    installment's interest period at its full contractual length instead
+    of being shortened by the late days.
 
-    Tolerance-adjustment items inherit the waiver flag, so this cap also
-    holds across the synthetic events ``apply_tolerance_adjustment`` adds
-    after a snapped payment.
+    A partial payment that does not advance the covered count must keep
+    ``default_end`` (the payment/interest date): snapping back to a due
+    date already covered by an earlier payment would make a follow-up
+    same-cycle partial re-accrue regular interest over days already
+    billed, double-charging contractual interest and shorting principal.
+
+    Tolerance-adjustment items inherit the waiver flag and share the
+    originating payment's timestamp.  Such a same-instant follow-up never
+    advances coverage on its own, so it must not move ``last_accrual_end``
+    either — otherwise it would silently undo the snap the originating
+    payment just applied.
     """
     if not payment.waive_overdue_interest:
         return default_end
     new_covered = principal_covered_count(running_principal, schedule, balance_tolerance)
-    if new_covered <= 0:
+    if new_covered > covered_before:
+        snap_cap = to_datetime(due_dates[new_covered - 1], tz)
+        if snap_cap < default_end:
+            return snap_cap
         return default_end
-    snap_cap = to_datetime(due_dates[new_covered - 1], tz)
-    if snap_cap < default_end:
-        return snap_cap
+    if payment.datetime <= prev_payment_datetime:
+        return prev_accrual_end
     return default_end
 
 
@@ -711,7 +725,6 @@ def compute_state(
             )
         )
 
-        last_payment_date = payment.datetime
         last_accrual_end = _accrual_end_with_waiver_cap(
             max(payment.datetime, interest_date),
             payment,
@@ -719,8 +732,12 @@ def compute_state(
             schedule,
             due_dates,
             tz,
+            covered,
+            last_payment_date,
+            last_accrual_end,
             balance_tolerance,
         )
+        last_payment_date = payment.datetime
 
         processed_payments.append(payment)
 
