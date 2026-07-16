@@ -111,8 +111,12 @@ def test_loan_present_value_different_discount_rates():
         datetime(2024, 1, 1, tzinfo=timezone.utc),
     )
 
-    low_rate_pv = loan.present_value(InterestRate("2% annual"))  # Very low discount
-    high_rate_pv = loan.present_value(InterestRate("20% annual"))  # Very high discount
+    # Warp to disbursement so loan.now() falls before all due dates. Without
+    # this, once wall-clock time passes the last due date every flow is "past"
+    # and the discount rate stops mattering (PVs collapse to the same sum).
+    with Warp(loan, loan.disbursement_date) as warped:
+        low_rate_pv = warped.present_value(InterestRate("2% annual"))
+        high_rate_pv = warped.present_value(InterestRate("20% annual"))
 
     # Higher discount rate should result in lower present value
     # The difference should be significant with these rates and timeframes
