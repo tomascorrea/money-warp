@@ -8,6 +8,7 @@ import pytest
 from money_warp import BillingCycleLoan, InterestRate, Money, PriceScheduler
 from money_warp.billing_cycle import MonthlyBillingCycle
 from money_warp.engines import MoraStrategy
+from money_warp.working_day import WeekendCalendar
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
 
@@ -60,6 +61,44 @@ def variable_mora_loan(billing_cycle):
         mora_interest_rate=InterestRate("12% a"),
         mora_rate_resolver=resolver,
         mora_strategy=MoraStrategy.COMPOUND,
+    )
+
+
+@pytest.fixture
+def weekend_due_loan():
+    """2-installment loan whose first due date (2025-10-11) is a Saturday.
+
+    Weekend calendar shifts the penalty due date to Monday 2025-10-13.
+    Mirrors the issue #102 production shape: PRICE schedule, 2% a.m. fine.
+    """
+    return BillingCycleLoan(
+        principal=Money("9500.00"),
+        interest_rate=InterestRate("5% a.m."),
+        billing_cycle=MonthlyBillingCycle(due_dates=[date(2025, 10, 11), date(2025, 11, 11)]),
+        start_date=datetime(2025, 9, 11, tzinfo=timezone.utc),
+        num_installments=2,
+        disbursement_date=datetime(2025, 9, 11, tzinfo=timezone.utc),
+        scheduler=PriceScheduler,
+        fine_rate=InterestRate("2% a.m."),
+        working_day_calendar=WeekendCalendar(),
+    )
+
+
+@pytest.fixture
+def weekend_due_loan_3():
+    """3-installment variant of ``weekend_due_loan`` for cascade checks."""
+    return BillingCycleLoan(
+        principal=Money("9500.00"),
+        interest_rate=InterestRate("5% a.m."),
+        billing_cycle=MonthlyBillingCycle(
+            due_dates=[date(2025, 10, 11), date(2025, 11, 11), date(2025, 12, 11)],
+        ),
+        start_date=datetime(2025, 9, 11, tzinfo=timezone.utc),
+        num_installments=3,
+        disbursement_date=datetime(2025, 9, 11, tzinfo=timezone.utc),
+        scheduler=PriceScheduler,
+        fine_rate=InterestRate("2% a.m."),
+        working_day_calendar=WeekendCalendar(),
     )
 
 

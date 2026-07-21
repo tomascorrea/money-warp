@@ -588,6 +588,10 @@ def compute_state(
         if event_dt > as_of:
             break
 
+        # Coverage from strictly earlier payments: running_principal has
+        # not yet absorbed the current event's payment, so a fine born
+        # at the first late event is never masked by that same payment.
+        settled_count = principal_covered_count(running_principal, schedule, balance_tolerance)
         fines_applied = compute_fines_at(
             event_dt,
             due_dates,
@@ -599,6 +603,7 @@ def compute_state(
             tz,
             calendar,
             balance_tolerance=balance_tolerance,
+            settled_due_dates=set(due_dates[:settled_count]),
         )
 
         if not is_payment:

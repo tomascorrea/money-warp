@@ -1,7 +1,7 @@
 """Fine computation and late-payment detection."""
 
 from datetime import date, datetime, timedelta, tzinfo
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from ..scheduler import PaymentSchedule
 from ..types.interest_rate import InterestRate
@@ -90,20 +90,43 @@ def compute_fines_at(
     tz: tzinfo,
     calendar: WorkingDayCalendar,
     balance_tolerance: Money = BALANCE_TOLERANCE,
+    settled_due_dates: Optional[Set[date]] = None,
 ) -> Dict[date, Money]:
     """Compute fines for overdue due dates as of *as_of*.
 
     A due date gets a fine when it is past the grace period AND
-    no sufficient payment was made near it (within a small window).
+    no sufficient payment was made near it (within a small window)
+    AND its installment is not already settled.
 
     When the original due date falls on a non-working day, the
     effective due date is shifted to the next working day for both
     the lateness check and the payment proximity window.
+
+    Args:
+        settled_due_dates: Due dates whose principal is already covered
+            by strictly earlier payments; must be computed **before**
+            allocating the current event.  These are exempt from new
+            fines: a settlement accepted as full coverage (e.g. under
+            ``waive_overdue_interest`` or with a discount) can leave
+            the cash near the due date below the original schedule
+            face, so the proximity-amount check alone would invent a
+            retroactive fine on an installment that owes nothing.
+            Passing coverage computed *after* the current event's
+            payment would silence the legitimate fine born at the
+            first late event.
     """
     fines = dict(existing_fines)
+    settled = settled_due_dates or set()
 
     for dd in due_dates:
         if dd in fines:
+            continue
+        # The exemption deliberately reuses the forward pass's own
+        # definition of coverage (principal_covered_count): principal
+        # only receives money after every effective obligation ahead
+        # of it in the waterfall (fine, mora, waiver-capped interest)
+        # is satisfied, so a covered installment owes nothing more.
+        if dd in settled:
             continue
         if not is_payment_late(dd, grace_period_days, as_of, tz, calendar):
             continue
