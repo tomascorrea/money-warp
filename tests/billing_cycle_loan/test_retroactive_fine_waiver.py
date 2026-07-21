@@ -112,11 +112,12 @@ def test_prepaid_installment_not_fined(weekend_due_loan):
     assert inst1.expected_fine == Money.zero()
 
 
-def test_no_cascade_into_next_installment(weekend_due_loan_3):
-    """Guardrail: installment 2 settles at face with no shortfall inherited from a retroactive fine."""
+def test_no_cascade_into_later_installments(weekend_due_loan_3):
+    """Guardrail: installments 2 and 3 settle with no shortfall/mora from a retroactive fine on #1."""
     schedule = weekend_due_loan_3.get_original_schedule()
     face1 = schedule.entries[0].payment_amount
     face2 = schedule.entries[1].payment_amount
+    face3 = schedule.entries[2].payment_amount
     shift_interest = weekend_due_loan_3.interest_rate.accrue(weekend_due_loan_3.principal, 2)
 
     with Warp(weekend_due_loan_3, datetime(2025, 10, 13, tzinfo=timezone.utc)) as warped:
@@ -137,3 +138,14 @@ def test_no_cascade_into_next_installment(weekend_due_loan_3):
     assert inst2.is_fully_paid
     assert inst2.expected_fine == Money.zero()
     assert inst2.expected_mora == Money.zero()
+    loan = warped
+
+    with Warp(loan, datetime(2025, 12, 11, tzinfo=timezone.utc)) as warped:
+        settlement3 = warped.pay_installment(face3)
+        inst3 = warped.installments[2]
+
+    assert settlement3.fine_paid == Money.zero()
+    assert settlement3.mora_paid == Money.zero()
+    assert inst3.is_fully_paid
+    assert inst3.expected_fine == Money.zero()
+    assert inst3.expected_mora == Money.zero()
