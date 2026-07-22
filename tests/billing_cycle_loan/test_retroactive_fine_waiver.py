@@ -6,9 +6,11 @@ fined by a later Warp observation just because the cash near the due date
 does not reach the face amount.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from money_warp import Money, Warp
+from money_warp.engines.fines import compute_fines_at
+from money_warp.working_day import WeekendCalendar
 
 
 def test_waived_settlement_on_penalty_due_is_fully_paid(weekend_due_loan):
@@ -110,6 +112,36 @@ def test_prepaid_installment_not_fined(weekend_due_loan):
         inst1 = warped.installments[0]
 
     assert inst1.expected_fine == Money.zero()
+
+
+def test_settled_due_dates_after_as_of_are_ignored(weekend_due_loan_3):
+    """Future dues in settled_due_dates do not exempt an earlier unpaid installment.
+
+    Prepayment can put not-yet-due dates into principal_covered_count; the
+    time-machine date (as_of) must drop those before applying the exemption,
+    otherwise the set lies about what has settled under the warped clock.
+    An unpaid past due must still be fined when only future dues are marked settled.
+    """
+    schedule = weekend_due_loan_3.get_original_schedule()
+    as_of = datetime(2025, 10, 14, tzinfo=timezone.utc)
+    future_only = {date(2025, 11, 11), date(2025, 12, 11)}
+
+    fines = compute_fines_at(
+        as_of,
+        weekend_due_loan_3.due_dates,
+        schedule,
+        weekend_due_loan_3.fine_rate,
+        weekend_due_loan_3.grace_period_days,
+        {},
+        [],
+        timezone.utc,
+        WeekendCalendar(),
+        settled_due_dates=future_only,
+    )
+
+    assert date(2025, 10, 11) in fines
+    assert date(2025, 11, 11) not in fines
+    assert date(2025, 12, 11) not in fines
 
 
 def test_no_cascade_into_later_installments(weekend_due_loan_3):

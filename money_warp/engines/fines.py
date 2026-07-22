@@ -113,10 +113,16 @@ def compute_fines_at(
             retroactive fine on an installment that owes nothing.
             Passing coverage computed *after* the current event's
             payment would silence the legitimate fine born at the
-            first late event.
+            first late event.  Due dates after *as_of* (the time-machine
+            / observation date) are ignored even if present in the set —
+            prepayment can mark future installments as principal-covered,
+            but they have not settled yet under the warped clock.
     """
     fines = dict(existing_fines)
-    settled = settled_due_dates or set()
+    as_of_date = to_date(as_of, tz)
+    # Drop dues that are still in the future relative to the observation
+    # clock; principal_covered_count may include them after anticipation.
+    settled = {dd for dd in (settled_due_dates or set()) if dd <= as_of_date}
 
     for dd in due_dates:
         if dd in fines:
