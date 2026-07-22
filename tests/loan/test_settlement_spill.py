@@ -96,21 +96,25 @@ def test_catchup_settlement_invariant(catchup_loan):
 
 
 def test_catchup_settlement_exact_totals(catchup_loan):
+    """Installment 1 was fully prepaid, so it is fine-exempt (issue #102):
+    only installments 2-4 are fined and more of the payment reaches principal."""
     with Warp(catchup_loan, datetime(2026, 5, 25, tzinfo=timezone.utc)) as w:
         settlement = w.pay_installment(Money(5000))
 
-    assert settlement.principal_paid == Money("4585.44")
+    assert settlement.principal_paid == Money("4607.03")
     assert settlement.interest_paid == Money("223.41")
     assert settlement.mora_paid == Money("104.78")
-    assert settlement.fine_paid == Money("86.38")
+    assert settlement.fine_paid == Money("64.78")
     assert settlement.remaining_balance == Money("0.00")
 
 
 def test_catchup_all_installments_covered(catchup_loan):
+    """The prepaid installment 1 owes nothing, so the catch-up touches only 2-5."""
     with Warp(catchup_loan, datetime(2026, 5, 25, tzinfo=timezone.utc)) as w:
         settlement = w.pay_installment(Money(5000))
 
-    assert len(settlement.allocations) == 5
+    assert len(settlement.allocations) == 4
+    assert [a.installment_number for a in settlement.allocations] == [2, 3, 4, 5]
     assert all(a.is_fully_covered for a in settlement.allocations)
 
 

@@ -588,6 +588,16 @@ def compute_state(
         if event_dt > as_of:
             break
 
+        # Coverage from strictly earlier payments: running_principal has
+        # not yet absorbed the current event's payment, so a fine born
+        # at the first late event is never masked by that same payment.
+        # Only dues on or before the event's business date count as
+        # settled — anticipation can cover future installments in
+        # principal_covered_count, but those dates have not occurred yet
+        # under the time-machine clock.
+        settled_count = principal_covered_count(running_principal, schedule, balance_tolerance)
+        event_date = to_date(event_dt, tz)
+        settled_due_dates = {dd for dd in due_dates[:settled_count] if dd <= event_date}
         fines_applied = compute_fines_at(
             event_dt,
             due_dates,
@@ -599,6 +609,7 @@ def compute_state(
             tz,
             calendar,
             balance_tolerance=balance_tolerance,
+            settled_due_dates=settled_due_dates,
         )
 
         if not is_payment:
