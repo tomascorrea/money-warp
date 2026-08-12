@@ -498,3 +498,13 @@ This aligns the coverage flag with the tolerance-adjustment mechanism: a residua
 **Fix:** Added per-category `*_discounted` fields to `Allocation`, `Installment`, and the internal `_InstallmentExpectation`, all defaulting to `Money.zero()`. `_WaiverResult` now exposes all four loan-level discount totals; `allocate_payment_into_installments` distributes them across the touched installments in the same fine→mora→interest→principal priority via `_split_component`. `Installment.balance` subtracts `total_discounted` alongside `total_paid`, restoring the invariant `Installment.is_fully_paid iff expected_payment − (paid + discounted) ≤ balance_tolerance`. `_finalize_settlements_coverage` continues to align `Allocation.is_fully_covered` with the post-payment view in one place, so the flag automatically follows.
 
 **Lesson:** When a loan-level adjustment shrinks downstream caps, every consumer that walks per-installment obligations must also receive the breakdown — otherwise the per-installment view silently disagrees with the loan-level view. Recording the per-category split on the same data structure that already carries the cash allocation keeps the two views in lockstep.
+
+### False fine/mora when fully_paid but principal_covered_count lags (fixed 2026-08-12)
+
+**Symptom:** After early skewed payments with `waive_overdue_interest`, installments showed `is_fully_paid=True` while `principal_covered_count` lagged behind. Warping past the next due date invented a fine (and mora on the bag-settled installment), reopening it.
+
+**Root cause:** Fine exemption (#103) and mora targeting used only `principal_covered_count` (ending-balance milestones). `is_fully_paid` is bag-based. Interest-heavy allocation + shortfall absorb can settle the contractual face without advancing the principal milestone, so proximity missed the early cash and penalties were invented.
+
+**Fix:** `_bag_settled_due_dates` detects dues whose paid P+I (+discounts) already cover `entry.payment_amount`. That set is unioned into `settled_due_dates` for fines, and `_build_expectations` skips new mora on those dues. `principal_covered_count` itself is unchanged.
+
+**Lesson:** Do not treat principal-milestone coverage as a proxy for "installment settled" when deciding whether to invent post-due penalties. Bag settlement and principal coverage can diverge under early/skewed payments.
