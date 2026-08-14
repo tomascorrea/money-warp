@@ -103,10 +103,13 @@ def compute_fines_at(
     the lateness check and the payment proximity window.
 
     Args:
-        settled_due_dates: Due dates whose principal is already covered
-            by strictly earlier payments; must be computed **before**
-            allocating the current event.  These are exempt from new
-            fines: a settlement accepted as full coverage (e.g. under
+        settled_due_dates: Due dates already settled by strictly earlier
+            payments and therefore exempt from new fines.  Callers pass
+            the union of (1) dues covered by ``principal_covered_count``
+            and (2) dues whose contractual P+I bag is already paid
+            (``_bag_settled_due_dates``).  Coverage must be computed
+            **before** allocating the current event: a settlement
+            accepted as full coverage (e.g. under
             ``waive_overdue_interest`` or with a discount) can leave
             the cash near the due date below the original schedule
             face, so the proximity-amount check alone would invent a

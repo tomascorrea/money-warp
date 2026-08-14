@@ -71,6 +71,44 @@ def principal_covered_count(
     return covered
 
 
+def _bag_settled_due_dates(
+    allocs_by_number: Dict[int, List[Allocation]],
+    schedule: PaymentSchedule,
+    as_of_date: date,
+    balance_tolerance: Money = BALANCE_TOLERANCE,
+) -> Set[date]:
+    """Due dates whose contractual P+I bag is already covered by prior allocations.
+
+    Extends fine exemption beyond :func:`principal_covered_count`: skewed
+    early payments can leave an installment bag-settled (paid face) while
+    remaining principal stays above that installment's ending-balance
+    milestone. Those dues must still be fine-exempt (and mora-exempt in
+    :func:`_build_expectations`) once the original schedule face has been
+    absorbed.
+
+    Only dues on or before *as_of_date* are returned. Mora and fine are
+    ignored in the bag check — this answers whether the contractual
+    installment was settled before a new penalty would be invented.
+    """
+    settled: Set[date] = set()
+    for i, entry in enumerate(schedule):
+        if entry.due_date > as_of_date:
+            continue
+        allocs = allocs_by_number.get(i + 1, [])
+        paid = Money.zero()
+        for alloc in allocs:
+            paid = (
+                paid
+                + alloc.principal_allocated
+                + alloc.interest_allocated
+                + alloc.principal_discounted
+                + alloc.interest_discounted
+            )
+        if paid + balance_tolerance >= entry.payment_amount:
+            settled.add(entry.due_date)
+    return settled
+
+
 def fully_covered_count(
     installments: List[Installment],
     balance_tolerance: Money = BALANCE_TOLERANCE,
@@ -208,6 +246,25 @@ def _build_expectations(
     to the interest calculator.
     """
     covered = principal_covered_count(principal_balance, schedule, balance_tolerance)
+    as_of = to_date(as_of_date, tz)
+    bag_settled = _bag_settled_due_dates(
+        allocs_by_number,
+        schedule,
+        as_of,
+        balance_tolerance,
+    )
+
+    # Mora targets the first installment that is both principal-uncovered
+    # and not bag-settled. When early payments settle the contractual P+I
+    # bag while pcc lags (#104), accruing mora on that settled installment
+    # would reopen it the same way a false fine does.
+    mora_target: Optional[int] = None
+    for i, entry in enumerate(schedule):
+        if i < covered or entry.due_date in bag_settled:
+            continue
+        if entry.due_date < as_of:
+            mora_target = i
+        break
 
     result: List[_InstallmentExpectation] = []
     for i, entry in enumerate(schedule):
@@ -225,9 +282,9 @@ def _build_expectations(
 
         expected_fine = prior_fine if waive_fines else fines_applied.get(entry.due_date, Money.zero())
 
-        if waive_mora or i < covered:
+        if waive_mora or i < covered or entry.due_date in bag_settled:
             expected_mora = prior_mora
-        elif i == covered and entry.due_date < to_date(as_of_date, tz):
+        elif mora_target is not None and i == mora_target:
             within_grace = not is_payment_late(entry.due_date, grace_period_days, as_of_date, tz, calendar)
             if within_grace:
                 accrued_mora = Money.zero()
@@ -235,7 +292,7 @@ def _build_expectations(
                 mora_override = mora_rate_for_event(entry.due_date) if mora_rate_for_event else None
                 penalty_due = effective_penalty_due_date(entry.due_date, calendar)
                 if last_payment_date is not None:
-                    total_days = (to_date(as_of_date, tz) - to_date(last_payment_date, tz)).days
+                    total_days = (as_of - to_date(last_payment_date, tz)).days
                     _, accrued_mora = interest_calc.compute_accrued_interest(
                         total_days,
                         principal_balance,
@@ -245,7 +302,7 @@ def _build_expectations(
                         mora_rate_override=mora_override,
                     )
                 else:
-                    days_overdue = max(0, (to_date(as_of_date, tz) - penalty_due).days)
+                    days_overdue = max(0, (as_of - penalty_due).days)
                     _, accrued_mora = interest_calc.compute_accrued_interest(
                         days_overdue,
                         principal_balance,
@@ -595,9 +652,19 @@ def compute_state(
         # settled — anticipation can cover future installments in
         # principal_covered_count, but those dates have not occurred yet
         # under the time-machine clock.
+        #
+        # Also include dues whose contractual P+I bag is already covered
+        # by prior allocations (#104): fully_paid can lead pcc when
+        # earlier installments absorbed extra interest / less principal.
         settled_count = principal_covered_count(running_principal, schedule, balance_tolerance)
         event_date = to_date(event_dt, tz)
         settled_due_dates = {dd for dd in due_dates[:settled_count] if dd <= event_date}
+        settled_due_dates |= _bag_settled_due_dates(
+            allocs_by_number,
+            schedule,
+            event_date,
+            balance_tolerance,
+        )
         fines_applied = compute_fines_at(
             event_dt,
             due_dates,
