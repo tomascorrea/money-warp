@@ -26,7 +26,7 @@ def test_late_payment_produces_separate_mora_interest_item():
 
 
 def test_mora_interest_is_simple_on_the_installment_amount():
-    """Mora is payment amount × daily mora rate × days late, not compound interest on principal."""
+    """Mora is payment amount x daily mora rate x days late, not compound interest on principal."""
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
