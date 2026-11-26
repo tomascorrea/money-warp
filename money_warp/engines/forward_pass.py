@@ -259,10 +259,10 @@ def _sum_outstanding_mora(
     return Money(owed)
 
 
-def outstanding_mora_at(
+def _outstanding_mora(
     settlements: List[Settlement],
     principal_balance: Money,
-    as_of: datetime,
+    now: datetime,
     schedule: PaymentSchedule,
     interest_calc: InterestCalculator,
     tz: tzinfo,
@@ -272,11 +272,11 @@ def outstanding_mora_at(
     mora_rate_for_event: MoraRateCallback = None,
     balance_tolerance: Money = BALANCE_TOLERANCE,
 ) -> Money:
-    """Loan-level unpaid mora at *as_of*: the sum of each open installment.
+    """Loan-level unpaid mora at the loan's current instant.
 
-    Settled installments (principal coverage or a paid contractual bag)
-    contribute only mora already allocated to them, so the outstanding
-    piece is zero. An installment that is not yet late contributes zero.
+    Callers pass ``loan.now()``. To read another moment, warp the loan
+    first. Settled installments contribute only mora already allocated
+    to them. An installment that is not yet late contributes zero.
     """
     allocs_by_number: Dict[int, List[Allocation]] = {}
     for settlement in settlements:
@@ -286,7 +286,7 @@ def outstanding_mora_at(
     expectations = _build_expectations(
         allocs_by_number,
         principal_balance,
-        as_of,
+        now,
         schedule,
         {},
         interest_calc,

@@ -257,7 +257,7 @@ Mora is charged on the unpaid commitment, the same way the fine is. For each sch
 
 `BillingCycleLoan` resolves the rate for that installment's due date through the existing callback. `Loan` uses `mora_interest_rate`.
 
-`mora_interest_balance`, each installment's `expected_mora`, and the mora cap on a payment all use that sum. `outstanding_mora_at` is the shared helper.
+`mora_interest_balance`, each installment's `expected_mora`, and the mora cap on a payment all use that sum. `BaseLoan._outstanding_mora` reads it at `self.now()`. Warp to another moment instead of passing a date.
 
 Regular interest is unchanged: compound on outstanding principal up to the due date. While a payment is inside the grace period, `compute_accrued_interest` still returns the post-due principal slice so the forward pass can fold those days back into regular interest.
 

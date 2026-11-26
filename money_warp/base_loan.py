@@ -20,9 +20,9 @@ from .engines import (
     apply_tolerance_adjustment,
     build_installments,
     is_payment_late,
-    outstanding_mora_at,
     principal_covered_count,
 )
+from .engines.forward_pass import _outstanding_mora as _engine_outstanding_mora
 from .models import Installment, Settlement
 from .scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry
 from .time_context import TimeContext
@@ -249,6 +249,26 @@ class BaseLoan(ABC):
         """Outstanding principal (derived from CashFlow)."""
         return self._compute_state().principal_balance
 
+    def _outstanding_mora(self, state: LoanState) -> Money:
+        """Unpaid mora at ``self.now()``.
+
+        Warp to the moment you want to observe, then read this. The
+        helper does not accept a date of its own.
+        """
+        return _engine_outstanding_mora(
+            state.settlements,
+            state.principal_balance,
+            self.now(),
+            self.get_original_schedule(),
+            self._interest,
+            self._time_ctx.tz,
+            state.last_accrual_end,
+            calendar=self.working_day_calendar,
+            grace_period_days=self.grace_period_days,
+            mora_rate_for_event=self._resolve_mora_rate_for_due,
+            balance_tolerance=self.balance_tolerance,
+        )
+
     def _accrued_interest_components(self) -> Tuple[Money, Money, Money]:
         """Return ``(regular, mora, overdue)``.
 
@@ -264,19 +284,7 @@ class BaseLoan(ABC):
         """
         state = self._compute_state()
         schedule = self.get_original_schedule()
-        mora = outstanding_mora_at(
-            state.settlements,
-            state.principal_balance,
-            self.now(),
-            schedule,
-            self._interest,
-            self._time_ctx.tz,
-            state.last_accrual_end,
-            calendar=self.working_day_calendar,
-            grace_period_days=self.grace_period_days,
-            mora_rate_for_event=self._resolve_mora_rate_for_due,
-            balance_tolerance=self.balance_tolerance,
-        )
+        mora = self._outstanding_mora(state)
         days = (self._time_ctx.to_date(self.now()) - self._time_ctx.to_date(state.last_accrual_end)).days
 
         if state.principal_balance.is_positive() and days > 0:
@@ -391,19 +399,7 @@ class BaseLoan(ABC):
         else:
             regular = Money.zero()
 
-        mora = outstanding_mora_at(
-            state.settlements,
-            state.principal_balance,
-            self.now(),
-            schedule,
-            self._interest,
-            self._time_ctx.tz,
-            state.last_accrual_end,
-            calendar=self.working_day_calendar,
-            grace_period_days=self.grace_period_days,
-            mora_rate_for_event=self._resolve_mora_rate_for_due,
-            balance_tolerance=self.balance_tolerance,
-        )
+        mora = self._outstanding_mora(state)
 
         total_fines = (
             Money(sum(f.raw_amount for f in state.fines_applied.values())) if state.fines_applied else Money.zero()
