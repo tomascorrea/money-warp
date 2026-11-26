@@ -232,7 +232,7 @@ The SQL side of `balance_at` uses nested CTEs (`nesting=True`) inside a single s
 | `daily_rates` | Converts rates of any period to daily via `_daily_rate_expr`. Handles all `CompoundingFrequency` values for both JSON and string column representations. NULL mora rate coalesces to 0. |
 | `time_split` | Computes `total_days` and finds `next_due` date after last payment via `mw_json_array_values(due_dates)`. |
 | `day_split` | Splits total days into `regular_days` and `mora_days` at the next-due boundary. |
-| `accrued` | `regular_interest` (compound on principal) and `mora_interest` (COMPOUND or SIMPLE branching via `mora_strategy`). |
+| `accrued` | `regular_interest` (compound on principal) and `mora_interest` (still COMPOUND or SIMPLE on outstanding principal via `mora_strategy`, not the per-installment simple charge). |
 | `late_fines` | Counts late installments (`past_grace_count - settlement_count`), estimates PMT, applies fine rate. |
 | Final SELECT | `principal_balance + regular_interest + mora_interest + fines`. |
 
@@ -281,6 +281,7 @@ Private helpers in `bridge.py` convert stored rates to daily rates in SQL, mirro
 - **SQL vs Python precision:** The SQL CTE expression uses float64 arithmetic while Python uses `Decimal`. For exact comparisons in tests, use approximate matching (e.g., `pytest.approx`) when comparing SQL results against Python `balance_at`.
 - **JSON NULL vs SQL NULL:** SQLAlchemy's `JSON` type stores Python `None` as the string `'null'` rather than SQL `NULL`. For JSON representation, the NULL guard checks `json_extract(interest_rate, '$.rate') IS NULL` which correctly handles both cases since `json_extract('null', '$.rate')` returns NULL.
 - **Mora rate NULL handling:** When `mora_interest_rate` is NULL, the helper functions cascade NULL through `pow()`. The `daily_rates` CTE coalesces the mora daily rate to 0.0 to prevent this from nullifying the entire expression.
+- **SQL mora is not the installment charge:** Python mora is simple interest on each overdue installment's `payment_amount` for that installment's own days late. The SQL CTEs only see outstanding principal, the mora rate, and the next due date, so `mora_interest_balance_at` and any `balance_at` that includes it still use the older principal-based formula. They diverge once an installment is late and unpaid. `test_mora_interest_balance_at_sql_diverges_from_installment_charge` locks that gap.
 - **Data-driven period mapping:** The SQL `CASE` branches in `_periods_per_year_expr` are generated from the `CompoundingFrequency` enum, `_FREQUENCY_TOKEN`, and `_ABBREV_MAP`. Each frequency maps to a list of recognized tokens (long and abbreviated). Adding a new `CompoundingFrequency` member and its tokens automatically extends both JSON and string SQL support.
 - **String representation year_size limitation:** The string format (e.g., `"5.250% annual"`) does not embed `year_size`. The SQL helpers use the `rate_year_size` default from the column's `InterestRateType` definition. If different rates on the same column need different year sizes, use JSON representation instead.
 - **Continuous compounding in string format:** `CompoundingFrequency.CONTINUOUS` is not in `_FREQUENCY_TOKEN` and cannot be serialized as a string. Use JSON representation for continuous rates.
