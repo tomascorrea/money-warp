@@ -22,6 +22,7 @@ from .engines import (
     is_payment_late,
     principal_covered_count,
 )
+from .engines.forward_pass import _outstanding_mora as _engine_outstanding_mora
 from .models import Installment, Settlement
 from .scheduler import BaseScheduler, PaymentSchedule, PaymentScheduleEntry
 from .time_context import TimeContext
@@ -248,30 +249,54 @@ class BaseLoan(ABC):
         """Outstanding principal (derived from CashFlow)."""
         return self._compute_state().principal_balance
 
-    def _accrued_interest_components(self) -> Tuple[Money, Money, Money]:
-        """Return ``(regular, mora, overdue)`` accrued interest since last payment.
+    def _outstanding_mora(self, state: LoanState) -> Money:
+        """Unpaid mora at ``self.now()``.
 
-        Uses ``_resolve_mora_rate_for_due`` to obtain the per-cycle
-        mora rate override (``None`` for ``Loan``, resolved rate for
-        ``BillingCycleLoan``).
+        Warp to the moment you want to observe, then read this. The
+        helper does not accept a date of its own.
+        """
+        return _engine_outstanding_mora(
+            state.settlements,
+            state.principal_balance,
+            self.now(),
+            self.get_original_schedule(),
+            self._interest,
+            self._time_ctx.tz,
+            state.last_accrual_end,
+            calendar=self.working_day_calendar,
+            grace_period_days=self.grace_period_days,
+            mora_rate_for_event=self._resolve_mora_rate_for_due,
+            balance_tolerance=self.balance_tolerance,
+        )
+
+    def _accrued_interest_components(self) -> Tuple[Money, Money, Money]:
+        """Return ``(regular, mora, overdue)``.
+
+        ``regular`` is compound interest on outstanding principal since
+        the last accrual. ``mora`` is the sum of simple charges on each
+        open installment (payment amount times that installment's own
+        days late), minus mora already allocated. ``_resolve_mora_rate_for_due``
+        supplies a per-cycle rate (``None`` on ``Loan``).
 
         The *overdue* component is the portion of *regular* that accrued
         past the contract due date.  It is a subset of *regular*, not an
         additional charge.
         """
         state = self._compute_state()
+        schedule = self.get_original_schedule()
+        mora = self._outstanding_mora(state)
         days = (self._time_ctx.to_date(self.now()) - self._time_ctx.to_date(state.last_accrual_end)).days
 
         if state.principal_balance.is_positive() and days > 0:
             covered = principal_covered_count(
                 state.principal_balance,
-                self.get_original_schedule(),
+                schedule,
                 self.balance_tolerance,
             )
             next_due = self.due_dates[covered] if covered < len(self.due_dates) else None
             penalty_next_due = effective_penalty_due_date(next_due, self.working_day_calendar) if next_due else None
             mora_rate = self._resolve_mora_rate_for_due(next_due)
-            regular, mora = self._interest.compute_accrued_interest(
+            regular, post_due_on_principal = self._interest.compute_accrued_interest(
                 days,
                 state.principal_balance,
                 self._time_ctx.tz,
@@ -283,8 +308,7 @@ class BaseLoan(ABC):
             if next_due and not is_payment_late(
                 next_due, self.grace_period_days, self.now(), self._time_ctx.tz, self.working_day_calendar
             ):
-                regular = regular + mora
-                mora = Money.zero()
+                regular = regular + post_due_on_principal
 
             overdue = Money.zero()
             if next_due:
@@ -297,7 +321,7 @@ class BaseLoan(ABC):
 
             return regular, mora, overdue
 
-        return Money.zero(), Money.zero(), Money.zero()
+        return Money.zero(), mora, Money.zero()
 
     @property
     def interest_balance(self) -> Money:
@@ -306,7 +330,7 @@ class BaseLoan(ABC):
 
     @property
     def mora_interest_balance(self) -> Money:
-        """Mora accrued interest since last payment."""
+        """Unpaid mora: the sum of each open installment's simple charge."""
         return self._accrued_interest_components()[1]
 
     @property
@@ -360,7 +384,7 @@ class BaseLoan(ABC):
         if days > 0:
             penalty_next_due = effective_penalty_due_date(next_due, self.working_day_calendar)
             mora_rate = self._resolve_mora_rate_for_due(next_due)
-            regular, mora = self._interest.compute_accrued_interest(
+            regular, post_due_on_principal = self._interest.compute_accrued_interest(
                 days,
                 state.principal_balance,
                 self._time_ctx.tz,
@@ -368,8 +392,14 @@ class BaseLoan(ABC):
                 state.last_accrual_end,
                 mora_rate_override=mora_rate,
             )
+            if not is_payment_late(
+                next_due, self.grace_period_days, self.now(), self._time_ctx.tz, self.working_day_calendar
+            ):
+                regular = regular + post_due_on_principal
         else:
-            regular, mora = Money.zero(), Money.zero()
+            regular = Money.zero()
+
+        mora = self._outstanding_mora(state)
 
         total_fines = (
             Money(sum(f.raw_amount for f in state.fines_applied.values())) if state.fines_applied else Money.zero()

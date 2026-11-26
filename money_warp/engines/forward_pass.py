@@ -212,6 +212,156 @@ def _interest_cap_for_payment(
 # ------------------------------------------------------------------
 
 
+def _installment_mora(
+    interest_calc: InterestCalculator,
+    payment_amount: Money,
+    due_date: date,
+    as_of: datetime,
+    tz: tzinfo,
+    calendar: WorkingDayCalendar,
+    grace_period_days: int,
+    mora_rate_override: Optional[InterestRate],
+) -> Money:
+    """Simple mora on one installment, or zero when that installment is not late.
+
+    Days run from the working-day-adjusted due date to *as_of*. Inside
+    the grace period the charge is zero; once past it, the grace days
+    are included. The base is *payment_amount*, not outstanding principal.
+    """
+    if not is_payment_late(due_date, grace_period_days, as_of, tz, calendar):
+        return Money.zero()
+    penalty_due = effective_penalty_due_date(due_date, calendar)
+    days_late = (to_date(as_of, tz) - penalty_due).days
+    return interest_calc.simple_mora(payment_amount, days_late, mora_rate_override)
+
+
+def _sum_outstanding_mora(
+    expectations: List[_InstallmentExpectation],
+    already_waived: Optional[Money] = None,
+) -> Money:
+    """Mora still owed on the loan.
+
+    The gross charge is the sum of each installment's mora. Money already
+    allocated or discounted counts even when absorption recorded it on a
+    different installment than the one that accrued it. ``already_waived``
+    is mora forgiven by earlier payments; a waiver drops that amount and
+    leaves only mora that accrues afterward.
+    """
+    waived = Money.zero() if already_waived is None else already_waived
+    gross = Money.zero().raw_amount
+    settled = waived.raw_amount
+    for exp in expectations:
+        gross += exp.expected_mora.raw_amount
+        settled += exp.mora_paid.raw_amount + exp.mora_discounted.raw_amount
+    owed = gross - settled
+    if owed <= 0:
+        return Money.zero()
+    return Money(owed)
+
+
+def _outstanding_mora(
+    settlements: List[Settlement],
+    principal_balance: Money,
+    now: datetime,
+    schedule: PaymentSchedule,
+    interest_calc: InterestCalculator,
+    tz: tzinfo,
+    last_accrual_end: datetime,
+    calendar: WorkingDayCalendar = _DEFAULT_CALENDAR,
+    grace_period_days: int = 0,
+    mora_rate_for_event: MoraRateCallback = None,
+    balance_tolerance: Money = BALANCE_TOLERANCE,
+) -> Money:
+    """Loan-level unpaid mora at the loan's current instant.
+
+    Callers pass ``loan.now()``. To read another moment, warp the loan
+    first. Settled installments contribute only mora already allocated
+    to them. An installment that is not yet late contributes zero.
+    """
+    allocs_by_number: Dict[int, List[Allocation]] = {}
+    for settlement in settlements:
+        for alloc in settlement.allocations:
+            allocs_by_number.setdefault(alloc.installment_number, []).append(alloc)
+
+    expectations = _build_expectations(
+        allocs_by_number,
+        principal_balance,
+        now,
+        schedule,
+        {},
+        interest_calc,
+        tz,
+        last_payment_date=last_accrual_end,
+        calendar=calendar,
+        grace_period_days=grace_period_days,
+        mora_rate_for_event=mora_rate_for_event,
+        balance_tolerance=balance_tolerance,
+    )
+    waived = Money(sum(settlement.mora_waived.raw_amount for settlement in settlements))
+    return _sum_outstanding_mora(expectations, waived)
+
+
+def _payment_expectations(
+    allocs_by_number: Dict[int, List[Allocation]],
+    principal_balance: Money,
+    as_of_date: datetime,
+    schedule: PaymentSchedule,
+    fines_applied: Dict[date, Money],
+    interest_calc: InterestCalculator,
+    tz: tzinfo,
+    last_payment_date: Optional[datetime],
+    calendar: WorkingDayCalendar,
+    grace_period_days: int,
+    waive_fines: bool,
+    waive_mora: bool,
+    mora_rate_for_event: MoraRateCallback,
+    balance_tolerance: Money,
+    already_waived: Optional[Money] = None,
+) -> Tuple[List[_InstallmentExpectation], Money]:
+    """Expectations for allocation, plus the mora still owed before a waiver.
+
+    The owed mora is measured with waivers off so ``waive_mora`` can
+    record the forgiven amount. The expectations used for allocation
+    honor the waiver and cap that installment's mora at what was already paid.
+    """
+    gross = _build_expectations(
+        allocs_by_number,
+        principal_balance,
+        as_of_date,
+        schedule,
+        fines_applied,
+        interest_calc,
+        tz,
+        last_payment_date=last_payment_date,
+        calendar=calendar,
+        grace_period_days=grace_period_days,
+        waive_fines=waive_fines,
+        waive_mora=False,
+        mora_rate_for_event=mora_rate_for_event,
+        balance_tolerance=balance_tolerance,
+    )
+    mora = _sum_outstanding_mora(gross, already_waived)
+    if not waive_mora:
+        return gross, mora
+    waived = _build_expectations(
+        allocs_by_number,
+        principal_balance,
+        as_of_date,
+        schedule,
+        fines_applied,
+        interest_calc,
+        tz,
+        last_payment_date=last_payment_date,
+        calendar=calendar,
+        grace_period_days=grace_period_days,
+        waive_fines=waive_fines,
+        waive_mora=True,
+        mora_rate_for_event=mora_rate_for_event,
+        balance_tolerance=balance_tolerance,
+    )
+    return waived, mora
+
+
 def _build_expectations(
     allocs_by_number: Dict[int, List[Allocation]],
     principal_balance: Money,
@@ -254,18 +404,6 @@ def _build_expectations(
         balance_tolerance,
     )
 
-    # Mora targets the first installment that is both principal-uncovered
-    # and not bag-settled. When early payments settle the contractual P+I
-    # bag while pcc lags (#104), accruing mora on that settled installment
-    # would reopen it the same way a false fine does.
-    mora_target: Optional[int] = None
-    for i, entry in enumerate(schedule):
-        if i < covered or entry.due_date in bag_settled:
-            continue
-        if entry.due_date < as_of:
-            mora_target = i
-        break
-
     result: List[_InstallmentExpectation] = []
     for i, entry in enumerate(schedule):
         installment_num = i + 1
@@ -284,36 +422,19 @@ def _build_expectations(
 
         if waive_mora or i < covered or entry.due_date in bag_settled:
             expected_mora = prior_mora
-        elif mora_target is not None and i == mora_target:
-            within_grace = not is_payment_late(entry.due_date, grace_period_days, as_of_date, tz, calendar)
-            if within_grace:
-                accrued_mora = Money.zero()
-            else:
-                mora_override = mora_rate_for_event(entry.due_date) if mora_rate_for_event else None
-                penalty_due = effective_penalty_due_date(entry.due_date, calendar)
-                if last_payment_date is not None:
-                    total_days = (as_of - to_date(last_payment_date, tz)).days
-                    _, accrued_mora = interest_calc.compute_accrued_interest(
-                        total_days,
-                        principal_balance,
-                        tz,
-                        penalty_due,
-                        last_payment_date,
-                        mora_rate_override=mora_override,
-                    )
-                else:
-                    days_overdue = max(0, (as_of - penalty_due).days)
-                    _, accrued_mora = interest_calc.compute_accrued_interest(
-                        days_overdue,
-                        principal_balance,
-                        tz,
-                        penalty_due,
-                        to_datetime(penalty_due, tz),
-                        mora_rate_override=mora_override,
-                    )
-            expected_mora = prior_mora + accrued_mora
         else:
-            expected_mora = Money.zero()
+            mora_override = mora_rate_for_event(entry.due_date) if mora_rate_for_event else None
+            gross_mora = _installment_mora(
+                interest_calc,
+                entry.payment_amount,
+                entry.due_date,
+                as_of_date,
+                tz,
+                calendar,
+                grace_period_days,
+                mora_override,
+            )
+            expected_mora = gross_mora if gross_mora.is_positive() else prior_mora
 
         result.append(
             _InstallmentExpectation(
@@ -691,7 +812,7 @@ def compute_state(
         mora_override = mora_rate_for_event(next_due) if mora_rate_for_event else None
 
         penalty_next_due = effective_penalty_due_date(next_due, calendar) if next_due else None
-        regular, mora = interest_calc.compute_accrued_interest(
+        regular, post_due_on_principal = interest_calc.compute_accrued_interest(
             days,
             running_principal,
             tz,
@@ -701,8 +822,7 @@ def compute_state(
         )
 
         if next_due and not is_payment_late(next_due, grace_period_days, payment.datetime, tz, calendar):
-            regular = regular + mora
-            mora = Money.zero()
+            regular = regular + post_due_on_principal
 
         overdue_interest_waived = Money.zero()
         if payment.waive_overdue_interest:
@@ -720,7 +840,8 @@ def compute_state(
         if payment.waive_mora or payment.waive_overdue_interest or has_discount:
             waiver_targets.add(covered)
 
-        expectations = _build_expectations(
+        already_waived = Money(sum(s.mora_waived.raw_amount for s in settlements))
+        expectations, mora = _payment_expectations(
             allocs_by_number,
             running_principal,
             payment.datetime,
@@ -728,13 +849,14 @@ def compute_state(
             fines_applied,
             interest_calc,
             tz,
-            last_payment_date=last_accrual_end,
-            calendar=calendar,
-            grace_period_days=grace_period_days,
-            waive_fines=payment.waive_fines,
-            waive_mora=payment.waive_mora,
-            mora_rate_for_event=mora_rate_for_event,
-            balance_tolerance=balance_tolerance,
+            last_accrual_end,
+            calendar,
+            grace_period_days,
+            payment.waive_fines,
+            payment.waive_mora,
+            mora_rate_for_event,
+            balance_tolerance,
+            already_waived,
         )
 
         interest_cap = _interest_cap_for_payment(

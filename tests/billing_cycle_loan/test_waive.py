@@ -26,7 +26,7 @@ def test_waive_mora_zeroes_mora_allocation(simple_loan):
         waive_mora=True,
     )
     assert s.mora_paid == Money.zero()
-    assert s.mora_waived == Money("18.93")
+    assert s.mora_waived == Money("6.35")
 
 
 def test_waive_both_fines_and_mora(simple_loan):

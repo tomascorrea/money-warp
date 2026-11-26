@@ -52,9 +52,9 @@ def test_discount_absorbs_fines_late_payment(simple_loan):
     )
 
     assert s.fine_paid == Money("0.00")
-    assert s.mora_paid == Money("18.93")
+    assert s.mora_paid == Money("6.35")
     assert s.interest_paid == Money("39.38")
-    assert s.principal_paid == Money("964.27")
+    assert s.principal_paid == Money("976.85")
 
 
 def test_pay_installment_forwards_discount(simple_loan):

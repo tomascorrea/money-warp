@@ -11,9 +11,9 @@ def test_late_payment_incurs_mora_and_fine(simple_loan):
         datetime(2025, 3, 4, tzinfo=timezone.utc),
     )
     assert s.fine_paid == Money("20.45")
-    assert s.mora_paid == Money("18.93")
+    assert s.mora_paid == Money("6.35")
     assert s.interest_paid == Money("39.38")
-    assert s.principal_paid == Money("943.82")
+    assert s.principal_paid == Money("956.40")
 
 
 def test_late_payment_remaining_balance(simple_loan):
@@ -21,7 +21,7 @@ def test_late_payment_remaining_balance(simple_loan):
         Money("1022.58"),
         datetime(2025, 3, 4, tzinfo=timezone.utc),
     )
-    assert s.remaining_balance == Money("2056.18")
+    assert s.remaining_balance == Money("2043.60")
 
 
 def test_late_payment_allocation_not_fully_covered(simple_loan):

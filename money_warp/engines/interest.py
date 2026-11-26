@@ -6,6 +6,7 @@ allocation helpers are in sibling submodules of this package.
 """
 
 from datetime import date, datetime, tzinfo
+from decimal import Decimal
 from enum import Enum
 from typing import Callable, Optional, Tuple
 
@@ -15,10 +16,17 @@ from ..tz import to_date
 
 
 class MoraStrategy(Enum):
-    """Strategy for computing mora (late) interest.
+    """Historical base for the grace-period principal slice.
 
-    SIMPLE: mora rate is applied to the outstanding principal only.
-    COMPOUND: mora rate is applied to principal + accrued regular interest.
+    The mora charge itself does not use this value. Mora is simple
+    interest on each overdue installment's payment amount. The enum
+    remains on the loan so persisted rows still load.
+
+    It still selects the base of the post-due principal accrual that
+    :meth:`InterestCalculator.compute_accrued_interest` returns for
+    grace-period reclassification. SIMPLE uses outstanding principal.
+    COMPOUND uses principal plus regular interest accrued up to the
+    due date.
     """
 
     SIMPLE = "simple"
@@ -42,6 +50,25 @@ class InterestCalculator:
         self.mora_interest_rate = mora_interest_rate
         self.mora_strategy = mora_strategy
 
+    def simple_mora(
+        self,
+        amount: Money,
+        days: int,
+        mora_rate_override: Optional[InterestRate] = None,
+    ) -> Money:
+        """Simple mora on a fixed amount: ``amount * daily_rate * days``.
+
+        ``days`` is the installment's own lateness. The rate is
+        ``mora_rate_override`` when given, otherwise
+        ``self.mora_interest_rate``. ``MoraStrategy`` does not change
+        the result. Zero days or a zero amount yields zero.
+        """
+        if days <= 0 or amount.raw_amount == 0:
+            return Money.zero()
+        rate = mora_rate_override or self.mora_interest_rate
+        daily = rate.to_daily().as_decimal()
+        return Money(amount.raw_amount * daily * Decimal(days))
+
     def compute_accrued_interest(
         self,
         days: int,
@@ -51,16 +78,25 @@ class InterestCalculator:
         last_payment_date: Optional[datetime] = None,
         mora_rate_override: Optional[InterestRate] = None,
     ) -> Tuple[Money, Money]:
-        """Compute accrued interest split into regular and mora components.
+        """Accrue regular interest on outstanding principal.
 
-        Returns (regular_accrued, mora_accrued). All interest is regular when
-        due_date is not provided or the payment is not late.
+        Returns ``(regular, post_due_on_principal)``. ``regular`` is
+        compound interest at ``interest_rate`` up to ``due_date``.
+        ``post_due_on_principal`` is the slice after that date, still
+        compounded on the principal balance (``MoraStrategy`` chooses
+        whether regular interest accrued up to the due date joins the
+        base). Callers add that slice back into regular interest only
+        while the payment is inside the grace period. It is not the
+        mora charge — mora is :meth:`simple_mora` on each installment.
+
+        All interest is regular when ``due_date`` or
+        ``last_payment_date`` is missing.
 
         Args:
             tz: Business timezone for date extraction from datetimes.
             mora_rate_override: When provided, used instead of
-                ``self.mora_interest_rate`` for this single computation.
-                Existing callers that omit it get the original behaviour.
+                ``self.mora_interest_rate`` for the post-due principal
+                slice only.
         """
         mora_rate = mora_rate_override or self.mora_interest_rate
 
@@ -75,15 +111,15 @@ class InterestCalculator:
         if regular_days >= days:
             return self.interest_rate.accrue(principal_balance, days), Money.zero()
 
-        mora_days = days - regular_days
+        post_due_days = days - regular_days
         regular_accrued = self.interest_rate.accrue(principal_balance, regular_days)
 
         if self.mora_strategy == MoraStrategy.COMPOUND:
-            mora_accrued = mora_rate.accrue(principal_balance + regular_accrued, mora_days)
+            post_due = mora_rate.accrue(principal_balance + regular_accrued, post_due_days)
         else:
-            mora_accrued = mora_rate.accrue(principal_balance, mora_days)
+            post_due = mora_rate.accrue(principal_balance, post_due_days)
 
-        return regular_accrued, mora_accrued
+        return regular_accrued, post_due
 
 
 #: Optional callback that resolves a mora rate override for a given

@@ -8,7 +8,7 @@ The `Loan` class models a personal loan where **everything emerges from the Cash
 
 The Loan delegates computation to two focused components in `engines.py`:
 
-- **`InterestCalculator`** — stateless interest math (regular + mora split). Holds `interest_rate`, `mora_interest_rate`, `mora_strategy`.
+- **`InterestCalculator`** — stateless interest math. Holds `interest_rate`, `mora_interest_rate`, `mora_strategy`. Regular interest compounds on outstanding principal. Mora is `simple_mora`: installment amount × daily mora rate × that installment's own days late.
 - **Pure functions** — compute all derived state. Key exports:
   - `compute_state(...)` — the forward pass that produces a `LoanState` (settlements, principal balance, fines applied, fines paid total, last payment date).
   - `build_installments(...)` — builds `Installment` objects from settlements + schedule.
@@ -49,7 +49,7 @@ The forward pass merges payment events with fine observation dates into a sorted
 | `fine_rate` | `Optional[InterestRate]` | `InterestRate("2% annual")` | Fine rate applied to expected payment |
 | `grace_period_days` | `int` | `0` | Days after due date before fines and mora apply (threshold, not shift — see Grace Period below) |
 | `mora_interest_rate` | `Optional[InterestRate]` | `interest_rate` | Rate used for mora (late) interest; defaults to the base rate |
-| `mora_strategy` | `MoraStrategy` | `COMPOUND` | How mora interest is computed (see Mora Strategy below) |
+| `mora_strategy` | `MoraStrategy` | `COMPOUND` | Kept so persisted loans still load. It does not change the mora charge. It still selects the base of the post-due principal slice that grace reclassifies as regular interest |
 | `payment_tolerance` | `Optional[Money]` | `Money("0.01")` | Per-installment rounding error tolerance (see Payment Tolerance below) |
 | `working_day_calendar` | `Optional[WorkingDayCalendar]` | `EveryDayCalendar()` | Calendar for penalty due-date deferral; when a due date falls on a non-working day, fines and mora start from the next working day |
 
@@ -249,12 +249,21 @@ The gate is implemented via `is_payment_late` checks in the forward pass (`compu
 
 ### Mora Interest
 
-When `pay_installment` is called after the due date, `interest_date = max(self.now(), next_due_date)` causes interest to accrue beyond the due date. The `InterestCalculator.compute_accrued_interest` method splits interest into regular and mora components.
+Mora is charged on the unpaid commitment, the same way the fine is. For each schedule entry that is overdue, past the grace period, and not settled (`principal_covered_count` or the contractual bag), the charge is
+
+`payment_amount * mora_rate.to_daily() * days_late`
+
+`days_late` runs from `effective_penalty_due_date` to the observation date. Inside the grace period the charge is zero; once past it, those grace days are included. An installment that is not yet due contributes nothing. The loan total is the sum of the open charges minus the mora already allocated to each installment. Unpaid mora stays on the installment that accrued it: it is not added to a later installment's payment amount and it is not capitalized into principal.
+
+`BillingCycleLoan` resolves the rate for that installment's due date through the existing callback. `Loan` uses `mora_interest_rate`.
+
+`mora_interest_balance`, each installment's `expected_mora`, and the mora cap on a payment all use that sum. `BaseLoan._outstanding_mora` reads it at `self.now()`. Warp to another moment instead of passing a date.
+
+Regular interest is unchanged: compound on outstanding principal up to the due date. While a payment is inside the grace period, `compute_accrued_interest` still returns the post-due principal slice so the forward pass can fold those days back into regular interest.
 
 ### Mora Strategy (`MoraStrategy` enum)
 
-**`MoraStrategy.COMPOUND`** (default): mora rate applied to `principal + regular_interest`.
-**`MoraStrategy.SIMPLE`**: mora rate applied to `principal` only.
+The enum no longer selects the mora base. Both values produce the same simple per-installment charge. It remains on the constructor and in persistence. It still selects the base of the grace-period principal slice: **COMPOUND** (default) uses principal plus regular interest accrued up to the due date; **SIMPLE** uses principal only.
 
 ## Balance Properties
 
@@ -264,7 +273,7 @@ All derived from `_compute_state()`:
 |---|---|---|---|
 | `principal_balance` | `Money` | Outstanding principal | -- |
 | `interest_balance` | `Money` | Regular accrued interest since last payment | -- |
-| `mora_interest_balance` | `Money` | Mora accrued interest (days beyond due date) | -- |
+| `mora_interest_balance` | `Money` | Unpaid simple mora summed across open installments | -- |
 | `fine_balance` | `Money` | Unpaid fines (total applied minus fines paid) | -- |
 | `overdue_interest_balance` | `Money` | Regular interest accrued past the contract due date | `interest_balance` |
 | `current_balance` | `Money` | Sum of principal + interest + mora + fines (unchanged) | -- |

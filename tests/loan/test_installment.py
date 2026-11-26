@@ -228,19 +228,23 @@ def test_expected_mora_equals_mora_paid_after_late_settlement():
     assert inst.expected_mora == inst.mora_paid
 
 
-def test_expected_mora_only_on_first_uncovered_installment():
+def test_expected_mora_on_each_overdue_installment():
+    """Each overdue installment carries its own mora; a future one does not."""
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
         [
             date(2025, 2, 1),
             date(2025, 3, 1),
+            date(2025, 4, 15),
         ],
         disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
     with Warp(loan, datetime(2025, 3, 15, tzinfo=timezone.utc)) as warped:
         assert warped.installments[0].expected_mora.is_positive()
-        assert warped.installments[1].expected_mora.is_zero()
+        assert warped.installments[1].expected_mora.is_positive()
+        assert warped.installments[0].expected_mora != warped.installments[1].expected_mora
+        assert warped.installments[2].expected_mora.is_zero()
 
 
 # --- expected_fine tests ---

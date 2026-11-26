@@ -74,8 +74,8 @@ def test_doubled_mora_charges_more_than_constant(variable_mora_loan):
     sv = variable_mora_loan.record_payment(Money("1100.00"), late_dt)
     sc = constant_loan.record_payment(Money("1100.00"), late_dt)
 
-    assert sv.mora_paid == Money("11.51")
-    assert sc.mora_paid == Money("6.05")
+    assert sv.mora_paid == Money("11.45")
+    assert sc.mora_paid == Money("6.03")
     assert sv.mora_paid > sc.mora_paid
 
 
@@ -86,7 +86,7 @@ def test_variable_mora_late_first_installment_uses_base_rate(variable_mora_loan)
         datetime(2025, 3, 4, tzinfo=timezone.utc),
     )
     assert s.fine_paid == Money("20.45")
-    assert s.mora_paid == Money("18.93")
+    assert s.mora_paid == Money("6.35")
     assert s.interest_paid == Money("39.38")
 
 

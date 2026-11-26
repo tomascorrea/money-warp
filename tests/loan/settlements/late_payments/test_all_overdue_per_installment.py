@@ -55,7 +55,7 @@ def test_settlement_fine_paid(overdue_settlement):
 def test_settlement_mora_paid(overdue_settlement):
     """Full accrued mora goes to inst 1."""
     _, s = overdue_settlement
-    assert s.mora_paid == Money("108.21")
+    assert s.mora_paid == Money("59.75")
 
 
 def test_settlement_interest_paid(overdue_settlement):
@@ -67,12 +67,12 @@ def test_settlement_interest_paid(overdue_settlement):
 def test_settlement_principal_paid(overdue_settlement):
     """Principal is the residual after all fines, mora, and interest."""
     _, s = overdue_settlement
-    assert s.principal_paid == Money("77.55")
+    assert s.principal_paid == Money("126.01")
 
 
 def test_settlement_remaining_balance(overdue_settlement):
     _, s = overdue_settlement
-    assert s.remaining_balance == Money("1922.45")
+    assert s.remaining_balance == Money("1873.99")
 
 
 def test_single_installment_receives_allocation(overdue_settlement):
@@ -87,9 +87,9 @@ def test_first_installment_allocation_breakdown(overdue_settlement):
     _, s = overdue_settlement
     a = s.allocations[0]
     assert a.fine_allocated == Money("42.52")
-    assert a.mora_allocated == Money("108.21")
+    assert a.mora_allocated == Money("59.75")
     assert a.interest_allocated == Money("126.06")
-    assert a.principal_allocated == Money("77.55")
+    assert a.principal_allocated == Money("126.01")
     assert a.is_fully_covered is False
 
 

@@ -423,8 +423,8 @@ def test_late_overpayment_fine_equals_two_percent_of_scheduled_payment():
     assert warped.settlements[-1].fine_paid == expected_fine
 
 
-def test_late_overpayment_total_interest_for_45_days():
-    """Total interest (regular + mora) = 45-day daily-compounded accrual on full $10k principal."""
+def test_late_overpayment_splits_regular_interest_and_installment_mora():
+    """Regular interest compounds to the due date; mora is simple on the late installment only."""
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
@@ -438,18 +438,22 @@ def test_late_overpayment_total_interest_for_45_days():
     )
 
     daily_rate = InterestRate("6% a").to_daily().as_decimal()
-    expected_total = Decimal("10000") * ((1 + daily_rate) ** 45 - 1)
+    regular_days = (date(2025, 2, 1) - date(2025, 1, 1)).days
+    late_days = (date(2025, 2, 15) - date(2025, 2, 1)).days
+    expected_regular = Decimal("10000") * ((1 + daily_rate) ** regular_days - 1)
+    payment_amount = loan.get_original_schedule()[0].payment_amount.raw_amount
+    expected_mora = payment_amount * daily_rate * Decimal(late_days)
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("7000.00"))
         settlement = warped.settlements[-1]
-        total_interest = settlement.interest_paid + settlement.mora_paid
 
-    assert total_interest == Money(expected_total)
+    assert settlement.interest_paid == Money(expected_regular)
+    assert settlement.mora_paid == Money(expected_mora)
 
 
 def test_late_overpayment_principal_is_remainder_after_fine_and_interest():
-    """Principal paid = $7,000 - fine - interest."""
+    """Principal paid = $7,000 - fine - regular interest - installment mora."""
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
@@ -465,8 +469,11 @@ def test_late_overpayment_principal_is_remainder_after_fine_and_interest():
     scheduled_payment = loan.get_expected_payment_amount(date(2025, 2, 1))
     fine = scheduled_payment.raw_amount * Decimal("0.02")
     daily_rate = InterestRate("6% a").to_daily().as_decimal()
-    interest = Decimal("10000") * ((1 + daily_rate) ** 45 - 1)
-    expected_principal = Decimal("7000") - fine - interest
+    regular_days = (date(2025, 2, 1) - date(2025, 1, 1)).days
+    late_days = (date(2025, 2, 15) - date(2025, 2, 1)).days
+    interest = Decimal("10000") * ((1 + daily_rate) ** regular_days - 1)
+    mora = scheduled_payment.raw_amount * daily_rate * Decimal(late_days)
+    expected_principal = Decimal("7000") - fine - interest - mora
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("7000.00"))
@@ -491,8 +498,11 @@ def test_late_overpayment_ending_balance_in_actual_entry():
     scheduled_payment = loan.get_expected_payment_amount(date(2025, 2, 1))
     fine = scheduled_payment.raw_amount * Decimal("0.02")
     daily_rate = InterestRate("6% a").to_daily().as_decimal()
-    interest = Decimal("10000") * ((1 + daily_rate) ** 45 - 1)
-    principal_paid = Decimal("7000") - fine - interest
+    regular_days = (date(2025, 2, 1) - date(2025, 1, 1)).days
+    late_days = (date(2025, 2, 15) - date(2025, 2, 1)).days
+    interest = Decimal("10000") * ((1 + daily_rate) ** regular_days - 1)
+    mora = scheduled_payment.raw_amount * daily_rate * Decimal(late_days)
+    principal_paid = Decimal("7000") - fine - interest - mora
     expected_ending = Decimal("10000") - principal_paid
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
