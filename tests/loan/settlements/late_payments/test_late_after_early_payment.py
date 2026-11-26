@@ -18,10 +18,10 @@ def test_late_after_early_settlement_totals(three_installment_loan):
             settlement = w2.pay_installment(Money("300.00"))
 
     assert settlement.fine_paid == Money("6.07")
-    assert settlement.mora_paid == Money("2.72")
+    assert settlement.mora_paid == Money("1.63")
     assert settlement.interest_paid == Money("5.40")
-    assert settlement.principal_paid == Money("285.81")
-    assert settlement.remaining_balance == Money("215.04")
+    assert settlement.principal_paid == Money("286.90")
+    assert settlement.remaining_balance == Money("213.95")
 
 
 def test_late_after_early_allocation_count(three_installment_loan):
@@ -59,7 +59,7 @@ def test_late_after_early_second_installment(three_installment_loan):
     assert second.principal_allocated == Money("201.84")
     assert second.interest_allocated == Money("5.40")
     assert second.fine_allocated == Money("6.07")
-    assert second.mora_allocated == Money("2.72")
+    assert second.mora_allocated == Money("1.63")
     assert second.is_fully_covered is True
 
 
@@ -73,7 +73,7 @@ def test_late_after_early_third_installment(three_installment_loan):
 
     third = settlement.allocations[1]
     assert third.installment_number == 3
-    assert third.principal_allocated == Money("83.97")
+    assert third.principal_allocated == Money("85.06")
     assert third.interest_allocated == Money("0.00")
     assert third.fine_allocated == Money("0.00")
     assert third.mora_allocated == Money("0.00")

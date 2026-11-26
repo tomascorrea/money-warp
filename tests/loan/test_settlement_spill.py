@@ -101,9 +101,9 @@ def test_catchup_settlement_exact_totals(catchup_loan):
     with Warp(catchup_loan, datetime(2026, 5, 25, tzinfo=timezone.utc)) as w:
         settlement = w.pay_installment(Money(5000))
 
-    assert settlement.principal_paid == Money("4607.03")
+    assert settlement.principal_paid == Money("4663.76")
     assert settlement.interest_paid == Money("223.41")
-    assert settlement.mora_paid == Money("104.78")
+    assert settlement.mora_paid == Money("48.04")
     assert settlement.fine_paid == Money("64.78")
     assert settlement.remaining_balance == Money("0.00")
 
@@ -132,9 +132,9 @@ def test_late_payment_exact_totals(late_two_installment_loan):
     with Warp(late_two_installment_loan, datetime(2026, 4, 10, tzinfo=timezone.utc)) as w:
         settlement = w.pay_installment(Money(2500))
 
-    assert settlement.principal_paid == Money("2328.84")
+    assert settlement.principal_paid == Money("2338.25")
     assert settlement.interest_paid == Money("89.21")
-    assert settlement.mora_paid == Money("40.17")
+    assert settlement.mora_paid == Money("30.76")
     assert settlement.fine_paid == Money("41.78")
     assert settlement.remaining_balance == Money("0.00")
 
@@ -149,15 +149,15 @@ def test_late_payment_exact_allocations(late_two_installment_loan):
     assert a1.installment_number == 1
     assert a1.principal_allocated == Money("983.43")
     assert a1.interest_allocated == Money("61.17")
-    assert a1.mora_allocated == Money("40.17")
+    assert a1.mora_allocated == Money("20.17")
     assert a1.fine_allocated == Money("20.89")
     assert a1.is_fully_covered is True
 
     a2 = settlement.allocations[1]
     assert a2.installment_number == 2
-    assert a2.principal_allocated == Money("1345.41")
+    assert a2.principal_allocated == Money("1354.82")
     assert a2.interest_allocated == Money("28.04")
-    assert a2.mora_allocated == Money("0.00")
+    assert a2.mora_allocated == Money("10.60")
     assert a2.fine_allocated == Money("20.89")
     assert a2.is_fully_covered is True
 

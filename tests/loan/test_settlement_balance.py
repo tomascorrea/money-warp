@@ -30,7 +30,7 @@ def test_single_ontime_equals_current_balance(single_installment_loan):
 def test_single_late_equals_current_balance(single_installment_loan):
     """Late: settlement_balance == current_balance (both accrue to now)."""
     with Warp(single_installment_loan, datetime(2025, 12, 25, tzinfo=timezone.utc)) as w:
-        assert w.settlement_balance == Money("11378.83")
+        assert w.settlement_balance == Money("11377.75")
         assert w.settlement_balance == w.current_balance
 
 
@@ -38,8 +38,8 @@ def test_single_late_includes_mora_and_fines(single_installment_loan):
     """Late: settlement_balance includes mora interest and fines."""
     with Warp(single_installment_loan, datetime(2025, 12, 25, tzinfo=timezone.utc)) as w:
         assert w.fine_balance == Money("219.71")
-        assert w.mora_interest_balance == Money("173.47")
-        assert w.settlement_balance == Money("11378.83")
+        assert w.mora_interest_balance == Money("172.39")
+        assert w.settlement_balance == Money("11377.75")
 
 
 def test_single_at_disbursement_equals_scheduled_pmt(single_installment_loan):

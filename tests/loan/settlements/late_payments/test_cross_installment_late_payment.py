@@ -29,13 +29,13 @@ def late_cross_settlements(loan_with_fine):
 
 
 def test_p1_settlement_totals(late_cross_settlements):
-    """P1 pays fine (6.07), mora (5.19), interest (10.63), rest to principal."""
+    """P1 pays fine (6.07), mora (1.74), interest (10.63), rest to principal."""
     _, settlements = late_cross_settlements
     assert settlements[0].fine_paid == Money("6.07")
-    assert settlements[0].mora_paid == Money("5.19")
+    assert settlements[0].mora_paid == Money("1.74")
     assert settlements[0].interest_paid == Money("10.63")
-    assert settlements[0].principal_paid == Money("478.11")
-    assert settlements[0].remaining_balance == Money("412.11")
+    assert settlements[0].principal_paid == Money("481.55")
+    assert settlements[0].remaining_balance == Money("408.67")
 
 
 def test_p1_allocation_count(late_cross_settlements):
@@ -52,7 +52,7 @@ def test_p1_first_installment(late_cross_settlements):
     assert a.principal_allocated == Money("292.99")
     assert a.interest_allocated == Money("10.63")
     assert a.fine_allocated == Money("6.07")
-    assert a.mora_allocated == Money("5.19")
+    assert a.mora_allocated == Money("1.74")
     assert a.is_fully_covered is True
 
 
@@ -61,7 +61,7 @@ def test_p1_second_installment(late_cross_settlements):
     _, settlements = late_cross_settlements
     a = settlements[0].allocations[1]
     assert a.installment_number == 2
-    assert a.principal_allocated == Money("185.12")
+    assert a.principal_allocated == Money("188.56")
     assert a.interest_allocated == Money("0.00")
     assert a.fine_allocated == Money("0.00")
     assert a.mora_allocated == Money("0.00")
@@ -72,12 +72,12 @@ def test_p1_second_installment(late_cross_settlements):
 
 
 def test_p2_settlement_totals(late_cross_settlements):
-    """P2 has fines for 2 due dates, mora, contractual interest for inst 3, and pays off the loan."""
+    """P2 pays both overdue installments' fines and mora, then pays the loan off."""
     _, settlements = late_cross_settlements
     assert settlements[1].fine_paid == Money("12.15")
-    assert settlements[1].mora_paid == Money("7.20")
-    assert settlements[1].interest_paid == Money("5.64")
-    assert settlements[1].principal_paid == Money("475.02")
+    assert settlements[1].mora_paid == Money("6.86")
+    assert settlements[1].interest_paid == Money("5.62")
+    assert settlements[1].principal_paid == Money("475.38")
     assert settlements[1].remaining_balance == Money("0.00")
 
 
@@ -88,26 +88,26 @@ def test_p2_allocation_count(late_cross_settlements):
 
 
 def test_p2_second_installment(late_cross_settlements):
-    """Inst 2 gets its fine, mora, contractual interest, and remaining principal — covered."""
+    """Inst 2 gets its own fine, mora, contractual interest, and remaining principal."""
     _, settlements = late_cross_settlements
     a = settlements[1].allocations[0]
     assert a.installment_number == 2
-    assert a.principal_allocated == Money("112.06")
-    assert a.interest_allocated == Money("5.64")
-    assert a.fine_allocated == Money("6.88")
-    assert a.mora_allocated == Money("7.20")
+    assert a.principal_allocated == Money("108.62")
+    assert a.interest_allocated == Money("5.62")
+    assert a.fine_allocated == Money("6.89")
+    assert a.mora_allocated == Money("5.23")
     assert a.is_fully_covered is True
 
 
 def test_p2_third_installment(late_cross_settlements):
-    """Inst 3 gets its fine, full principal — covered (loan fully paid)."""
+    """Inst 3 carries its own fine and mora for the days it is late, then its principal."""
     _, settlements = late_cross_settlements
     a = settlements[1].allocations[1]
     assert a.installment_number == 3
-    assert a.principal_allocated == Money("362.96")
+    assert a.principal_allocated == Money("366.76")
     assert a.interest_allocated == Money("0.00")
-    assert a.fine_allocated == Money("5.27")
-    assert a.mora_allocated == Money("0.00")
+    assert a.fine_allocated == Money("5.25")
+    assert a.mora_allocated == Money("1.63")
     assert a.is_fully_covered is True
 
 

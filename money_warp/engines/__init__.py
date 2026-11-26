@@ -28,6 +28,7 @@ from .forward_pass import (
     build_installments,
     compute_state,
     fully_covered_count,
+    outstanding_mora_at,
     principal_covered_count,
 )
 from .interest import InterestCalculator, MoraRateCallback, MoraStrategy
@@ -46,5 +47,6 @@ __all__ = [
     "distribute_into_installments",
     "fully_covered_count",
     "is_payment_late",
+    "outstanding_mora_at",
     "principal_covered_count",
 ]

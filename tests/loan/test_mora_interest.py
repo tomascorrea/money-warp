@@ -1,4 +1,4 @@
-"""Tests for mora interest: extra daily-compounded interest accrued beyond the due date."""
+"""Tests for mora interest: simple interest on the installment payment amount."""
 
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -25,8 +25,8 @@ def test_late_payment_produces_separate_mora_interest_item():
     assert settlement.mora_paid != Money.zero()
 
 
-def test_mora_interest_equals_difference_between_total_and_regular():
-    """Mora interest = total compound interest - regular interest up to the due date."""
+def test_mora_interest_is_simple_on_the_installment_amount():
+    """Mora is payment amount × daily mora rate × days late, not compound interest on principal."""
     loan = Loan(
         Money("10000.00"),
         InterestRate("6% a"),
@@ -36,8 +36,8 @@ def test_mora_interest_equals_difference_between_total_and_regular():
 
     daily_rate = InterestRate("6% a").to_daily().as_decimal()
     regular_interest = Decimal("10000") * ((1 + daily_rate) ** 31 - 1)
-    total_interest = Decimal("10000") * ((1 + daily_rate) ** 45 - 1)
-    expected_mora = total_interest - regular_interest
+    payment_amount = loan.get_original_schedule()[0].payment_amount.raw_amount
+    expected_mora = payment_amount * daily_rate * Decimal(14)
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("10500.00"))
@@ -70,7 +70,7 @@ def test_regular_interest_matches_scheduled_interest():
     [1, 7, 14, 30],
 )
 def test_total_interest_on_late_payment_matches_manual_calculation(late_days):
-    """Sum of regular + mora matches daily-compounded accrual from disbursement to payment date."""
+    """Regular interest compounds to the due date; mora is linear on the installment amount."""
     principal = Money("10000.00")
     rate = InterestRate("6% a")
     due_date = date(2025, 2, 1)
@@ -78,17 +78,19 @@ def test_total_interest_on_late_payment_matches_manual_calculation(late_days):
 
     loan = Loan(principal, rate, [due_date], disbursement_date=disbursement)
     payment_date = due_date + timedelta(days=late_days)
-    total_days = (payment_date - disbursement.date()).days
+    regular_days = (due_date - disbursement.date()).days
 
     daily_rate = rate.to_daily().as_decimal()
-    expected_total = Decimal("10000") * ((1 + daily_rate) ** total_days - 1)
+    expected_regular = Decimal("10000") * ((1 + daily_rate) ** regular_days - 1)
+    payment_amount = loan.get_original_schedule()[0].payment_amount.raw_amount
+    expected_mora = payment_amount * daily_rate * Decimal(late_days)
 
     with Warp(loan, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
         settlement = warped.settlements[-1]
-        total_interest = settlement.interest_paid + settlement.mora_paid
 
-    assert total_interest == Money(expected_total)
+    assert settlement.interest_paid == Money(expected_regular)
+    assert settlement.mora_paid == Money(expected_mora)
 
 
 def test_on_time_payment_produces_no_mora_interest_item():
@@ -200,7 +202,7 @@ def test_on_time_payment_unaffected_by_custom_mora_rate():
 
 
 def test_mora_with_custom_rate_compound_strategy():
-    """COMPOUND: mora_rate applied to (principal + regular_interest) for late days."""
+    """COMPOUND no longer changes mora: the charge is simple interest on the installment amount."""
     principal = Decimal("10000")
     base_rate = InterestRate("6% a")
     mora_rate = InterestRate("12% a")
@@ -217,15 +219,10 @@ def test_mora_with_custom_rate_compound_strategy():
         mora_strategy=MoraStrategy.COMPOUND,
     )
 
-    regular_days = (due_date - disbursement.date()).days  # 31
-    mora_days = (payment_date.date() - due_date).days  # 14
-
-    daily_base = base_rate.to_daily().as_decimal()
+    mora_days = (payment_date.date() - due_date).days
     daily_mora = mora_rate.to_daily().as_decimal()
-
-    expected_regular = principal * ((1 + daily_base) ** regular_days - 1)
-    accumulated = principal + expected_regular
-    expected_mora = accumulated * ((1 + daily_mora) ** mora_days - 1)
+    payment_amount = loan.get_original_schedule()[0].payment_amount.raw_amount
+    expected_mora = payment_amount * daily_mora * Decimal(mora_days)
 
     with Warp(loan, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
@@ -235,7 +232,7 @@ def test_mora_with_custom_rate_compound_strategy():
 
 
 def test_mora_with_custom_rate_simple_strategy():
-    """SIMPLE: mora_rate applied to principal only for late days."""
+    """SIMPLE no longer compounds on principal: mora is linear on the installment amount."""
     principal = Decimal("10000")
     base_rate = InterestRate("6% a")
     mora_rate = InterestRate("12% a")
@@ -252,9 +249,10 @@ def test_mora_with_custom_rate_simple_strategy():
         mora_strategy=MoraStrategy.SIMPLE,
     )
 
-    mora_days = (payment_date.date() - due_date).days  # 14
+    mora_days = (payment_date.date() - due_date).days
     daily_mora = mora_rate.to_daily().as_decimal()
-    expected_mora = principal * ((1 + daily_mora) ** mora_days - 1)
+    payment_amount = loan.get_original_schedule()[0].payment_amount.raw_amount
+    expected_mora = payment_amount * daily_mora * Decimal(mora_days)
 
     with Warp(loan, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
@@ -263,8 +261,8 @@ def test_mora_with_custom_rate_simple_strategy():
     assert settlement.mora_paid == Money(expected_mora)
 
 
-def test_simple_vs_compound_mora_compound_produces_more():
-    """With the same custom mora rate, COMPOUND produces more mora than SIMPLE."""
+def test_simple_vs_compound_mora_produce_the_same_charge():
+    """MoraStrategy does not change the installment mora charge."""
     base_rate = InterestRate("6% a")
     mora_rate = InterestRate("12% a")
     disbursement = datetime(2025, 1, 1, tzinfo=timezone.utc)
@@ -297,7 +295,7 @@ def test_simple_vs_compound_mora_compound_produces_more():
         warped.pay_installment(Money("11000.00"))
         mora_simple = warped.settlements[-1].mora_paid
 
-    assert mora_compound > mora_simple
+    assert mora_compound == mora_simple
 
 
 def test_regular_interest_unchanged_regardless_of_mora_rate():
@@ -339,7 +337,7 @@ def test_regular_interest_unchanged_regardless_of_mora_rate():
     ],
 )
 def test_total_interest_with_custom_mora_rate_matches_manual(mora_rate_str, strategy):
-    """Sum of regular + mora matches manual calculation for various rates and strategies."""
+    """Regular stays on the base rate; mora is linear on the installment amount for every strategy."""
     principal = Decimal("10000")
     base_rate = InterestRate("6% a")
     mora_rate = InterestRate(mora_rate_str)
@@ -353,15 +351,6 @@ def test_total_interest_with_custom_mora_rate_matches_manual(mora_rate_str, stra
     daily_base = base_rate.to_daily().as_decimal()
     daily_mora = mora_rate.to_daily().as_decimal()
 
-    expected_regular = principal * ((1 + daily_base) ** regular_days - 1)
-    if strategy == MoraStrategy.COMPOUND:
-        accumulated = principal + expected_regular
-        expected_mora = accumulated * ((1 + daily_mora) ** mora_days - 1)
-    else:
-        expected_mora = principal * ((1 + daily_mora) ** mora_days - 1)
-
-    expected_total = expected_regular + expected_mora
-
     loan = Loan(
         Money(principal),
         base_rate,
@@ -370,6 +359,11 @@ def test_total_interest_with_custom_mora_rate_matches_manual(mora_rate_str, stra
         mora_interest_rate=mora_rate,
         mora_strategy=strategy,
     )
+
+    expected_regular = principal * ((1 + daily_base) ** regular_days - 1)
+    payment_amount = loan.get_original_schedule()[0].payment_amount.raw_amount
+    expected_mora = payment_amount * daily_mora * Decimal(mora_days)
+    expected_total = expected_regular + expected_mora
 
     with Warp(loan, payment_date) as warped:
         warped.pay_installment(Money("11000.00"))
@@ -383,7 +377,7 @@ def test_total_interest_with_custom_mora_rate_matches_manual(mora_rate_str, stra
 
 
 def test_interest_and_mora_balance_uses_mora_rate_when_past_due():
-    """interest_balance + mora_interest_balance should reflect the mora rate for days beyond the due date."""
+    """interest_balance stays on the base rate; mora_interest_balance uses the mora rate linearly."""
     principal = Decimal("10000")
     base_rate = InterestRate("6% a")
     mora_rate = InterestRate("24% a")
@@ -397,9 +391,6 @@ def test_interest_and_mora_balance_uses_mora_rate_when_past_due():
     daily_base = base_rate.to_daily().as_decimal()
     daily_mora = mora_rate.to_daily().as_decimal()
 
-    expected_regular = principal * ((1 + daily_base) ** regular_days - 1)
-    expected_mora = (principal + expected_regular) * ((1 + daily_mora) ** mora_days - 1)
-
     loan = Loan(
         Money(principal),
         base_rate,
@@ -407,6 +398,10 @@ def test_interest_and_mora_balance_uses_mora_rate_when_past_due():
         disbursement_date=disbursement,
         mora_interest_rate=mora_rate,
     )
+
+    expected_regular = principal * ((1 + daily_base) ** regular_days - 1)
+    payment_amount = loan.get_original_schedule()[0].payment_amount.raw_amount
+    expected_mora = payment_amount * daily_mora * Decimal(mora_days)
 
     with Warp(loan, check_date) as warped:
         assert warped.interest_balance == Money(expected_regular)
@@ -454,10 +449,6 @@ def test_current_balance_reflects_mora_rate_when_past_due():
     daily_base = base_rate.to_daily().as_decimal()
     daily_mora = mora_rate.to_daily().as_decimal()
 
-    regular = principal * ((1 + daily_base) ** regular_days - 1)
-    mora = (principal + regular) * ((1 + daily_mora) ** mora_days - 1)
-    expected_balance = principal + regular + mora
-
     loan = Loan(
         Money(principal),
         base_rate,
@@ -466,6 +457,11 @@ def test_current_balance_reflects_mora_rate_when_past_due():
         mora_interest_rate=mora_rate,
         fine_rate=InterestRate("0% annual"),
     )
+
+    regular = principal * ((1 + daily_base) ** regular_days - 1)
+    payment_amount = loan.get_original_schedule()[0].payment_amount.raw_amount
+    mora = payment_amount * daily_mora * Decimal(mora_days)
+    expected_balance = principal + regular + mora
 
     with Warp(loan, check_date) as warped:
         assert warped.current_balance == Money(expected_balance)

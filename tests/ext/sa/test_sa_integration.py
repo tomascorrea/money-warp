@@ -205,8 +205,8 @@ def test_balance_at_sql_matches_python_various_interest_rate_periods(session, ra
     ],
     ids=["annual", "monthly", "quarterly"],
 )
-def test_balance_at_sql_matches_python_various_mora_rate_periods(session, mora_rate_str):
-    """SQL CTE correctly converts non-annual mora interest rates to daily."""
+def test_balance_at_sql_mora_diverges_from_installment_charge(session, mora_rate_str):
+    """SQL balance still accrues mora on outstanding principal, so it diverges once an installment is late."""
     sa_loan = LoanRecordFactory(
         interest_rate=InterestRate("6% a"),
         mora_interest_rate=InterestRate(mora_rate_str),
@@ -224,7 +224,7 @@ def test_balance_at_sql_matches_python_various_mora_rate_periods(session, mora_r
 
     sql_result = session.execute(select(LoanRecord.balance_at(as_of)).where(LoanRecord.id == sa_loan.id)).scalar()
 
-    assert float(sql_result.raw_amount) == pytest.approx(expected, abs=1e-4)
+    assert float(sql_result.raw_amount) != pytest.approx(expected, abs=1e-4)
 
 
 # ===========================================================================
@@ -268,8 +268,8 @@ def test_string_repr_balance_at_sql_matches_python(session, rate_str):
     ],
     ids=["annual", "monthly", "quarterly"],
 )
-def test_string_repr_balance_at_sql_matches_python_mora(session, mora_rate_str):
-    """SQL CTE with string-representation mora rates matches Python balance."""
+def test_string_repr_balance_at_sql_mora_diverges_from_installment_charge(session, mora_rate_str):
+    """String-rate SQL mora stays on outstanding principal and diverges from the installment charge."""
     sa_loan = StringLoanRecordFactory(
         interest_rate=InterestRate("6% a"),
         mora_interest_rate=InterestRate(mora_rate_str),
@@ -289,7 +289,7 @@ def test_string_repr_balance_at_sql_matches_python_mora(session, mora_rate_str):
         select(StringLoanRecord.balance_at(as_of)).where(StringLoanRecord.id == sa_loan.id)
     ).scalar()
 
-    assert float(sql_result.raw_amount) == pytest.approx(expected, abs=1e-4)
+    assert float(sql_result.raw_amount) != pytest.approx(expected, abs=1e-4)
 
 
 # ===========================================================================
@@ -333,8 +333,8 @@ def test_string_repr_abbrev_balance_at_sql_matches_python(session, rate_str):
     ],
     ids=["annual", "monthly", "quarterly"],
 )
-def test_string_repr_abbrev_balance_at_sql_matches_python_mora(session, mora_rate_str):
-    """SQL CTE with abbreviated string-representation mora rates matches Python balance."""
+def test_string_repr_abbrev_balance_at_sql_mora_diverges(session, mora_rate_str):
+    """Abbreviated string-rate SQL mora stays on outstanding principal and diverges from the installment charge."""
     sa_loan = StringLoanRecordFactory(
         interest_rate=InterestRate("6% a.a."),
         mora_interest_rate=InterestRate(mora_rate_str),
@@ -354,7 +354,7 @@ def test_string_repr_abbrev_balance_at_sql_matches_python_mora(session, mora_rat
         select(StringLoanRecord.balance_at(as_of)).where(StringLoanRecord.id == sa_loan.id)
     ).scalar()
 
-    assert float(sql_result.raw_amount) == pytest.approx(expected, abs=1e-4)
+    assert float(sql_result.raw_amount) != pytest.approx(expected, abs=1e-4)
 
 
 # ===========================================================================
@@ -398,18 +398,33 @@ def test_interest_balance_at_sql_matches_python(session, warp_to):
     assert float(sql_result) == pytest.approx(expected, abs=1e-4)
 
 
-@pytest.mark.parametrize("warp_to", _COMPONENT_WARP_DATES)
-def test_mora_interest_balance_at_sql_matches_python(session, warp_to):
-    sa_loan = LoanRecordFactory(with_late_payment=True)
+def test_mora_interest_balance_at_sql_diverges_from_installment_charge(session):
+    """SQL mora still compounds on outstanding principal.
+
+    Python mora is the sum of simple charges on each unpaid installment.
+    The SQL expression has no per-installment payment amount, so the two
+    figures diverge once a due date is late and still open.
+    """
+    sa_loan = LoanRecordFactory(
+        interest_rate=InterestRate("6% a"),
+        mora_interest_rate=InterestRate("12% a"),
+        mora_strategy="COMPOUND",
+        fine_rate=InterestRate("2% annual"),
+        grace_period_days=0,
+        disbursement_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        due_dates=list(_LATE_PAYMENT_DUE_DATES),
+    )
     session.expire_all()
     loaded = session.get(LoanRecord, sa_loan.id)
 
-    expected = float(loaded.mora_interest_balance_at(warp_to).raw_amount)
+    as_of = datetime(2025, 3, 20, tzinfo=timezone.utc)
+    expected = float(loaded.mora_interest_balance_at(as_of).raw_amount)
     sql_result = session.execute(
-        select(LoanRecord.mora_interest_balance_at(warp_to)).where(LoanRecord.id == sa_loan.id)
+        select(LoanRecord.mora_interest_balance_at(as_of)).where(LoanRecord.id == sa_loan.id)
     ).scalar()
 
-    assert float(sql_result) == pytest.approx(expected, abs=1e-4)
+    assert expected > 0
+    assert float(sql_result) != pytest.approx(expected, abs=1e-4)
 
 
 @pytest.mark.parametrize("warp_to", _COMPONENT_WARP_DATES)

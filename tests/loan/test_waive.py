@@ -169,9 +169,8 @@ def test_settlement_records_waived_mora_amounts():
     )
 
     daily_rate = InterestRate("6% a").to_daily().as_decimal()
-    regular_interest = Decimal("10000") * ((1 + daily_rate) ** 31 - 1)
-    total_interest = Decimal("10000") * ((1 + daily_rate) ** 45 - 1)
-    expected_mora = total_interest - regular_interest
+    payment_amount = loan.get_original_schedule()[0].payment_amount.raw_amount
+    expected_mora = payment_amount * daily_rate * Decimal(14)
 
     with Warp(loan, datetime(2025, 2, 15, tzinfo=timezone.utc)) as warped:
         warped.pay_installment(Money("11000.00"), waive_mora=True)

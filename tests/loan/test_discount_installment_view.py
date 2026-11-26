@@ -27,7 +27,7 @@ def _late_loan() -> Loan:
 
     Obligations on 2025-02-15 are pinned by
     ``tests/loan/test_discount.py`` and probed independently:
-    principal 10_000.00, interest 49.61, mora 22.49, fine 502.48.
+    principal 10_000.00, interest 49.61, mora 22.46, fine 502.48.
     """
     return Loan(
         Money("10000.00"),
@@ -71,7 +71,7 @@ def test_discount_on_fines_only_makes_installment_fully_paid():
 
     with Warp(loan, pay_dt) as w:
         settlement = w.pay_installment(
-            Money("10072.10"),
+            Money("10072.07"),
             discount=Money("502.48"),
         )
         inst = w.installments[0]
@@ -80,7 +80,7 @@ def test_discount_on_fines_only_makes_installment_fully_paid():
     assert inst.balance == Money.zero()
     assert inst.fine_discounted == Money("502.48")
     assert inst.fine_paid == Money.zero()
-    assert inst.mora_paid == Money("22.49")
+    assert inst.mora_paid == Money("22.46")
     assert inst.interest_paid == Money("49.61")
     assert inst.principal_paid == Money("10000.00")
     assert settlement.allocations[0].is_fully_covered is True
@@ -96,13 +96,13 @@ def test_discount_on_mora_only_makes_installment_fully_paid():
         settlement = w.pay_installment(
             Money("10049.61"),
             waive_fines=True,
-            discount=Money("22.49"),
+            discount=Money("22.46"),
         )
         inst = w.installments[0]
 
     assert inst.is_fully_paid is True
     assert inst.balance == Money.zero()
-    assert inst.mora_discounted == Money("22.49")
+    assert inst.mora_discounted == Money("22.46")
     assert inst.mora_paid == Money.zero()
     assert inst.interest_paid == Money("49.61")
     assert inst.principal_paid == Money("10000.00")
@@ -115,7 +115,7 @@ def test_discount_mix_spills_from_fines_through_mora_into_interest():
     loan = _late_loan()
     pay_dt = datetime(2025, 2, 15, tzinfo=timezone.utc)
 
-    discount = Money("502.48") + Money("22.49") + Money("30.00")
+    discount = Money("502.48") + Money("22.46") + Money("30.00")
     amount = Money("10000.00") + (Money("49.61") - Money("30.00"))
 
     with Warp(loan, pay_dt) as w:
@@ -125,7 +125,7 @@ def test_discount_mix_spills_from_fines_through_mora_into_interest():
     assert inst.is_fully_paid is True
     assert inst.balance == Money.zero()
     assert inst.fine_discounted == Money("502.48")
-    assert inst.mora_discounted == Money("22.49")
+    assert inst.mora_discounted == Money("22.46")
     assert inst.interest_discounted == Money("30.00")
     assert inst.principal_discounted == Money.zero()
     assert inst.interest_paid == Money("19.61")
@@ -167,9 +167,9 @@ def test_discount_covers_principal_of_tiny_final_installment():
 @pytest.mark.parametrize(
     "amount,discount,waive_fines",
     [
-        ("10072.10", "502.48", False),
-        ("10049.61", "22.49", True),
-        ("10019.61", "554.97", False),
+        ("10072.07", "502.48", False),
+        ("10049.61", "22.46", True),
+        ("10019.61", "554.94", False),
     ],
     ids=["fines_only", "mora_only", "mix_fine_mora_interest"],
 )

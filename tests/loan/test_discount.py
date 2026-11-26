@@ -94,9 +94,9 @@ def test_discount_absorbs_fines_first(late_loan):
         s = w.pay_installment(Money("11000.00"), discount=Money("502.48"))
 
     assert s.fine_paid == Money("0.00")
-    assert s.mora_paid == Money("22.49")
+    assert s.mora_paid == Money("22.46")
     assert s.interest_paid == Money("49.61")
-    assert s.principal_paid == Money("10927.90")
+    assert s.principal_paid == Money("10927.93")
 
 
 def test_discount_absorbs_fines_then_mora(late_loan):
@@ -110,7 +110,7 @@ def test_discount_absorbs_fines_then_mora(late_loan):
     )
 
     with Warp(late_loan_disc, datetime(2025, 2, 15, tzinfo=timezone.utc)) as w:
-        s = w.pay_installment(Money("11000.00"), discount=Money("524.97"))
+        s = w.pay_installment(Money("11000.00"), discount=Money("524.94"))
 
     assert s.fine_paid == Money("0.00")
     assert s.mora_paid == Money("0.00")
@@ -150,7 +150,7 @@ def test_discount_with_waive_fines(late_loan):
         s = w.pay_installment(
             Money("11000.00"),
             waive_fines=True,
-            discount=Money("22.49"),
+            discount=Money("22.46"),
         )
 
     assert s.fine_paid == Money("0.00")
@@ -299,7 +299,7 @@ def test_multiple_payments_with_discount(multi_installment_loan):
 
     assert s2.discount_applied == Money("3.00")
     assert s2.interest_paid == Money("17.07")
-    assert s2.principal_paid == Money("273.77")
+    assert s2.principal_paid == Money("280.22")
 
 
 # --- Discount redirects payment money to principal ---
@@ -330,8 +330,8 @@ def test_discount_redirects_to_principal_like_waive(late_loan):
 
     assert s_disc.fine_paid == Money("0.00")
     assert s_waive.fine_paid == Money("0.00")
-    assert s_disc.principal_paid == Money("10927.90")
-    assert s_waive.principal_paid == Money("10927.90")
+    assert s_disc.principal_paid == Money("10927.93")
+    assert s_waive.principal_paid == Money("10927.93")
 
 
 # --- Edge cases ---

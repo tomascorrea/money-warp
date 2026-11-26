@@ -38,7 +38,7 @@ def test_bcl_single_ontime_equals_current(single_bcl):
 def test_bcl_single_late_equals_current(single_bcl):
     """Late: settlement_balance == current_balance."""
     with Warp(single_bcl, datetime(2025, 11, 24, tzinfo=SAO_PAULO)) as w:
-        assert w.settlement_balance == Money("1019.44")
+        assert w.settlement_balance == Money("1019.42")
         assert w.settlement_balance == w.current_balance
 
 

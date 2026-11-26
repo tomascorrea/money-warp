@@ -11,7 +11,7 @@ def test_single_late_payment_settlement_totals(loan_with_fine):
         settlement = w.pay_installment(Money("800.00"))
 
     assert settlement.fine_paid == Money("6.07")
-    assert settlement.mora_paid == Money("5.19")
+    assert settlement.mora_paid == Money("1.74")
 
 
 def test_single_late_payment_allocation_count(loan_with_fine):
@@ -31,7 +31,7 @@ def test_single_late_payment_first_installment(loan_with_fine):
     assert first.principal_allocated == Money("292.99")
     assert first.interest_allocated == Money("10.63")
     assert first.fine_allocated == Money("6.07")
-    assert first.mora_allocated == Money("5.19")
+    assert first.mora_allocated == Money("1.74")
     assert first.is_fully_covered is True
 
 
@@ -54,7 +54,7 @@ def test_single_late_payment_third_installment(loan_with_fine):
         settlement = w.pay_installment(Money("800.00"))
 
     third = settlement.allocations[2]
-    assert third.principal_allocated == Money("181.50")
+    assert third.principal_allocated == Money("184.94")
     assert third.interest_allocated == Money("0.00")
     assert third.fine_allocated == Money("0.00")
     assert third.mora_allocated == Money("0.00")
